@@ -248,11 +248,11 @@ export type Notification = {
 export const TODAY = new Date("2026-06-13T09:00:00Z");
 
 export const STAGE_META: Record<Stage, { label: string; short: string; csv: string; probability: number; order: number }> = {
-  opportunity: { label: "Negotiation (Opportunity)", short: "Opportunity", csv: "Negotiation", probability: 0.25, order: 0 },
-  pipeline: { label: "Offer in (Pipeline)", short: "Pipeline", csv: "Offer in", probability: 0.5, order: 1 },
-  committed: { label: "LOI signed (Committed)", short: "Committed", csv: "LOI signed", probability: 0.8, order: 2 },
-  confirmed: { label: "Contract signed (Confirmed)", short: "Confirmed", csv: "Contract signed", probability: 1, order: 3 },
-  closed: { label: "Closed", short: "Closed", csv: "Closed", probability: 1, order: 4 },
+  opportunity: { label: "Lead Validated", short: "Lead Validated", csv: "Need confirmed · 25%", probability: 0.25, order: 0 },
+  pipeline: { label: "Offer & Trial", short: "Offer & Trial", csv: "Offer sent · device trial · 50%", probability: 0.5, order: 1 },
+  committed: { label: "Contract Negotiation", short: "Contract Negotiation", csv: "Redlining · legal review · 80%", probability: 0.8, order: 2 },
+  confirmed: { label: "Contract Signed", short: "Contract Signed", csv: "Deal won · 100%", probability: 1, order: 3 },
+  closed: { label: "Closed", short: "Closed", csv: "Delivered", probability: 1, order: 4 },
 };
 
 /** Every selectable deal status, in ladder order. */

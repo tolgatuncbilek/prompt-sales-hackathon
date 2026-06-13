@@ -451,10 +451,10 @@ const RETIRED_OPTIONS: Opt[] = [{ value: "active", label: "Active" }, { value: "
 const SOURCE_OPTIONS: Opt[] = [{ value: "internal", label: "Internal" }, { value: "third", label: "Third party" }];
 const CHANNEL_OPTIONS: Opt[] = [{ value: "direct", label: "Direct" }, { value: "reseller", label: "Reseller" }];
 const API_STAGE_OPTIONS: Opt[] = [
-  { value: "interest_shown", label: "Interest Shown" },
-  { value: "rfi_answered", label: "RFI Answered" },
-  { value: "rfp_given", label: "RFP Given" },
-  { value: "customer_test", label: "Customer Test" },
+  { value: "interest_shown", label: "Lead Validated" },
+  { value: "rfi_answered", label: "Solution Presented" },
+  { value: "rfp_given", label: "Offer Sent" },
+  { value: "customer_test", label: "Device Trial" },
   { value: "contract_negotiation", label: "Contract Negotiation" },
   { value: "won", label: "Won" },
   { value: "lost", label: "Lost" },
