@@ -1030,6 +1030,51 @@ export function activityForAccount(accountId: string): Activity[] {
 export function activityForDeal(dealId: string): Activity[] {
   return activities.filter((a) => a.dealId === dealId);
 }
+
+let localActivitySeq = 0;
+
+/**
+ * Append an activity to the shared timeline so it shows on the account and,
+ * when `dealId` is set, the deal timeline. Pass `persist: true` for manual
+ * entries (notes, meetings, calls, emails) that have no other backend write so
+ * they round-trip through the activities API. Domain actions that already
+ * persist through their own endpoint (stage change, deal/case/offer creation)
+ * leave `persist` unset to avoid writing the row twice.
+ */
+export function recordActivity(input: {
+  accountId: string;
+  dealId?: string | null;
+  actorId: string | null;
+  kind: ActivityKind;
+  summary: string;
+  isAi?: boolean;
+  persist?: boolean;
+}): Activity {
+  const activity: Activity = {
+    id: `act_local_${Date.now().toString(36)}_${localActivitySeq++}`,
+    accountId: input.accountId,
+    dealId: input.dealId ?? null,
+    actorId: input.actorId,
+    kind: input.kind,
+    summary: input.summary,
+    when: "Just now",
+    isAi: input.isAi ?? false,
+  };
+  activities.unshift(activity);
+  if (input.persist) {
+    void fetch(`/api/accounts/${activity.accountId}/activities`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        entity_type: activity.dealId ? "deal" : "account",
+        entity_id: activity.dealId ?? activity.accountId,
+        event_type: activity.kind,
+        payload: { summary: activity.summary, kind: activity.kind },
+      }),
+    }).catch((e) => console.error("Failed to persist activity", e));
+  }
+  return activity;
+}
 export function insightsForAccount(accountId: string): AiInsight[] {
   return aiInsights.filter((i) => i.accountId === accountId);
 }

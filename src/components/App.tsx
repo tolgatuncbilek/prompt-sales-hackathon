@@ -37,6 +37,7 @@ import {
   offersForAccount,
   activityForAccount,
   activityForDeal,
+  recordActivity,
   insightsForAccount,
   insightsForDeal,
   serviceContractsForDeal,
@@ -95,6 +96,7 @@ import {
 } from "../lib/crm.ts";
 import type {
   Account,
+  ActivityKind,
   ApiStage,
   AiInsight,
   Channel,
@@ -434,6 +436,7 @@ type AppCtx = {
   openOffers: (id?: string) => void;
   openCase: (id: string) => void;
   notify: (msg: string) => void;
+  logActivity: (input: { accountId: string; dealId?: string | null; kind: ActivityKind; summary: string }) => void;
   // mutable state
   dealStage: Record<string, Stage>;
   dealLeadValidated: Record<string, boolean>;
@@ -1343,14 +1346,13 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
   const phasingMax = Math.max(1, ...phasingRows.map((r) => r.device + r.service));
 
   const baseActivity = activityForAccount(account.id);
-  const [logged, setLogged] = useState<{ kind: "note" | "meeting" | "call" | "email"; summary: string; when: string; actor: string }[]>([]);
   const [composerOpen, setComposerOpen] = useState(false);
   const [draftKind, setDraftKind] = useState<"note" | "meeting" | "call" | "email">("note");
   const [draft, setDraft] = useState("");
 
   const submitLog = () => {
     if (!draft.trim()) return;
-    setLogged((l) => [{ kind: draftKind, summary: draft.trim(), when: "Just now", actor: ctx.user.name }, ...l]);
+    ctx.logActivity({ accountId: account.id, kind: draftKind, summary: draft.trim() });
     setDraft(""); setComposerOpen(false); ctx.notify("Activity logged to the timeline.");
   };
 
@@ -1455,7 +1457,7 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
           </section>
 
           <section>
-            <SectionHead title="Activity" count={baseActivity.length + logged.length} />
+            <SectionHead title="Activity" count={baseActivity.length} />
             {composerOpen && (
               <div className="composer">
                 <div className="composer-kinds">
@@ -1472,14 +1474,13 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
                 </div>
               </div>
             )}
-            <ol className="timeline">
-              {logged.map((e, i) => (
-                <li key={`l${i}`} className={`tl tl--${e.kind}`}><span className="tl-dot" /><div><strong>{e.summary}</strong><small>{e.actor} · {e.when}</small></div></li>
-              ))}
-              {baseActivity.map((e) => (
-                <li key={e.id} className={cx(`tl tl--${e.kind}`, e.isAi && "tl--ai")}><span className="tl-dot" /><div><strong>{e.isAi && <Icon name="spark" />}{e.summary}</strong><small>{e.isAi ? "AI agent" : userName(e.actorId)} · {e.when}</small></div></li>
-              ))}
-            </ol>
+            {baseActivity.length ? (
+              <ol className="timeline">
+                {baseActivity.map((e) => (
+                  <li key={e.id} className={cx(`tl tl--${e.kind}`, e.isAi && "tl--ai")}><span className="tl-dot" /><div><strong>{e.isAi && <Icon name="spark" />}{e.summary}</strong><small>{e.isAi ? "AI agent" : userName(e.actorId)} · {e.when}</small></div></li>
+                ))}
+              </ol>
+            ) : <Empty>No activity logged for this account yet.</Empty>}
           </section>
         </div>
 
@@ -1967,7 +1968,6 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
   const baseActivity = activityForDeal(deal.id);
   const [offerModal, setOfferModal] = useState(false);
   const [caseModal, setCaseModal] = useState(false);
-  const [logged, setLogged] = useState<{ kind: "note" | "meeting" | "call" | "email"; summary: string; when: string; actor: string }[]>([]);
   const [composerOpen, setComposerOpen] = useState(false);
   const [draftKind, setDraftKind] = useState<"note" | "meeting" | "call" | "email">("note");
   const [draft, setDraft] = useState("");
@@ -1976,7 +1976,7 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
 
   const submitLog = () => {
     if (!draft.trim()) return;
-    setLogged((l) => [{ kind: draftKind, summary: draft.trim(), when: "Just now", actor: ctx.user.name }, ...l]);
+    ctx.logActivity({ accountId: deal.accountId, dealId: deal.id, kind: draftKind, summary: draft.trim() });
     setDraft("");
     setComposerOpen(false);
     ctx.notify("Activity logged to the deal timeline.");
@@ -2067,7 +2067,7 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
           </section>
 
           <section>
-            <SectionHead title="Activity" count={baseActivity.length + logged.length} />
+            <SectionHead title="Activity" count={baseActivity.length} />
             {composerOpen && (
               <div className="composer">
                 <div className="composer-kinds">
@@ -2084,11 +2084,8 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
                 </div>
               </div>
             )}
-            {baseActivity.length || logged.length ? (
+            {baseActivity.length ? (
               <ol className="timeline">
-                {logged.map((e, i) => (
-                  <li key={`l${i}`} className={`tl tl--${e.kind}`}><span className="tl-dot" /><div><strong>{e.summary}</strong><small>{e.actor} · {e.when}</small></div></li>
-                ))}
                 {baseActivity.map((e) => (
                   <li key={e.id} className={cx(`tl tl--${e.kind}`, e.isAi && "tl--ai")}><span className="tl-dot" /><div><strong>{e.isAi && <Icon name="spark" />}{e.summary}</strong><small>{e.isAi ? "AI agent" : userName(e.actorId)} · {e.when}</small></div></li>
                 ))}
@@ -3019,6 +3016,7 @@ function MainApp() {
   };
   const addDeal = (deal: Deal, serviceValue: number, serviceContractId?: string | null, serviceId?: string | null) => {
     seedDeals.unshift(deal);
+    recordActivity({ accountId: deal.accountId, dealId: deal.id, actorId: user.id, kind: "stage", summary: `Deal created: ${deal.title}.` });
     if (serviceValue > 0 && serviceContractId && serviceId) {
       serviceContracts.unshift({
         id: serviceContractId,
@@ -3061,6 +3059,9 @@ function MainApp() {
       leadValidated: updates.leadValidated ?? deal.leadValidated,
     });
     replaceDealRevenue(deal, device, service);
+    if (updates.stage && nextStage !== previous.stage) {
+      recordActivity({ accountId: deal.accountId, dealId: deal.id, actorId: user.id, kind: "stage", summary: `Moved ${deal.title} to ${STAGE_META[nextStage].short}.` });
+    }
     bumpAccounts();
 
     try {
@@ -3093,6 +3094,11 @@ function MainApp() {
     window.setTimeout(() => setToast((t) => (t && t.id === id ? null : t)), 3000);
   };
 
+  const logActivity: AppCtx["logActivity"] = (input) => {
+    recordActivity({ ...input, actorId: user.id, persist: true });
+    bumpAccounts();
+  };
+
   const moveDeal = (id: string, stage: Stage) => {
     const deal = dealById(id);
     if (!deal) return;
@@ -3105,6 +3111,7 @@ function MainApp() {
     setDealStage((m) => ({ ...m, [id]: stage }));
     Object.assign(deal, { stage, apiStage: STAGE_TO_API[stage] });
     fetch(`/api/deals/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: STAGE_TO_API[stage] }) }).catch(console.error);
+    recordActivity({ accountId: deal.accountId, dealId: deal.id, actorId: user.id, kind: "stage", summary: `Moved ${deal.title} to ${STAGE_META[stage].short}.` });
     notify(`Moved ${deal.title} to ${STAGE_META[stage].short}.`);
   };
 
@@ -3114,6 +3121,7 @@ function MainApp() {
     setDealLeadValidated((m) => ({ ...m, [id]: true }));
     Object.assign(deal, { leadValidated: true, apiStage: "rfi_answered" });
     fetch(`/api/deals/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: "rfi_answered" }) }).catch(console.error);
+    recordActivity({ accountId: deal.accountId, dealId: deal.id, actorId: user.id, kind: "stage", summary: `${deal.title} — lead validated.` });
     notify(`${deal.title} — lead validated.`);
   };
 
@@ -3137,6 +3145,8 @@ function MainApp() {
 
   const addOffer = (offer: Offer) => {
     seedOffers.unshift(offer);
+    const offerDeal = dealById(offer.dealId);
+    if (offerDeal) recordActivity({ accountId: offerDeal.accountId, dealId: offerDeal.id, actorId: user.id, kind: "offer", summary: `Offer ${offer.ref} created.` });
     bumpAccounts();
   };
 
@@ -3153,6 +3163,7 @@ function MainApp() {
 
   const addCase = (caseRec: CaseRecord) => {
     seedCases.unshift(caseRec);
+    recordActivity({ accountId: caseRec.accountId, dealId: caseRec.dealId ?? null, actorId: user.id, kind: "case", summary: `${caseRec.ref} opened: ${caseRec.title}.` });
     bumpAccounts();
   };
 
@@ -3171,6 +3182,16 @@ function MainApp() {
     const locked = status === "locked" ? "Just now" : base.lockedAt;
     setOfferState((m) => ({ ...m, [offerId]: { ...base, approvals, status, lockedAt: locked } }));
     fetch(`/api/offers/${offerId}/decide`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, note }) }).catch(console.error);
+    const decisionDeal = dealById(base.dealId);
+    if (decisionDeal) recordActivity({
+      accountId: decisionDeal.accountId,
+      dealId: decisionDeal.id,
+      actorId: user.id,
+      kind: "offer",
+      summary: decision === "approved"
+        ? status === "locked" ? `${base.ref} fully approved and locked.` : `${base.ref} approved — routed to Finance.`
+        : `${base.ref} rejected.`,
+    });
     notify(decision === "approved"
       ? status === "locked" ? `${base.ref} fully approved and locked.` : `${base.ref} approved — routed to Finance.`
       : `${base.ref} rejected. The rep has been notified.`);
@@ -3199,7 +3220,7 @@ function MainApp() {
     offerState, decideOffer, addOffer, updateOffer, addCase,
     insightStatus, setInsight: (id, s) => setInsightStatus((m) => ({ ...m, [id]: s })),
     caseNotes, addNote: (cid, n) => setCaseNotes((m) => ({ ...m, [cid]: [n, ...(m[cid] ?? [])] })),
-    patch, eff, addAccount, addDeal, updateDeal,
+    patch, eff, addAccount, addDeal, updateDeal, logActivity,
   };
 
   const myNotifs = seedNotifications.filter((n) => n.userId === userId);

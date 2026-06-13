@@ -4,6 +4,67 @@ import * as schema from '../../db/schema/index.js';
 
 const app = new Hono();
 
+const humanize = (s: string): string =>
+  s.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+
+/**
+ * Turn a stored activity (event_type + payload) into the frontend's
+ * { kind, summary } shape. Manual entries carry their own summary/kind in the
+ * payload and are used verbatim; system events are rendered to readable text.
+ */
+function deriveActivity(
+  eventType: string,
+  payload: Record<string, any> | null,
+  isAi: boolean,
+): { kind: string; summary: string } {
+  const p = payload ?? {};
+  if (typeof p.summary === 'string' && typeof p.kind === 'string') {
+    return { kind: p.kind, summary: p.summary };
+  }
+  switch (eventType) {
+    case 'account_created':
+      return { kind: 'note', summary: `Account created${p.name ? `: ${p.name}` : ''}.` };
+    case 'deal_created':
+      return { kind: 'stage', summary: `Deal created${p.title ? `: ${p.title}` : ''}.` };
+    case 'stage_changed':
+      return {
+        kind: 'stage',
+        summary: `${p.title ? `${p.title} — ` : ''}stage moved${
+          p.from && p.to ? ` from ${humanize(p.from)} to ${humanize(p.to)}` : ''
+        }.`,
+      };
+    case 'case_opened':
+      return { kind: 'case', summary: `Case opened${p.priority ? ` (${p.priority} priority)` : ''}.` };
+    case 'case_status_changed':
+      return {
+        kind: 'case',
+        summary: `Case status changed${p.from && p.to ? ` from ${humanize(p.from)} to ${humanize(p.to)}` : ''}.`,
+      };
+    case 'forecast_updated':
+      return { kind: 'note', summary: `Forecast updated${p.periods ? ` (${p.periods} periods)` : ''}.` };
+    case 'offer_submitted':
+      return {
+        kind: 'offer',
+        summary: `Offer submitted${p.deal_title ? ` for ${p.deal_title}` : ''}${p.version ? ` (v${p.version})` : ''}.`,
+      };
+    case 'offer_rejected':
+      return { kind: 'offer', summary: `Offer rejected${p.note ? `: ${p.note}` : ''}.` };
+    case 'offer_manager_approved':
+      return { kind: 'offer', summary: 'Offer approved by sales manager — routed to Finance.' };
+    case 'offer_approved':
+      return { kind: 'offer', summary: 'Offer fully approved and locked.' };
+    case 'ai_insight_generated':
+      return { kind: 'ai', summary: `AI insight generated${p.insight_type ? `: ${humanize(p.insight_type)}` : ''}.` };
+    case 'note_added':
+      return { kind: 'note', summary: typeof p.text === 'string' ? p.text : 'Note added.' };
+    default:
+      return { kind: isAi ? 'ai' : 'note', summary: humanize(eventType) };
+  }
+}
+
+const fmtActivityWhen = (d: Date): string =>
+  d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
 function calculateContractPhases(c: any): { expectedDevices: number | null; phases: { period: string; value: number }[] } {
   const phases: { period: string; value: number }[] = [];
   let expectedDevices: number | null = null;
@@ -308,15 +369,32 @@ app.get('/', async (c) => {
     status: i.status
   }));
 
-  const activities = dbActivities.map(a => ({
-    id: a.id,
-    accountId: a.accountId,
-    actorId: a.actorUserId,
-    kind: a.isAiGenerated ? 'ai' : 'note',
-    summary: a.eventType,
-    when: a.createdAt.toISOString(),
-    isAi: a.isAiGenerated
-  }));
+  // Map offer -> deal so offer activities also surface on the deal timeline.
+  const offerToDeal = new Map(dbOffers.map((o) => [o.id, o.dealId]));
+
+  const activities = dbActivities.map(a => {
+    const { kind, summary } = deriveActivity(
+      a.eventType,
+      a.payload as Record<string, any> | null,
+      a.isAiGenerated,
+    );
+    const dealId =
+      a.entityType === 'deal'
+        ? a.entityId
+        : a.entityType === 'offer'
+          ? offerToDeal.get(a.entityId) ?? null
+          : null;
+    return {
+      id: a.id,
+      accountId: a.accountId,
+      dealId,
+      actorId: a.actorUserId,
+      kind,
+      summary,
+      when: fmtActivityWhen(a.createdAt),
+      isAi: a.isAiGenerated,
+    };
+  });
 
   const notifications = dbNotifications.map(n => ({
     id: n.id,
