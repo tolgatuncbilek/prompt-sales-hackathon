@@ -1160,7 +1160,7 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
 
   return (
     <>
-      <div className="toolbar">
+      <div className="toolbar toolbar--page-start">
         <label className="search">
           <Icon name="search" /><span className="sr-only">Search accounts</span>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search accounts" type="search" />

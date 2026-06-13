@@ -218,6 +218,7 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
 /* Toolbar ----------------------------------------------------------------- */
 
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+.toolbar--page-start { padding-top: 24px; }
 .toolbar-right { display: flex; align-items: center; gap: 8px; }
 
 .saved-views { display: flex; gap: 2px; }
