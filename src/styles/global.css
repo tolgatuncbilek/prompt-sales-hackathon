@@ -104,75 +104,99 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
 
 .sidebar {
   position: fixed; inset: 0 auto 0 0; z-index: 30; width: var(--sidebar);
-  display: flex; flex-direction: column; gap: 4px; padding: 18px 12px 14px;
+  display: flex; flex-direction: column; gap: 2px; padding: 16px 12px 14px;
   border-right: 1px solid var(--rule); background: var(--field-2);
 }
 
-.brand { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 6px; }
-.brand-mark {
-  display: grid; place-items: center; width: 30px; height: 30px;
-  border: 1px solid var(--accent); border-radius: var(--r-control);
-  color: var(--accent); font-size: 14px; font-weight: 700;
+.sidebar-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-bottom: 12px; min-height: 38px; padding: 0 4px;
 }
-.brand strong { display: block; font-size: 13px; line-height: 1.2; }
-.brand small { display: block; margin-top: 2px; color: var(--ink-3); font-size: 11px; }
-
-.role-switch { position: relative; margin-top: 12px; }
+.role-switch { position: relative; }
 .role-btn {
-  width: 100%; min-height: 50px; display: flex; align-items: center; gap: 9px;
-  padding: 6px 8px; border: 1px solid var(--rule); border-radius: var(--r-control);
-  background: var(--surface); cursor: pointer; text-align: left; transition: background var(--t-fast);
+  display: inline-flex; align-items: center; gap: 8px; padding: 4px 6px; border: 0; border-radius: var(--r-control);
+  background: transparent; cursor: pointer; text-align: left; transition: background var(--t-fast);
 }
-.role-btn:hover { background: var(--raised); }
-.role-btn > span { flex: 1; min-width: 0; }
-.role-btn strong { display: block; font-size: 12px; }
-.role-btn small { display: block; margin-top: 1px; color: var(--ink-3); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.role-btn .icon { width: 15px; color: var(--ink-3); }
+.role-btn:hover { background: var(--surface); }
+.role-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.role-btn .chevron-icon { width: 12px; height: 12px; color: var(--ink-3); margin-left: 1px; transition: color var(--t-fast); }
+.role-btn:hover .chevron-icon { color: var(--ink-2); }
+
+.sidebar-header-actions { display: flex; align-items: center; gap: 2px; }
+.header-action-btn {
+  width: 26px; height: 26px; display: grid; place-items: center; border: 0; border-radius: var(--r-control);
+  background: transparent; color: var(--ink-3); cursor: pointer; transition: background var(--t-fast), color var(--t-fast);
+}
+.header-action-btn:hover { background: var(--surface); color: var(--ink); }
+.header-action-btn .icon { width: 14px; height: 14px; }
 
 .role-menu {
-  position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; right: 0;
-  list-style: none; margin: 0; padding: 4px; border: 1px solid var(--rule);
+  position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; width: 220px;
+  margin: 0; padding: 4px; border: 1px solid var(--rule);
   border-radius: var(--r-surface); background: var(--raised); box-shadow: var(--shadow-float);
+  display: flex; flex-direction: column;
 }
+.role-menu-section-label { font-size: 9px; font-weight: 650; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 8px 4px; }
+.role-menu-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .role-option {
-  width: 100%; display: flex; align-items: center; gap: 9px; padding: 8px;
+  width: 100%; display: flex; align-items: center; gap: 9px; padding: 6px 8px;
   border: 0; border-radius: var(--r-control); background: transparent; cursor: pointer; text-align: left;
+  color: var(--ink-2); transition: background var(--t-fast), color var(--t-fast);
 }
-.role-option:hover { background: var(--surface); }
-.role-option.is-active { background: var(--accent-soft); }
-.role-option > span { flex: 1; min-width: 0; }
-.role-option strong { display: block; font-size: 12px; }
-.role-option small { display: block; color: var(--ink-3); font-size: 10px; }
-.role-option .icon { width: 15px; color: var(--accent); }
+.role-option:hover { background: var(--surface); color: var(--ink); }
+.role-option.is-active { background: var(--rule-soft); color: var(--ink); }
+.role-option-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.role-option-text strong { display: block; font-size: 12px; font-weight: 600; line-height: 1.2; }
+.role-option-text small { display: block; color: var(--ink-3); font-size: 10px; margin-top: 1px; }
+.role-option .check-icon { width: 14px; height: 14px; color: var(--accent); margin-left: auto; }
 
-nav[aria-label="Primary"] { display: grid; gap: 2px; margin-top: 16px; }
+.sidebar-nav { display: flex; flex-direction: column; gap: 14px; }
+.nav-group { display: flex; flex-direction: column; gap: 2px; }
+.nav-group-header {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  padding: 6px 8px 4px; border: 0; background: transparent; text-align: left;
+  font-size: 11px; font-weight: 600; color: var(--ink-3); cursor: pointer;
+  transition: color var(--t-fast);
+}
+.nav-group-header:hover { color: var(--ink-2); }
+.nav-group-header .chevron-icon { width: 10px; height: 10px; color: var(--ink-3); opacity: 0.6; transition: opacity var(--t-fast); }
+.nav-group-header:hover .chevron-icon { opacity: 0.9; }
+.nav-group-items { display: flex; flex-direction: column; gap: 2px; }
+
 .nav {
-  min-height: 40px; display: flex; align-items: center; gap: 11px; padding: 0 10px;
+  min-height: 32px; display: flex; align-items: center; gap: 9px; padding: 0 8px;
   border: 0; border-radius: var(--r-control); background: transparent; color: var(--ink-2);
-  font-size: 13px; font-weight: 500; text-align: left; cursor: pointer;
+  font-size: 12.5px; font-weight: 500; text-align: left; cursor: pointer;
   transition: background var(--t-fast), color var(--t-fast);
 }
-.nav .icon { width: 18px; }
+.nav .icon { width: 16px; height: 16px; color: var(--ink-3); transition: color var(--t-fast); }
 .nav:hover { background: var(--surface); color: var(--ink); }
-.nav--active { background: var(--accent); color: var(--field); font-weight: 650; }
-.nav--active:hover { background: var(--accent-hover); color: var(--field); }
+.nav:hover .icon { color: var(--ink-2); }
+.nav--active { background: var(--raised); color: var(--ink); font-weight: 600; }
+.nav--active .icon { color: var(--accent); }
+.nav--active:hover { background: var(--raised); color: var(--ink); }
 .nav-count {
-  min-width: 20px; margin-left: auto; padding: 1px 6px; border-radius: var(--r-pill);
-  background: var(--raised); color: var(--ink-2); font-size: 11px; font-weight: 650; text-align: center;
+  margin-left: auto; color: var(--ink-3); font-size: 11.5px; font-weight: 500;
 }
-.nav--active .nav-count { background: rgba(7, 10, 16, 0.25); color: var(--field); }
-.nav-count--alert { background: var(--amber); color: var(--field); }
+.nav--active .nav-count { color: var(--ink-2); }
+.nav-count--alert { color: var(--amber); font-weight: 600; }
 
-.sidebar-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--rule); display: grid; gap: 8px; }
+.sidebar-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--rule); display: flex; align-items: center; justify-content: space-between; }
 .notif-row {
-  display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 0 10px;
+  flex: 1; display: flex; align-items: center; gap: 9px; min-height: 32px; padding: 0 8px;
   border: 0; border-radius: var(--r-control); background: transparent; color: var(--ink-2);
   font-size: 12px; font-weight: 600; cursor: pointer; transition: background var(--t-fast), color var(--t-fast);
 }
 .notif-row:hover { background: var(--surface); color: var(--ink); }
-.notif-row .icon { width: 17px; }
+.notif-row .icon { width: 16px; height: 16px; color: var(--ink-3); }
 .notif-row .nav-count { margin-left: auto; }
-.proto-tag { padding: 0 10px; color: var(--ink-3); font-size: 10px; font-weight: 600; }
+.help-circle-btn {
+  width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%;
+  border: 1px solid var(--rule); background: transparent; color: var(--ink-3);
+  font-size: 11px; font-weight: 600; cursor: pointer; transition: border-color var(--t-fast), color var(--t-fast);
+  margin-left: 8px; flex-shrink: 0;
+}
+.help-circle-btn:hover { border-color: var(--ink-3); color: var(--ink); }
 
 /* --------------------------------------------------------------------------
    Workspace
