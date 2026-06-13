@@ -1600,9 +1600,6 @@ function MainApp() {
           <button className="notif-row" onClick={() => setNotifOpen((v) => !v)} aria-expanded={notifOpen} type="button">
             <Icon name="bell" /><span>Notifications</span>{unread > 0 && <span className="nav-count nav-count--alert">{unread}</span>}
           </button>
-          <button className="help-circle-btn" onClick={() => notify("Operational Fieldbook support. Press ? for shortcuts.")} title="Help & Feedback" type="button">
-            <span>?</span>
-          </button>
         </div>
       </aside>
 
