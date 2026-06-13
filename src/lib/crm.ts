@@ -281,8 +281,8 @@ export function dealTier(stage: Stage): Tier {
     case "rfi_answered":
       return "opportunity";
     case "rfp_given":
-    case "customer_test":
       return "pipeline";
+    case "customer_test":
     case "contract_negotiation":
       return "committed";
     case "won":

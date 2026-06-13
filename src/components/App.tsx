@@ -39,6 +39,7 @@ import {
   serviceContractsForDeal,
   offerForDeal,
   isOpen,
+  inForecast,
   isStale,
   isOverdue,
   dealRisk,
@@ -864,18 +865,21 @@ function AccountRecord({ account, ctx }: { account: Account; ctx: AppCtx }) {
 
 function DealsView({ ctx }: { ctx: AppCtx }) {
   const [mode, setMode] = useState<"table" | "board">("table");
+  const [group, setGroup] = useState<"stage" | "commitment">("stage");
   const [q, setQ] = useState("");
   const [onlyRisk, setOnlyRisk] = useState(false);
   const [channel, setChannel] = useState<"all" | "direct" | "reseller">("all");
 
   const query = q.trim().toLowerCase();
-  const live = seedDeals.map((d) => liveStage(ctx, d)).filter(isOpen).filter((d) => {
+  const filtered = seedDeals.map((d) => liveStage(ctx, d)).filter((d) => {
     const acc = accountById(d.accountId)!;
     const matchesQ = !query || [d.title, acc.name, acc.region, userName(d.ownerId), STAGE_META[d.stage].label].some((v) => v.toLowerCase().includes(query));
     const matchesRisk = !onlyRisk || isStale(d) || isOverdue(d);
     const matchesChan = channel === "all" || d.channel === channel;
     return matchesQ && matchesRisk && matchesChan;
   });
+  // Stage columns/table show open deals; the commitment lens adds Confirmed (won).
+  const open = filtered.filter(isOpen);
 
   return (
     <>
@@ -890,6 +894,12 @@ function DealsView({ ctx }: { ctx: AppCtx }) {
           <button className="saved-view" role="tab" aria-selected={channel === "direct"} onClick={() => setChannel((c) => c === "direct" ? "all" : "direct")} type="button">Direct only</button>
         </div>
         <div className="toolbar-right">
+          {mode === "board" && (
+            <div className="seg seg--wide" role="group" aria-label="Group board by">
+              <button aria-pressed={group === "stage"} onClick={() => setGroup("stage")} type="button">Sales stage</button>
+              <button aria-pressed={group === "commitment"} onClick={() => setGroup("commitment")} type="button">Commitment</button>
+            </div>
+          )}
           <label className="search">
             <Icon name="search" /><span className="sr-only">Search deals</span>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search pipeline" type="search" />
@@ -901,7 +911,9 @@ function DealsView({ ctx }: { ctx: AppCtx }) {
         </div>
       </div>
 
-      {mode === "table" ? <DealTable deals={live} ctx={ctx} /> : <DealBoard deals={live} ctx={ctx} />}
+      {mode === "table"
+        ? <DealTable deals={open} ctx={ctx} />
+        : <DealBoard deals={group === "commitment" ? filtered.filter(inForecast) : open} ctx={ctx} group={group} />}
     </>
   );
 }
@@ -955,12 +967,63 @@ function DealTable({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
   );
 }
 
-function DealBoard({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overStage, setOverStage] = useState<Stage | null>(null);
-  // Union of stages so both direct and reseller columns appear; reseller can't enter negotiation.
-  const stages = pipelineStages("direct");
+function DealCard({ deal, ctx, dragId, setDragId, setOver, draggable }: {
+  deal: Deal; ctx: AppCtx; dragId: string | null; setDragId: (v: string | null) => void; setOver: (v: string | null) => void; draggable: boolean;
+}) {
+  const acc = accountById(deal.accountId)!;
+  return (
+    <article
+      className={cx("deal-card", !draggable && "deal-card--static", dragId === deal.id && "deal-card--drag")}
+      draggable={draggable}
+      onDragStart={draggable ? (e) => { e.dataTransfer.setData("text/plain", deal.id); setDragId(deal.id); } : undefined}
+      onDragEnd={draggable ? () => { setDragId(null); setOver(null); } : undefined}
+    >
+      <div className="deal-card-top">
+        {draggable && <span className="grip" aria-hidden="true"><Icon name="grip" /></span>}
+        <button className="deal-card-open" onClick={() => ctx.openAccount(deal.accountId)} type="button"><strong>{deal.title}</strong><small>{acc.name} · {deal.channel === "direct" ? "Direct" : "Reseller"}</small></button>
+      </div>
+      <div className="deal-card-figs"><span className="numeric numeric--strong">{fmtEur(dealTotal(deal))}</span><RiskTag deal={deal} /></div>
+      <div className="deal-card-foot">
+        <span className="board-owner"><Avatar name={userName(deal.ownerId)} size="xs" />{userName(deal.ownerId)}</span>
+        <span className="board-close"><Icon name="clock" />{new Date(deal.expectedClose).toLocaleDateString("en-IE", { day: "2-digit", month: "short" })}</span>
+      </div>
+    </article>
+  );
+}
 
+function DealBoard({ deals, ctx, group }: { deals: Deal[]; ctx: AppCtx; group: "stage" | "commitment" }) {
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+
+  if (group === "commitment") {
+    // Lens over the same records, grouped by the CSV commitment ladder. The
+    // tier is derived from stage, so this is read-only (move stage to change it).
+    return (
+      <div className="board-wrap">
+        <div className="board board--four">
+          {TIERS.map((tier) => {
+            const col = deals.filter((d) => dealTier(d.stage) === tier);
+            const value = col.reduce((s, d) => s + dealTotal(d), 0);
+            return (
+              <section key={tier} className={cx("board-col", `board-col--tier-${tier}`)}>
+                <header className="board-col-head">
+                  <span className="board-col-title"><strong>{TIER_META[tier].label}</strong><small>{TIER_META[tier].csv} · {Math.round(TIER_META[tier].weight * 100)}%</small></span>
+                  <span className="board-count">{col.length}</span>
+                </header>
+                <div className="board-col-body">
+                  {col.map((d) => <DealCard key={d.id} deal={d} ctx={ctx} dragId={dragId} setDragId={setDragId} setOver={setOver} draggable={false} />)}
+                  {!col.length && <p className="board-empty">No deals at this tier</p>}
+                </div>
+                <footer className="board-col-foot"><span>Net value</span><strong className="numeric">{value ? fmtEur(value) : "—"}</strong></footer>
+              </section>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  const stages = pipelineStages("direct");
   return (
     <div className="board-wrap">
       <div className="board">
@@ -970,28 +1033,17 @@ function DealBoard({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
           return (
             <section
               key={stage}
-              className={cx("board-col", overStage === stage && "board-col--over")}
-              onDragOver={(e) => { if (!dragId) return; e.preventDefault(); setOverStage(stage); }}
-              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverStage(null); }}
-              onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); ctx.moveDeal(id, stage); setDragId(null); setOverStage(null); }}
+              className={cx("board-col", over === stage && "board-col--over")}
+              onDragOver={(e) => { if (!dragId) return; e.preventDefault(); setOver(stage); }}
+              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(null); }}
+              onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); ctx.moveDeal(id, stage); setDragId(null); setOver(null); }}
             >
-              <header className="board-col-head"><strong>{STAGE_META[stage].label}</strong><span className="board-count">{col.length}</span></header>
+              <header className="board-col-head">
+                <span className="board-col-title"><strong>{STAGE_META[stage].label}</strong><small>{TIER_META[dealTier(stage)].label}</small></span>
+                <span className="board-count">{col.length}</span>
+              </header>
               <div className="board-col-body">
-                {col.map((d) => {
-                  const acc = accountById(d.accountId)!;
-                  return (
-                    <article key={d.id} className={cx("deal-card", dragId === d.id && "deal-card--drag")} draggable
-                      onDragStart={(e) => { e.dataTransfer.setData("text/plain", d.id); setDragId(d.id); }}
-                      onDragEnd={() => { setDragId(null); setOverStage(null); }}>
-                      <div className="deal-card-top">
-                        <span className="grip" aria-hidden="true"><Icon name="grip" /></span>
-                        <button className="deal-card-open" onClick={() => ctx.openAccount(d.accountId)} type="button"><strong>{d.title}</strong><small>{acc.name} · {d.channel === "direct" ? "Direct" : "Reseller"}</small></button>
-                      </div>
-                      <div className="deal-card-figs"><span className="numeric numeric--strong">{fmtEur(dealTotal(d))}</span><RiskTag deal={d} /></div>
-                      <div className="deal-card-foot"><span className="board-owner"><Avatar name={userName(d.ownerId)} size="xs" />{userName(d.ownerId)}</span><span className="board-close"><Icon name="clock" />{new Date(d.expectedClose).toLocaleDateString("en-IE", { day: "2-digit", month: "short" })}</span></div>
-                    </article>
-                  );
-                })}
+                {col.map((d) => <DealCard key={d.id} deal={d} ctx={ctx} dragId={dragId} setDragId={setDragId} setOver={setOver} draggable />)}
                 {!col.length && <p className="board-empty">Drop a deal here</p>}
               </div>
               <footer className="board-col-foot"><span>Stage value</span><strong className="numeric">{value ? fmtEur(value) : "—"}</strong></footer>
