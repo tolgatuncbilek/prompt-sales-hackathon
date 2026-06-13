@@ -2,6 +2,13 @@
 
 Prompt Sales Hackathon challenge sponsored by HMD.
 
+## Current Setup
+
+- The app ships with seeded demo data and a local PostgreSQL database for development.
+- Production uses a separate Azure PostgreSQL Flexible Server in `rg-hmd-secure-crm`.
+- The CRM assistant is backed by a dedicated Hermes/OpenClaw gateway at the production URL configured in Azure.
+- `New chat` starts a fresh assistant thread; each thread keeps its own browser-side history.
+
 ## Challenge
 
 HMD Secure is a one-year-old startup selling smart devices alongside internal and third-party services. Its 10-20 sales representatives and Technical Account Managers currently manage customer relationships through email, personal notes, and Excel.
@@ -201,6 +208,17 @@ These are inspiration rather than fixed requirements:
 - Prefer Bun-native APIs over Node.js APIs when Bun provides the required capability.
 - Use Node-compatible APIs only when Astro, a dependency, or the target platform requires them.
 
+## Environment
+
+Local development expects the following in `.env`:
+
+- `DATABASE_URL`: local Postgres connection string.
+- `OPENCLAW_URL`: Hermes/OpenClaw-compatible chat endpoint.
+- `OPENCLAW_KEY`: bearer token for that endpoint.
+- `ASSISTANT_MODEL`: assistant model name exposed to the gateway.
+
+Production is wired separately through Azure Container App secrets and environment variables. Do not point the production container at `localhost`.
+
 ## Deployment
 
 Prerequisites:
@@ -222,6 +240,8 @@ make deploy-url
 ```
 
 The Make variables `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `AZURE_ENVIRONMENT`, `AZURE_REGISTRY`, and `AZURE_APP` can override the default live environment.
+
+The Azure deployment script also expects `DATABASE_URL`, `OPENCLAW_URL`, and `OPENCLAW_KEY` to be provided in the shell environment. It stores the database and assistant credentials as Container Apps secrets and references them from the app environment.
 
 ## Demo Scenario
 
