@@ -75,6 +75,7 @@ import {
   approvalStepActionLabel,
   approvalTimestamp,
   APPROVAL_ROLE_LABEL,
+  DEMO_PERSONA_IDS,
   defaultOfferWorkflow,
   forecastByPeriod,
   rollUp,
@@ -184,6 +185,68 @@ function monogram(name: string): string {
 
 function Avatar({ name, size }: { name: string; size?: "xs" | "sm" }) {
   return <span className={cx("avatar", size === "xs" && "avatar--xs")} aria-hidden="true">{monogram(name)}</span>;
+}
+
+function UserSwitcher({ userId, onChange }: { userId: string; onChange: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const user = userById(userId)!;
+  const personas = DEMO_PERSONA_IDS.map((id) => userById(id)!);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const onPointer = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onPointer);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onPointer);
+    };
+  }, [open]);
+
+  return (
+    <div className="role-switch" ref={rootRef}>
+      <button
+        className="role-btn"
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Avatar name={user.name} />
+        <span className="role-btn-text">
+          <span className="role-name">{user.name}</span>
+          <span className="role-title">{ROLE_LABEL[user.role]}</span>
+        </span>
+        <Icon name="chevronDown" />
+      </button>
+      {open && (
+        <ul className="role-menu" role="listbox" aria-label="Switch user">
+          {personas.map((u) => (
+            <li key={u.id}>
+              <button
+                className={cx("role-menu-item", u.id === userId && "is-active")}
+                type="button"
+                role="option"
+                aria-selected={u.id === userId}
+                onClick={() => { onChange(u.id); setOpen(false); }}
+              >
+                <Avatar name={u.name} size="xs" />
+                <span className="role-menu-copy">
+                  <strong>{u.name}</strong>
+                  <small>{ROLE_LABEL[u.role]}</small>
+                </span>
+                {u.id === userId && <Icon name="check" />}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function StatusTag({ stage }: { stage: Stage }) {
@@ -1168,10 +1231,14 @@ function ApprovalCard({ offer, ctx }: { offer: Offer; ctx: AppCtx }) {
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note for the rep" />
       </label>
       <div className="insight-actions">
-        <button className="btn btn--primary btn--sm" type="button" onClick={() => ctx.approveOfferMade(offer.id)}>
-          <Icon name="check" />Approve offer
-        </button>
-        <button className="btn btn--danger btn--sm" type="button" onClick={() => ctx.decideOffer(offer.id, "rejected", note)}>Reject</button>
+        {ctx.user.role === "sales_manager" && (
+          <>
+            <button className="btn btn--primary btn--sm" type="button" onClick={() => ctx.approveOfferMade(offer.id)}>
+              <Icon name="check" />Approve offer
+            </button>
+            <button className="btn btn--danger btn--sm" type="button" onClick={() => ctx.decideOffer(offer.id, "rejected", note)}>Reject</button>
+          </>
+        )}
       </div>
     </article>
   );
@@ -1807,8 +1874,8 @@ function OfferDetailPanel({
   const deal = dealById(offer.dealId)!;
   const account = accountById(deal.accountId)!;
   const workflow = offerWorkflowSteps(offer);
-  const canEdit = offer.status === "sales_rep";
-  const canSubmit = offer.status === "sales_rep" && (ctx.user.role === "sales_rep" || offer.createdById === ctx.user.id);
+  const canEdit = offer.status === "sales_rep" && ctx.user.role === "sales_rep";
+  const canSubmit = offer.status === "sales_rep" && ctx.user.role === "sales_rep";
   const canManagerApprove = offer.status === "pending_manager" && ctx.user.role === "sales_manager";
 
   const listTotal = offerLinesNetTotal(offer);
@@ -3060,7 +3127,7 @@ export default function App() {
 }
 
 function MainApp() {
-  const [userId, setUserId] = useState<string>(users[0]?.id || "");
+  const [userId, setUserId] = useState<string>("u_aino");
   const [screen, setScreen] = useState<Screen>("home");
   const [accountId, setAccountId] = useState<string>(accounts[0]?.id || "");
   const [caseId, setCaseId] = useState<string>(seedCases[0]?.id || "");
@@ -3273,6 +3340,7 @@ function MainApp() {
   };
 
   const submitOfferForApproval = (offerId: string) => {
+    if (user.role !== "sales_rep") return;
     const base = offerState[offerId] ?? seedOffers.find((o) => o.id === offerId);
     if (!base || base.status !== "sales_rep") return;
     const stamp = approvalTimestamp();
@@ -3300,6 +3368,7 @@ function MainApp() {
   };
 
   const approveOfferMade = (offerId: string) => {
+    if (user.role !== "sales_manager") return;
     const base = offerState[offerId] ?? seedOffers.find((o) => o.id === offerId);
     if (!base || base.status !== "pending_manager") return;
     const stamp = approvalTimestamp();
@@ -3333,6 +3402,8 @@ function MainApp() {
       approveOfferMade(offerId);
       return;
     }
+    if (base.status === "pending_manager" && user.role !== "sales_manager") return;
+    if (base.status === "sales_rep" && user.role !== "sales_rep") return;
     const stamp = approvalTimestamp();
     const role: "sales_rep" | "sales_manager" = base.status === "pending_manager" ? "sales_manager" : "sales_rep";
     const approvals = offerWorkflowSteps(base).map((a) =>
@@ -3381,6 +3452,7 @@ function MainApp() {
     tam: <TamDashboard ctx={ctx} />,
     sales_manager: <ManagerDashboard ctx={ctx} />,
     finance: <FinanceDashboard ctx={ctx} />,
+    admin: <ManagerDashboard ctx={ctx} />,
   };
 
   let content: ReactNode;
@@ -3411,12 +3483,7 @@ function MainApp() {
       </header>
 
       <aside className={cx("sidebar", menuOpen && "sidebar--open")}>
-        <div className="role-switch">
-          <div className="role-btn">
-            <Avatar name={user.name} />
-            <span className="role-name">{user.name}</span>
-          </div>
-        </div>
+        <UserSwitcher userId={userId} onChange={setUserId} />
 
         <nav aria-label="Primary" className="sidebar-nav">
           {NAV.map((item) => {

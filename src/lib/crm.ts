@@ -6,7 +6,7 @@
 // trajectory. Nothing here talks to a backend — it is a faithful prototype of
 // the shared operating picture described in PRODUCT.md.
 
-export type Role = "sales_rep" | "tam" | "sales_manager" | "finance";
+export type Role = "sales_rep" | "tam" | "sales_manager" | "finance" | "admin";
 
 // Deal pipeline — Lead → Offer → Customer testing → Final negotiation → Closed.
 export type Stage =
@@ -383,7 +383,11 @@ export const ROLE_LABEL: Record<Role, string> = {
   tam: "Technical Account Manager",
   sales_manager: "Sales Manager",
   finance: "Finance",
+  admin: "Administrator",
 };
+
+/** One demo persona per role — used by the sidebar user switcher. */
+export const DEMO_PERSONA_IDS = ["u_aino", "u_mikael", "u_sara", "u_admin"] as const;
 
 /** 3-year time-phased horizon, by quarter, starting next quarter from TODAY. */
 export const PERIODS: string[] = [
@@ -412,6 +416,7 @@ export let users: User[] = [
   { id: "u_oskari", name: "Oskari Lehto", email: "oskari.lehto@hmd.example", role: "tam", initials: "OL", title: "Technical Account Manager" },
   { id: "u_mikael", name: "Mikael Korhonen", email: "mikael.korhonen@hmd.example", role: "sales_manager", initials: "MK", title: "Sales Manager" },
   { id: "u_veera", name: "Veera Salonen", email: "veera.salonen@hmd.example", role: "finance", initials: "VS", title: "Finance" },
+  { id: "u_admin", name: "Leena Virtanen", email: "leena.virtanen@hmd.example", role: "admin", initials: "LV", title: "Administrator" },
 ];
 
 export let accounts: Account[] = [

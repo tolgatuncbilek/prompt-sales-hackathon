@@ -161,13 +161,36 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
   border-right: 1px solid var(--rule); background: var(--field-2);
 }
 
-.role-switch { margin-bottom: 12px; }
+.role-switch { position: relative; margin-bottom: 12px; }
 .role-btn {
   width: 100%; min-height: 38px; display: flex; align-items: center; gap: 8px;
   padding: 6px 8px; border: 0; border-radius: var(--r-control);
-  background: transparent; text-align: left;
+  background: transparent; text-align: left; cursor: pointer;
+  transition: background var(--t-fast);
 }
-.role-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.role-btn:hover, .role-btn[aria-expanded="true"] { background: var(--surface); }
+.role-btn .icon { width: 14px; height: 14px; margin-left: auto; color: var(--ink-3); flex-shrink: 0; }
+.role-btn-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.role-name { font-size: 13px; font-weight: 600; color: var(--ink); line-height: 1.2; }
+.role-title { font-size: 10.5px; font-weight: 500; color: var(--ink-3); line-height: 1.2; }
+.role-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30;
+  margin: 0; padding: 4px; list-style: none;
+  border: 1px solid var(--rule); border-radius: var(--r-control);
+  background: var(--field-2); box-shadow: var(--shadow-float);
+}
+.role-menu-item {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 8px; border: 0; border-radius: calc(var(--r-control) - 2px);
+  background: transparent; text-align: left; cursor: pointer;
+  transition: background var(--t-fast);
+}
+.role-menu-item:hover { background: var(--surface); }
+.role-menu-item.is-active { background: var(--raised); }
+.role-menu-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.role-menu-copy strong { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.role-menu-copy small { font-size: 10.5px; color: var(--ink-3); }
+.role-menu-item .icon { width: 14px; height: 14px; color: var(--green); flex-shrink: 0; }
 
 .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
 
