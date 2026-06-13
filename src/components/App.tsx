@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import {
   ROLE_LABEL,
@@ -82,7 +82,9 @@ import {
 import type {
   Account,
   AiInsight,
+  CasePriority,
   CaseRecord,
+  CaseStatus,
   CaseNote,
   Deal,
   Granularity,
@@ -338,11 +340,240 @@ type AppCtx = {
   setInsight: (id: string, status: AiInsight["status"]) => void;
   caseNotes: Record<string, CaseNote[]>;
   addNote: (caseId: string, note: CaseNote) => void;
+  // inline editing: per-entity field overrides applied at render
+  patch: (kind: EditKind, id: string, field: string, value: unknown) => void;
+  eff: <T extends { id: string }>(kind: EditKind, base: T) => T;
+  addAccount: (account: Account) => void;
 };
+
+type EditKind = "account" | "deal" | "case" | "product" | "service";
 
 function liveStage(ctx: AppCtx, deal: Deal): Deal {
   const s = ctx.dealStage[deal.id];
   return s ? { ...deal, stage: s } : deal;
+}
+
+// ===========================================================================
+// Inline-editable table cells. At rest a cell reads like text; on hover/focus
+// it reveals a 1px field and commits on blur / change (Attio-style).
+// ===========================================================================
+
+type Opt = { value: string; label: string };
+
+function CellText({ value, onCommit, placeholder }: { value: string; onCommit: (v: string) => void; placeholder?: string }) {
+  return (
+    <input
+      className="cell-input"
+      defaultValue={value}
+      key={value}
+      placeholder={placeholder}
+      onClick={(e) => e.stopPropagation()}
+      onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== value) onCommit(v); else e.target.value = value; }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") { e.currentTarget.value = value; e.currentTarget.blur(); }
+      }}
+    />
+  );
+}
+
+function CellNumber({ value, onCommit, prefix }: { value: number; onCommit: (v: number) => void; prefix?: string }) {
+  return (
+    <span className="cell-num" onClick={(e) => e.stopPropagation()}>
+      {prefix && <span className="cell-num-prefix">{prefix}</span>}
+      <input
+        type="number"
+        className="cell-input cell-input--num"
+        defaultValue={value}
+        key={value}
+        min={0}
+        onClick={(e) => e.stopPropagation()}
+        onBlur={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v) && v !== value) onCommit(v); else e.target.value = String(value); }}
+        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+      />
+    </span>
+  );
+}
+
+function CellDate({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+  return (
+    <input
+      type="date"
+      className="cell-input cell-input--date"
+      defaultValue={value}
+      key={value}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => { if (e.target.value) onCommit(e.target.value); }}
+    />
+  );
+}
+
+function CellSelect({ value, options, onCommit, className }: { value: string; options: Opt[]; onCommit: (v: string) => void; className?: string }) {
+  return (
+    <span className="cell-edit" onClick={(e) => e.stopPropagation()}>
+      <select className={cx("cell-select", className)} value={value} onChange={(e) => onCommit(e.target.value)}>
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <Icon name="chevronDown" />
+    </span>
+  );
+}
+
+function OpenButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button className="row-open" aria-label={label} type="button" onClick={(e) => { e.stopPropagation(); onClick(); }}>
+      <Icon name="chevron" />
+    </button>
+  );
+}
+
+const REP_OPTIONS: Opt[] = users.filter((u) => u.role === "sales_rep").map((u) => ({ value: u.id, label: u.name }));
+const TAM_OPTIONS: Opt[] = users.filter((u) => u.role === "tam").map((u) => ({ value: u.id, label: u.name }));
+const PRIORITY_OPTIONS: Opt[] = (["critical", "high", "medium", "low"] as CasePriority[]).map((p) => ({ value: p, label: PRIORITY_LABEL[p] }));
+const CASE_STATUS_OPTIONS: Opt[] = (["open", "in_progress", "escalated", "resolved", "closed"] as CaseStatus[]).map((s) => ({ value: s, label: CASE_STATUS_LABEL[s] }));
+const SERVICE_OPTIONS: Opt[] = services.map((s) => ({ value: s.id, label: s.name }));
+const STATUS_OPTIONS: Opt[] = STATUSES.map((s) => ({ value: s, label: STAGE_META[s].label }));
+const RETIRED_OPTIONS: Opt[] = [{ value: "active", label: "Active" }, { value: "retired", label: "Retired" }];
+const SOURCE_OPTIONS: Opt[] = [{ value: "internal", label: "Internal" }, { value: "third", label: "Third party" }];
+
+// ===========================================================================
+// New account — mock AI research populates the brief from a name + website.
+// ===========================================================================
+
+function hashStr(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+const RESEARCH_PROFILES = [
+  { industry: "Field logistics", region: "DACH", hq: "Hamburg, Germany", vat: "DE", lifecycle: "Prospect · New", sites: 5 },
+  { industry: "Public safety", region: "UK & IE", hq: "Leeds, United Kingdom", vat: "GB", lifecycle: "Prospect · New", sites: 8 },
+  { industry: "Energy & utilities", region: "Nordics", hq: "Oslo, Norway", vat: "NO", lifecycle: "Prospect · Early", sites: 4 },
+  { industry: "Facilities management", region: "Benelux", hq: "Rotterdam, Netherlands", vat: "NL", lifecycle: "Prospect · New", sites: 6 },
+  { industry: "Transport & haulage", region: "Nordics", hq: "Gothenburg, Sweden", vat: "SE", lifecycle: "Prospect · Early", sites: 3 },
+];
+
+function toDomain(website: string, name: string): string {
+  const cleaned = website.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
+  return cleaned || `${name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "")}.example`;
+}
+
+function mockResearch(name: string, website: string): Omit<Account, "id" | "ownerId"> {
+  const p = RESEARCH_PROFILES[hashStr(name.trim() || website) % RESEARCH_PROFILES.length]!;
+  const domain = toDomain(website, name);
+  return {
+    name: name.trim(),
+    domain,
+    industry: p.industry,
+    region: p.region,
+    address: p.hq,
+    vatId: `${p.vat} ${String(100 + (hashStr(domain) % 900))} ${String(1000 + (hashStr(name) % 9000))}`,
+    lifecycle: p.lifecycle,
+    sites: p.sites,
+    since: "Jun 2026",
+    summary: `${name.trim()} is a ${p.region}-based ${p.industry.toLowerCase()} operator with a distributed field workforce — a credible fit for HMD Secure's managed device and service model.`,
+  };
+}
+
+function NewAccountModal({ ctx, onClose }: { ctx: AppCtx; onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [website, setWebsite] = useState("");
+  const [phase, setPhase] = useState<"form" | "searching" | "ready">("form");
+  const [step, setStep] = useState(0);
+  const [draft, setDraft] = useState<Omit<Account, "id" | "ownerId"> | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { nameRef.current?.focus(); }, []);
+
+  const steps = [`Searching the web for "${name.trim() || "the company"}"`, `Reading ${toDomain(website, name || "company")}`, "Scanning news, hiring & filings", "Drafting the account brief"];
+
+  useEffect(() => {
+    if (phase !== "searching") return;
+    const timers = steps.map((_, i) => window.setTimeout(() => setStep(i), i * 480));
+    timers.push(window.setTimeout(() => { setDraft(mockResearch(name, website)); setPhase("ready"); }, steps.length * 480 + 360));
+    return () => timers.forEach((t) => window.clearTimeout(t));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  const runSearch = () => { if (!name.trim()) return; setStep(0); setPhase("searching"); };
+
+  const patchDraft = (field: keyof Omit<Account, "id" | "ownerId">, value: string | number) =>
+    setDraft((d) => (d ? { ...d, [field]: value } : d));
+
+  const create = () => {
+    if (!draft) return;
+    const ownerId = ctx.user.role === "sales_rep" ? ctx.user.id : (REP_OPTIONS[0]?.value ?? ctx.user.id);
+    const id = `acc_${Date.now().toString(36)}`;
+    ctx.addAccount({ id, ownerId, ...draft });
+    onClose();
+    ctx.openAccount(id);
+    ctx.notify(`${draft.name} created.`);
+  };
+
+  return (
+    <div className="modal-scrim" role="dialog" aria-modal="true" aria-label="New account" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h2>New account</h2>
+          <button className="icon-btn" aria-label="Close" onClick={onClose} type="button"><Icon name="close" /></button>
+        </div>
+
+        {phase === "form" && (
+          <form className="modal-body" onSubmit={(e) => { e.preventDefault(); runSearch(); }}>
+            <p className="modal-intro">Enter a company name and website. The research agent scans public sources and drafts the account brief for you to review.</p>
+            <label className="field">
+              <span className="field-label">Company name</span>
+              <input ref={nameRef} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Borealis Freight" required />
+            </label>
+            <label className="field">
+              <span className="field-label">Website <span className="field-opt">optional</span></span>
+              <span className="field-prefix"><Icon name="globe" /><input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="borealisfreight.com" inputMode="url" /></span>
+            </label>
+            <div className="modal-foot">
+              <button className="btn btn--ghost" type="button" onClick={onClose}>Cancel</button>
+              <button className="btn btn--primary" type="submit" disabled={!name.trim()}><Icon name="spark" />Research with AI</button>
+            </div>
+          </form>
+        )}
+
+        {phase === "searching" && (
+          <div className="modal-body modal-research" role="status" aria-live="polite">
+            <div className="research-pulse" aria-hidden="true"><Icon name="spark" /></div>
+            <h3>Researching {name.trim()}…</h3>
+            <ol className="research-steps">
+              {steps.map((label, i) => (
+                <li key={label} className={cx("research-step", i < step && "is-done", i === step && "is-active")}>
+                  <span className="research-mark" aria-hidden="true">{i < step ? <Icon name="check" /> : <span className="research-dot" />}</span>{label}
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+
+        {phase === "ready" && draft && (
+          <div className="modal-body">
+            <div className="ai-badge"><Icon name="spark" />AI brief · review and edit before creating</div>
+            <div className="modal-grid">
+              <label className="field"><span className="field-label">Company name</span><input value={draft.name} onChange={(e) => patchDraft("name", e.target.value)} /></label>
+              <label className="field"><span className="field-label">Domain</span><input value={draft.domain} onChange={(e) => patchDraft("domain", e.target.value)} /></label>
+              <label className="field"><span className="field-label">Industry</span><input value={draft.industry} onChange={(e) => patchDraft("industry", e.target.value)} /></label>
+              <label className="field"><span className="field-label">Region</span><input value={draft.region} onChange={(e) => patchDraft("region", e.target.value)} /></label>
+              <label className="field"><span className="field-label">Address</span><input value={draft.address} onChange={(e) => patchDraft("address", e.target.value)} /></label>
+              <label className="field"><span className="field-label">VAT ID</span><input value={draft.vatId} onChange={(e) => patchDraft("vatId", e.target.value)} /></label>
+            </div>
+            <label className="field"><span className="field-label">Summary</span><textarea rows={3} value={draft.summary} onChange={(e) => patchDraft("summary", e.target.value)} /></label>
+            <p className="modal-note">AI-generated from public sources. Nothing is saved until you create the account.</p>
+            <div className="modal-foot">
+              <button className="btn btn--ghost" type="button" onClick={() => setPhase("form")}>Back</button>
+              <button className="btn btn--secondary" type="button" onClick={runSearch}>Re-run</button>
+              <button className="btn btn--primary" type="button" onClick={create}><Icon name="plus" />Create account</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ===========================================================================
@@ -623,13 +854,16 @@ function ApprovalCard({ offer, role, ctx }: { offer: Offer; role: "sales_manager
 
 function AccountsView({ ctx }: { ctx: AppCtx }) {
   const [q, setQ] = useState("");
+  const [modal, setModal] = useState(false);
   const query = q.trim().toLowerCase();
-  const rows = accounts.filter((a) => !query || [a.name, a.region, a.industry, userName(a.ownerId)].some((v) => v.toLowerCase().includes(query)));
+  const rows = accounts
+    .map((a) => ctx.eff("account", a))
+    .filter((a) => !query || [a.name, a.region, a.industry, userName(a.ownerId)].some((v) => v.toLowerCase().includes(query)));
 
   return (
     <>
       <PageHead title="Accounts" crumb="Customers" actions={
-        <button className="btn btn--primary" onClick={() => ctx.notify("New account workflow — AI research drafts the brief before you save.")} type="button"><Icon name="plus" />New account</button>
+        <button className="btn btn--primary" onClick={() => setModal(true)} type="button"><Icon name="plus" />New account</button>
       } />
       <div className="toolbar">
         <label className="search">
@@ -639,7 +873,10 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
       </div>
       <div className="table-wrap card-edge">
         <table>
-          <thead><tr><th>Account</th><th>Industry</th><th>Owner</th><th className="numeric">Open pipeline</th><th>Open cases</th><th>Signal</th></tr></thead>
+          <thead><tr>
+            <th><span className="col-add-wrap">Account<button className="col-add" aria-label="New account" type="button" onClick={() => setModal(true)}><Icon name="plus" /></button></span></th>
+            <th>Industry</th><th>Owner</th><th className="numeric">Open pipeline</th><th>Open cases</th><th>Signal</th><th aria-label="Open" />
+          </tr></thead>
           <tbody>
             {rows.map((a) => {
               const ad = dealsForAccount(a.id).map((d) => liveStage(ctx, d)).filter(isOpen);
@@ -647,21 +884,26 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
               const openCases = casesForAccount(a.id).filter((c) => c.status !== "resolved" && c.status !== "closed").length;
               const worst = ad.find((d) => isOverdue(d)) ?? ad.find((d) => isStale(d));
               return (
-                <tr key={a.id} onClick={() => ctx.openAccount(a.id)}>
+                <tr key={a.id}>
                   <th scope="row">
-                    <span className="account-cell"><span className="account-logo" aria-hidden="true">{monogram(a.name)}</span><span><strong>{a.name}</strong><small>{a.region} · {a.lifecycle}</small></span></span>
+                    <span className="account-cell">
+                      <span className="account-logo" aria-hidden="true">{monogram(a.name)}</span>
+                      <CellText value={a.name} onCommit={(v) => ctx.patch("account", a.id, "name", v)} />
+                    </span>
                   </th>
-                  <td>{a.industry}</td>
-                  <td>{userName(a.ownerId)}</td>
+                  <td><CellText value={a.industry} onCommit={(v) => ctx.patch("account", a.id, "industry", v)} /></td>
+                  <td><CellSelect value={a.ownerId} options={REP_OPTIONS} onCommit={(v) => ctx.patch("account", a.id, "ownerId", v)} /></td>
                   <td className="numeric numeric--strong">{fmtEur(pipeline)}</td>
                   <td>{openCases > 0 ? <span className="t-warn">{openCases}</span> : "—"}</td>
                   <td>{worst ? <RiskTag deal={worst} /> : <span className="risk risk--on_track"><span className="risk-dot" />Healthy</span>}</td>
+                  <td><OpenButton label={`Open ${a.name}`} onClick={() => ctx.openAccount(a.id)} /></td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+      {modal && <NewAccountModal ctx={ctx} onClose={() => setModal(false)} />}
     </>
   );
 }
@@ -670,7 +912,8 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
 // Account record
 // ===========================================================================
 
-function AccountRecord({ account, ctx }: { account: Account; ctx: AppCtx }) {
+function AccountRecord({ account: accountInput, ctx }: { account: Account; ctx: AppCtx }) {
+  const account = ctx.eff("account", accountInput);
   const owner = userById(account.ownerId);
   const accDeals = dealsForAccount(account.id).map((d) => liveStage(ctx, d));
   const openDeals = accDeals.filter(isOpen);
@@ -745,18 +988,21 @@ function AccountRecord({ account, ctx }: { account: Account; ctx: AppCtx }) {
             <SectionHead title="Deals" count={accDeals.length} />
             <div className="table-wrap card-edge">
               <table className="compact">
-                <thead><tr><th>Deal</th><th>Stage</th><th>Channel</th><th className="numeric">Device</th><th className="numeric">Service</th><th className="numeric">Total</th></tr></thead>
+                <thead><tr><th>Deal</th><th>Status</th><th>Channel</th><th className="numeric">Device</th><th className="numeric">Service</th><th className="numeric">Total</th></tr></thead>
                 <tbody>
-                  {accDeals.map((d) => (
+                  {accDeals.map((base) => {
+                    const d = ctx.eff("deal", base);
+                    return (
                     <tr key={d.id}>
-                      <th scope="row">{d.title}{d.parentDealId && <small className="muted"><Icon name="link" />follow-on</small>}{d.isPilot && <span className="mini-tag">Pilot</span>}</th>
-                      <td><StatusTag stage={d.stage} /></td>
+                      <th scope="row"><CellText value={d.title} onCommit={(v) => ctx.patch("deal", d.id, "title", v)} />{d.parentDealId && <small className="muted"><Icon name="link" />follow-on</small>}{d.isPilot && <span className="mini-tag">Pilot</span>}</th>
+                      <td className="cell-edit">{d.stage === "closed" ? <StatusTag stage={d.stage} /> : <InlineStage deal={d} ctx={ctx} />}</td>
                       <td><span className="chan">{d.channel === "direct" ? "Direct" : "Reseller"}</span></td>
                       <td className="numeric">{fmtEur(deviceTotal(d))}</td>
                       <td className="numeric">{fmtEur(serviceTotal(d.id))}</td>
                       <td className="numeric numeric--strong">{fmtEur(dealTotal(d))}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -926,23 +1172,25 @@ function DealTable({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
   return (
     <div className="table-wrap card-edge">
       <table>
-        <thead><tr><th>Deal</th><th>Status</th><th>Owner</th><th>Close</th><th className="numeric">Next qtr</th><th className="numeric">3-yr total</th><th className="numeric">GM</th><th>Signal</th></tr></thead>
+        <thead><tr><th>Deal</th><th>Status</th><th>Owner</th><th>Close</th><th className="numeric">Next qtr</th><th className="numeric">3-yr total</th><th className="numeric">GM</th><th>Signal</th><th aria-label="Open" /></tr></thead>
         <tbody>
-          {deals.map((d) => {
+          {deals.map((base) => {
+            const d = ctx.eff("deal", base);
             const acc = accountById(d.accountId)!;
             return (
-              <tr key={d.id} onClick={() => ctx.openAccount(d.accountId)}>
+              <tr key={d.id}>
                 <th scope="row">
                   <span className="account-cell"><span className="account-logo sm" aria-hidden="true">{monogram(acc.name)}</span>
-                    <span><strong>{d.title}</strong><small>{acc.name} · {d.channel === "direct" ? "Direct" : "Reseller"}{d.isPilot ? " · Pilot" : ""}</small></span></span>
+                    <span><CellText value={d.title} onCommit={(v) => ctx.patch("deal", d.id, "title", v)} /><small>{acc.name} · {d.channel === "direct" ? "Direct" : "Reseller"}{d.isPilot ? " · Pilot" : ""}</small></span></span>
                 </th>
                 <td className="cell-edit"><InlineStage deal={d} ctx={ctx} /></td>
-                <td>{userName(d.ownerId)}</td>
-                <td className={isOverdue(d) ? "t-danger" : ""}>{new Date(d.expectedClose).toLocaleDateString("en-IE", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                <td><CellSelect value={d.ownerId} options={REP_OPTIONS} onCommit={(v) => ctx.patch("deal", d.id, "ownerId", v)} /></td>
+                <td className={isOverdue(d) ? "t-danger" : ""}><CellDate value={d.expectedClose} onCommit={(v) => ctx.patch("deal", d.id, "expectedClose", v)} /></td>
                 <td className="numeric">{fmtEur(nextQuarterValue(d))}</td>
                 <td className="numeric numeric--strong">{fmtEur(dealTotal(d))}</td>
                 <td className="numeric">{fmtEur(dealMeasureTotal(d, "gm"))}</td>
                 <td><RiskTag deal={d} /></td>
+                <td><OpenButton label={`Open ${acc.name}`} onClick={() => ctx.openAccount(d.accountId)} /></td>
               </tr>
             );
           })}
@@ -1020,20 +1268,21 @@ function CaseTable({ cases, ctx, compact }: { cases: CaseRecord[]; ctx: AppCtx; 
   return (
     <div className="table-wrap card-edge">
       <table className={compact ? "compact" : ""}>
-        <thead><tr><th>Case</th><th>Priority</th><th>Status</th>{!compact && <th>Service</th>}<th>Owner</th><th>Age</th><th>SLA</th></tr></thead>
+        <thead><tr><th>Case</th><th>Priority</th><th>Status</th>{!compact && <th>Service</th>}<th>Owner</th><th>Age</th><th>SLA</th><th aria-label="Open" /></tr></thead>
         <tbody>
-          {cases.map((c) => {
+          {cases.map((base) => {
+            const c = ctx.eff("case", base);
             const sla = slaState(c);
-            const svc = serviceById(c.serviceId);
             return (
-              <tr key={c.id} onClick={() => ctx.openCase(c.id)}>
-                <th scope="row"><strong>{c.title}</strong><small className="muted">{c.ref} · {accountById(c.accountId)!.name}{c.escalated ? " · escalated" : ""}</small></th>
-                <td><PriorityTag priority={c.priority} /></td>
-                <td><StatusPill status={c.status} /></td>
-                {!compact && <td>{svc ? <span>{svc.name}{svc.isThirdParty && <span className="mini-tag">3rd party</span>}</span> : "—"}</td>}
-                <td>{userName(c.ownerId)}</td>
+              <tr key={c.id}>
+                <th scope="row"><CellText value={c.title} onCommit={(v) => ctx.patch("case", c.id, "title", v)} /><small className="muted">{c.ref} · {accountById(c.accountId)!.name}{c.escalated ? " · escalated" : ""}</small></th>
+                <td><CellSelect value={c.priority} options={PRIORITY_OPTIONS} onCommit={(v) => ctx.patch("case", c.id, "priority", v)} /></td>
+                <td><CellSelect value={c.status} options={CASE_STATUS_OPTIONS} onCommit={(v) => ctx.patch("case", c.id, "status", v)} /></td>
+                {!compact && <td><CellSelect value={c.serviceId ?? ""} options={SERVICE_OPTIONS} onCommit={(v) => ctx.patch("case", c.id, "serviceId", v)} /></td>}
+                <td><CellSelect value={c.ownerId} options={TAM_OPTIONS} onCommit={(v) => ctx.patch("case", c.id, "ownerId", v)} /></td>
                 <td>{caseAgeDays(c)}d</td>
                 <td><span className={cx("sla", `sla--${sla.state}`)}>{sla.state === "breached" && <Icon name="alert" />}{sla.label}</span></td>
+                <td><OpenButton label={`Open ${c.ref}`} onClick={() => ctx.openCase(c.id)} /></td>
               </tr>
             );
           })}
@@ -1073,7 +1322,8 @@ function CasesView({ ctx }: { ctx: AppCtx }) {
   );
 }
 
-function CaseDetail({ caseRec, ctx }: { caseRec: CaseRecord; ctx: AppCtx }) {
+function CaseDetail({ caseRec: caseInput, ctx }: { caseRec: CaseRecord; ctx: AppCtx }) {
+  const caseRec = ctx.eff("case", caseInput);
   const account = accountById(caseRec.accountId)!;
   const svc = serviceById(caseRec.serviceId);
   const contact = contactById(caseRec.contactId);
@@ -1400,34 +1650,44 @@ function CatalogView({ ctx }: { ctx: AppCtx }) {
       {tab === "products" ? (
         <div className="table-wrap card-edge">
           <table>
-            <thead><tr><th>Product</th><th>Category</th><th className="numeric">List price</th><th>Status</th>{canEdit && <th />}</tr></thead>
+            <thead><tr><th>Product</th><th>Category</th><th className="numeric">List price</th><th>Status</th></tr></thead>
             <tbody>
-              {products.map((p) => (
-                <tr key={p.id} className={p.retired ? "is-retired" : ""}>
-                  <th scope="row">{p.name}</th>
-                  <td>{p.category}</td>
-                  <td className="numeric numeric--strong">{fmtEurExact(p.listPrice)}</td>
-                  <td>{p.retired ? <span className="pill pill--closed">Retired</span> : <span className="pill pill--resolved">Active</span>}</td>
-                  {canEdit && <td><button className="ghost-link" onClick={() => ctx.notify(`Editing ${p.name}.`)} type="button">Edit</button></td>}
-                </tr>
-              ))}
+              {products.map((base) => {
+                const p = ctx.eff("product", base);
+                return (
+                  <tr key={p.id} className={p.retired ? "is-retired" : ""}>
+                    <th scope="row">{canEdit ? <CellText value={p.name} onCommit={(v) => ctx.patch("product", p.id, "name", v)} /> : p.name}</th>
+                    <td>{canEdit ? <CellText value={p.category} onCommit={(v) => ctx.patch("product", p.id, "category", v)} /> : p.category}</td>
+                    <td className="numeric numeric--strong">{canEdit ? <CellNumber value={p.listPrice} prefix="€" onCommit={(v) => ctx.patch("product", p.id, "listPrice", v)} /> : fmtEurExact(p.listPrice)}</td>
+                    <td>{canEdit
+                      ? <CellSelect value={p.retired ? "retired" : "active"} options={RETIRED_OPTIONS} onCommit={(v) => ctx.patch("product", p.id, "retired", v === "retired")} />
+                      : p.retired ? <span className="pill pill--closed">Retired</span> : <span className="pill pill--resolved">Active</span>}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       ) : (
         <div className="table-wrap card-edge">
           <table>
-            <thead><tr><th>Service</th><th>Type</th><th>Source</th><th>Status</th>{canEdit && <th />}</tr></thead>
+            <thead><tr><th>Service</th><th>Type</th><th>Source</th><th>Status</th></tr></thead>
             <tbody>
-              {services.map((s) => (
-                <tr key={s.id} className={s.retired ? "is-retired" : ""}>
-                  <th scope="row">{s.name}</th>
-                  <td>{s.serviceType}</td>
-                  <td>{s.isThirdParty ? <span className="mini-tag">Third party</span> : <span className="mini-tag mini-tag--accent">Internal</span>}</td>
-                  <td>{s.retired ? <span className="pill pill--closed">Retired</span> : <span className="pill pill--resolved">Active</span>}</td>
-                  {canEdit && <td><button className="ghost-link" onClick={() => ctx.notify(`Editing ${s.name}.`)} type="button">Edit</button></td>}
-                </tr>
-              ))}
+              {services.map((base) => {
+                const s = ctx.eff("service", base);
+                return (
+                  <tr key={s.id} className={s.retired ? "is-retired" : ""}>
+                    <th scope="row">{canEdit ? <CellText value={s.name} onCommit={(v) => ctx.patch("service", s.id, "name", v)} /> : s.name}</th>
+                    <td>{canEdit ? <CellText value={s.serviceType} onCommit={(v) => ctx.patch("service", s.id, "serviceType", v)} /> : s.serviceType}</td>
+                    <td>{canEdit
+                      ? <CellSelect value={s.isThirdParty ? "third" : "internal"} options={SOURCE_OPTIONS} onCommit={(v) => ctx.patch("service", s.id, "isThirdParty", v === "third")} />
+                      : s.isThirdParty ? <span className="mini-tag">Third party</span> : <span className="mini-tag mini-tag--accent">Internal</span>}</td>
+                    <td>{canEdit
+                      ? <CellSelect value={s.retired ? "retired" : "active"} options={RETIRED_OPTIONS} onCommit={(v) => ctx.patch("service", s.id, "retired", v === "retired")} />
+                      : s.retired ? <span className="pill pill--closed">Retired</span> : <span className="pill pill--resolved">Active</span>}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1494,6 +1754,16 @@ function MainApp() {
   const [insightStatus, setInsightStatus] = useState<Record<string, AiInsight["status"]>>({});
   const [caseNotes, setCaseNotes] = useState<Record<string, CaseNote[]>>({});
   const [readNotifs, setReadNotifs] = useState<Set<string>>(new Set(seedNotifications.filter((n) => n.read).map((n) => n.id)));
+  const [edits, setEdits] = useState<Record<string, Record<string, unknown>>>({});
+  const [, bumpAccounts] = useReducer((c) => c + 1, 0);
+
+  const patch = (kind: EditKind, id: string, field: string, value: unknown) =>
+    setEdits((m) => ({ ...m, [`${kind}:${id}`]: { ...(m[`${kind}:${id}`] ?? {}), [field]: value } }));
+  function eff<T extends { id: string }>(kind: EditKind, base: T): T {
+    const e = edits[`${kind}:${base.id}`];
+    return e ? ({ ...base, ...e } as T) : base;
+  }
+  const addAccount = (account: Account) => { accounts.push(account); bumpAccounts(); };
 
   const notify = (msg: string) => {
     const id = ++toastSeq.current;
@@ -1541,6 +1811,7 @@ function MainApp() {
     offerState, decideOffer,
     insightStatus, setInsight: (id, s) => setInsightStatus((m) => ({ ...m, [id]: s })),
     caseNotes, addNote: (cid, n) => setCaseNotes((m) => ({ ...m, [cid]: [n, ...(m[cid] ?? [])] })),
+    patch, eff, addAccount,
   };
 
   const myNotifs = seedNotifications.filter((n) => n.userId === userId);
