@@ -1,0 +1,18 @@
+[Unit]
+Description=Hermes CRM HTTP gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hermes
+Group=hermes
+WorkingDirectory=/home/hermes/crm-gateway
+Environment=HOME=/home/hermes
+EnvironmentFile=/home/hermes/crm-gateway/.env
+ExecStart=/home/hermes/.bun/bin/bun run /home/hermes/crm-gateway/server.ts
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

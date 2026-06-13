@@ -7,9 +7,18 @@ LOCATION="${AZURE_LOCATION:-swedencentral}"
 ENVIRONMENT="${AZURE_ENVIRONMENT:-hmd-secure-crm-env}"
 REGISTRY="${AZURE_REGISTRY:-cab114eef619acr}"
 APP="${AZURE_APP:-hmd-secure-crm}"
+OPENCLAW_URL="${OPENCLAW_URL:-}"
+OPENCLAW_KEY="${OPENCLAW_KEY:-}"
+ASSISTANT_MODEL="${ASSISTANT_MODEL:-hermes-crm}"
+DATABASE_URL="${DATABASE_URL:-}"
 TAG="${AZURE_IMAGE_TAG:-$(git rev-parse --short HEAD)-$(date -u +%Y%m%d%H%M%S)}"
 REGISTRY_SERVER="${REGISTRY}.azurecr.io"
 IMAGE="${REGISTRY_SERVER}/${APP}:${TAG}"
+
+if [[ -z "${OPENCLAW_URL}" || -z "${OPENCLAW_KEY}" || -z "${DATABASE_URL}" ]]; then
+  echo "DATABASE_URL, OPENCLAW_URL, and OPENCLAW_KEY must be set for deployment." >&2
+  exit 1
+fi
 
 for command in az docker curl git; do
   if ! command -v "${command}" >/dev/null 2>&1; then
@@ -81,11 +90,16 @@ if az containerapp show \
     --username "${REGISTRY_USERNAME}" \
     --password "${REGISTRY_PASSWORD}" \
     --output none
+  az containerapp secret set \
+    --name "${APP}" \
+    --resource-group "${RESOURCE_GROUP}" \
+    --secrets openclaw-key="${OPENCLAW_KEY}" database-url="${DATABASE_URL}" \
+    --output none
   az containerapp update \
     --name "${APP}" \
     --resource-group "${RESOURCE_GROUP}" \
     --image "${IMAGE}" \
-    --set-env-vars HOST=0.0.0.0 PORT=3000 NODE_ENV=production SESSION_SECRET=hackathon-prod-secret-change-me \
+    --set-env-vars HOST=0.0.0.0 PORT=3000 NODE_ENV=production SESSION_SECRET=hackathon-prod-secret-change-me DATABASE_URL=secretref:database-url OPENCLAW_URL="${OPENCLAW_URL}" OPENCLAW_KEY=secretref:openclaw-key ASSISTANT_MODEL="${ASSISTANT_MODEL}" \
     --min-replicas 0 \
     --max-replicas 1 \
     --output none
@@ -101,7 +115,8 @@ else
     --registry-password "${REGISTRY_PASSWORD}" \
     --ingress external \
     --target-port 3000 \
-    --env-vars HOST=0.0.0.0 PORT=3000 NODE_ENV=production SESSION_SECRET=hackathon-prod-secret-change-me \
+    --secrets openclaw-key="${OPENCLAW_KEY}" database-url="${DATABASE_URL}" \
+    --env-vars HOST=0.0.0.0 PORT=3000 NODE_ENV=production SESSION_SECRET=hackathon-prod-secret-change-me DATABASE_URL=secretref:database-url OPENCLAW_URL="${OPENCLAW_URL}" OPENCLAW_KEY=secretref:openclaw-key ASSISTANT_MODEL="${ASSISTANT_MODEL}" \
     --min-replicas 0 \
     --max-replicas 1 \
     --output none

@@ -18,6 +18,7 @@ import usersRoutes from './routes/users.js';
 import insightsRoutes from './routes/insights.js';
 import webhooksRoutes from './routes/webhooks.js';
 import syncRoutes from './routes/sync.js';
+import assistantRoutes from './routes/assistant.js';
 
 export const app = new Hono<{ Variables: AuthVariables }>().basePath('/api');
 
@@ -48,3 +49,4 @@ app.route('/notifications', notificationRoutes);
 app.route('/users', usersRoutes);
 app.route('/insights', insightsRoutes);
 app.route('/sync', syncRoutes);
+app.route('/assistant', assistantRoutes);

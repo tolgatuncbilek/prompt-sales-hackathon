@@ -2068,18 +2068,119 @@ const NAV: { screen: Screen; label: string; icon: string }[] = [
 
 function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [draft, setDraft] = useState("");
-  const [question, setQuestion] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState<string>(() => `thread_${crypto.randomUUID()}`);
+  const [messages, setMessages] = useState<Array<
+    | { id: string; role: "user"; content: string }
+    | { id: string; role: "assistant"; content: string; evidence: Array<{ type: string; id?: string; label: string; url?: string }>; actions: Array<{ id: string; label: string; kind: string; target?: string; value?: string; preview?: string }>; uncertainty?: string }
+    | { id: string; role: "status"; content: string }
+    | { id: string; role: "error"; content: string }
+  >>([]);
+  const [answer, setAnswer] = useState<{
+    answer: string;
+    evidence: Array<{ type: string; id?: string; label: string; url?: string }>;
+    actions: Array<{ id: string; label: string; kind: string; target?: string; value?: string; preview?: string }>;
+    uncertainty?: string;
+  } | null>(null);
+  const [approvedActions, setApprovedActions] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) window.setTimeout(() => inputRef.current?.focus(), 0);
   }, [open]);
 
-  const ask = (value: string) => {
-    const next = value.trim();
-    if (!next) return;
-    setQuestion(next);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("crm-assistant-threads");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, Array<typeof messages[number]>>;
+      const latestThreadId = Object.keys(parsed).at(-1);
+      if (!latestThreadId) return;
+      setThreadId(latestThreadId);
+      setMessages(parsed[latestThreadId] ?? []);
+    } catch {
+      // ignore persistence failures
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("crm-assistant-threads");
+      const store = raw ? JSON.parse(raw) as Record<string, unknown> : {};
+      store[threadId] = messages;
+      window.localStorage.setItem("crm-assistant-threads", JSON.stringify(store));
+    } catch {
+      // ignore persistence failures
+    }
+  }, [messages, threadId]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, answer, loading]);
+
+  const newThread = () => {
+    setThreadId(`thread_${crypto.randomUUID()}`);
+    setMessages([]);
     setDraft("");
+    setAnswer(null);
+    setError(null);
+    setApprovedActions(new Set());
+    setLoading(false);
+  };
+
+  const ask = async (value: string) => {
+    const next = value.trim();
+    if (!next || loading) return;
+    const nextMessages = [
+      ...messages,
+      { id: `msg_${crypto.randomUUID()}`, role: "user" as const, content: next },
+    ];
+    setDraft("");
+    setAnswer(null);
+    setError(null);
+    setApprovedActions(new Set());
+    setLoading(true);
+    setMessages((current) => [
+      ...current,
+      { id: `msg_${crypto.randomUUID()}`, role: "user", content: next },
+      { id: `msg_${crypto.randomUUID()}`, role: "status", content: "Reviewing CRM context…" },
+    ]);
+
+    try {
+      const response = await fetch("/api/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: next, messages: nextMessages.map((entry) => ({ role: entry.role, content: entry.content })) }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "The assistant could not answer.");
+      setMessages((current) => {
+        const withoutStatus = current.filter((entry) => entry.role !== "status");
+        return [
+          ...withoutStatus,
+          {
+            id: `msg_${crypto.randomUUID()}`,
+            role: "assistant",
+            content: payload.answer,
+            evidence: payload.evidence ?? [],
+            actions: payload.actions ?? [],
+            uncertainty: payload.uncertainty,
+          },
+        ];
+      });
+      setAnswer(payload);
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "The assistant could not answer.";
+      setError(message);
+      setMessages((current) => [
+        ...current.filter((entry) => entry.role !== "status"),
+        { id: `msg_${crypto.randomUUID()}`, role: "error", content: message },
+      ]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!open) return null;
@@ -2094,28 +2195,59 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
       </header>
 
       <div className="crm-assistant-body">
-        {!question ? (
+        {messages.length === 0 ? (
           <div className="crm-assistant-empty" aria-hidden="true" />
         ) : (
-          <div className="crm-conversation" aria-live="polite">
-            <div className="crm-message crm-message--user">{question}</div>
-            <div className="crm-message crm-message--assistant">
-              <span className="ai-badge"><Icon name="spark" />Draft answer</span>
-              <p>Three items stand out: one committed deal has gone quiet, a high-priority case is still open, and one offer is waiting for approval.</p>
-              <div className="crm-evidence">
-                <strong>CRM evidence</strong>
-                <button type="button">Nordic Shield · Deal last updated 16 days ago</button>
-                <button type="button">Asteria Logistics · High-priority case open</button>
-                <button type="button">Offer HMD-2026-014 · Approval pending</button>
+          <div className="crm-conversation" ref={scrollRef} aria-live="polite">
+            {messages.map((entry) => entry.role === "user" ? (
+              <div className="crm-message crm-message--user" key={entry.id}>{entry.content}</div>
+            ) : entry.role === "assistant" ? (
+              <div className="crm-message crm-message--assistant" key={entry.id}>
+                <span className="ai-badge"><Icon name="spark" />Draft answer</span>
+                <p>{entry.content}</p>
+                {entry.evidence.length > 0 && (
+                  <div className="crm-evidence">
+                    <strong>Evidence</strong>
+                    {entry.evidence.map((item, index) => item.url ? (
+                      <a key={`${item.label}-${index}`} href={item.url} target="_blank" rel="noreferrer">{item.label}</a>
+                    ) : (
+                      <span key={`${item.label}-${index}`}>{item.label}</span>
+                    ))}
+                  </div>
+                )}
+                {entry.actions.length > 0 && (
+                  <div className="crm-actions">
+                    <strong>Proposed actions</strong>
+                    {entry.actions.map((action) => {
+                      const approved = approvedActions.has(action.id);
+                      return (
+                        <div className="crm-action" key={action.id}>
+                          <span>{action.preview || action.label}</span>
+                          <button
+                            type="button"
+                            disabled={approved}
+                            onClick={() => setApprovedActions((current) => new Set(current).add(action.id))}
+                          >
+                            {approved ? "Approved in UI" : "Approve"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {entry.uncertainty && <small>{entry.uncertainty}</small>}
               </div>
-              <small>This is a prototype response. Review the linked records before acting.</small>
-            </div>
-            <button className="ghost-link crm-new-question" type="button" onClick={() => setQuestion(null)}>Ask another question</button>
+            ) : entry.role === "status" ? (
+              <div className="crm-message crm-message--assistant crm-message--loading" key={entry.id} role="status">{entry.content}</div>
+            ) : (
+              <div className="crm-message crm-message--error" key={entry.id} role="alert">{entry.content}</div>
+            ))}
+            {!loading && <button className="ghost-link crm-new-question" type="button" onClick={newThread}>New chat</button>}
           </div>
         )}
       </div>
 
-      <form className="crm-composer" onSubmit={(event) => { event.preventDefault(); ask(draft); }}>
+      <form className="crm-composer" onSubmit={(event) => { event.preventDefault(); void ask(draft); }}>
         <label className="sr-only" htmlFor="crm-question">Ask CRM</label>
         <textarea
           id="crm-question"
@@ -2126,12 +2258,12 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
-              ask(draft);
+              void ask(draft);
             }
           }}
           placeholder="Ask about accounts, deals, cases, or forecasts"
         />
-        <button className="crm-send" type="submit" aria-label="Send question" disabled={!draft.trim()}>
+        <button className="crm-send" type="submit" aria-label="Send question" disabled={!draft.trim() || loading}>
           <Icon name="arrowRight" />
         </button>
       </form>
