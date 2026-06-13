@@ -2,16 +2,17 @@
 name: HMD Secure AI-Native CRM
 description: A high-density operational workspace for shared customer, pipeline, case, and forecast decisions.
 colors:
-  field-black: "#0A0A0B"
-  operational-anthracite: "#242426"
-  raised-anthracite: "#303033"
-  dirty-white: "#FAFAFA"
-  secondary-text: "#B6B6B8"
-  structural-rule: "#3A3A3D"
-  signal-lime: "#E4FF00"
+  field-black: "#070A10"
+  operational-navy: "#131C2B"
+  raised-navy: "#1D2839"
+  dirty-white: "#F2F6FB"
+  secondary-text: "#9AABC1"
+  structural-rule: "#24314A"
+  signal-tiffany: "#2FD4C6"
+  signal-tiffany-hover: "#16B8AA"
   warning-amber: "#FFC857"
-  danger-red: "#FF5A5F"
-  success-green: "#60D394"
+  danger-red: "#FF6168"
+  success-green: "#4ED99A"
 typography:
   headline:
     fontFamily: "Archivo, Arial Nova, Helvetica, sans-serif"
@@ -50,14 +51,14 @@ spacing:
   section: "48px"
 components:
   button-primary:
-    backgroundColor: "{colors.signal-lime}"
+    backgroundColor: "{colors.signal-tiffany}"
     textColor: "{colors.field-black}"
     typography: "{typography.label}"
     rounded: "{rounded.control}"
     padding: "12px 16px"
     height: "44px"
   button-secondary:
-    backgroundColor: "{colors.operational-anthracite}"
+    backgroundColor: "{colors.operational-navy}"
     textColor: "{colors.dirty-white}"
     typography: "{typography.label}"
     rounded: "{rounded.control}"
@@ -71,7 +72,7 @@ components:
     padding: "10px 12px"
     height: "44px"
   panel-default:
-    backgroundColor: "{colors.operational-anthracite}"
+    backgroundColor: "{colors.operational-navy}"
     textColor: "{colors.dirty-white}"
     rounded: "{rounded.surface}"
     padding: "24px"
@@ -84,8 +85,8 @@ components:
 **Creative North Star: "The Operational Fieldbook"**
 
 This system translates HMD Secure's public industrial identity into a working
-application: near-black fields, anthracite working surfaces, dirty-white type,
-and acid lime used as a scarce operational signal. It should feel prepared and
+application: near-black fields, deep-navy working surfaces, dirty-white type,
+and Tiffany blue used as a scarce operational signal. It should feel prepared and
 dependable, like equipment designed for repeated use, while retaining direct,
 human language.
 
@@ -111,34 +112,34 @@ and pixel-for-pixel imitation of either reference product.
 
 ## Colors
 
-The palette is mostly monochrome; signal lime and semantic colors appear only
-when they communicate action or state.
+The palette is mostly monochrome black-and-navy; the Tiffany-blue signal and
+semantic colors appear only when they communicate action or state.
 
 ### Primary
 
-- **Signal Lime** (`#E4FF00`): primary actions, current selection, focus
+- **Signal Tiffany** (`#2FD4C6`): primary actions, current selection, focus
   emphasis, and small high-value indicators. Keep below roughly 10% of a screen.
 
 ### Neutral
 
-- **Field Black** (`#0A0A0B`): application frame and deepest working field.
-- **Operational Anthracite** (`#242426`): navigation, panels, and grouped
+- **Field Black** (`#070A10`): application frame and deepest working field.
+- **Operational Navy** (`#131C2B`): navigation, panels, and grouped
   working regions.
-- **Raised Anthracite** (`#303033`): hover, selected-neutral, and nested
+- **Raised Navy** (`#1D2839`): hover, selected-neutral, and nested
   working layers.
-- **Dirty White** (`#FAFAFA`): primary text and paper-like document surfaces.
-- **Secondary Text** (`#B6B6B8`): supporting text that still meets contrast
+- **Dirty White** (`#F2F6FB`): primary text and paper-like document surfaces.
+- **Secondary Text** (`#9AABC1`): supporting text that still meets contrast
   requirements.
-- **Structural Rule** (`#3A3A3D`): 1px dividers and control borders.
+- **Structural Rule** (`#24314A`): 1px dividers and control borders.
 
 ### Tertiary
 
 - **Warning Amber** (`#FFC857`): approaching deadlines and at-risk records.
-- **Danger Red** (`#FF5A5F`): overdue, blocked, failed, or destructive states.
-- **Success Green** (`#60D394`): confirmed completion and approved states.
+- **Danger Red** (`#FF6168`): overdue, blocked, failed, or destructive states.
+- **Success Green** (`#4ED99A`): confirmed completion and approved states.
 
-**The Signal Budget Rule.** Lime identifies action or active state, amber and
-red identify genuine risk, and neutral records remain neutral.
+**The Signal Budget Rule.** Tiffany blue identifies action or active state, amber
+and red identify genuine risk, and neutral records remain neutral.
 
 ## Typography
 
@@ -186,38 +187,38 @@ applicable.
 ### Buttons
 
 - **Shape:** low-radius rectangle (`4px`), minimum `44px` height.
-- **Primary:** signal-lime fill, field-black text, `12px 16px` padding.
-- **Hover / Focus:** darken the lime slightly on hover; use a visible 2px focus
+- **Primary:** signal-tiffany fill, field-black text, `12px 16px` padding.
+- **Hover / Focus:** darken the tiffany blue slightly on hover; use a visible 2px focus
   outline with offset. Motion stays within 150-200ms.
-- **Secondary:** anthracite fill or a structural-rule border.
+- **Secondary:** navy fill or a structural-rule border.
 - **Ghost:** text and icon only, used for low-priority local actions.
 
 ### Chips
 
 - **Style:** compact pill only when containment clarifies a filter or status.
-- **State:** active filters may use signal lime; semantic statuses use text,
+- **State:** active filters may use signal tiffany; semantic statuses use text,
   icon, and color together.
 
 ### Cards / Containers
 
 - **Corner Style:** `8px` maximum for working panels.
-- **Background:** anthracite layers over field black.
+- **Background:** navy layers over field black.
 - **Shadow Strategy:** none at rest.
 - **Border:** optional 1px structural rule.
 - **Internal Padding:** `16px` compact, `24px` standard, `32px` spacious.
 
 ### Inputs / Fields
 
-- **Style:** field-black or anthracite fill, 1px rule, `4px` radius, and a
+- **Style:** field-black or navy fill, 1px rule, `4px` radius, and a
   persistent programmatic label.
-- **Focus:** signal-lime border or outline without changing layout.
+- **Focus:** signal-tiffany border or outline without changing layout.
 - **Error / Disabled:** text and icon accompany color; disabled values remain
   readable.
 
 ### Navigation
 
 Navigation uses the same dark field as the application frame. Active items are
-identified by weight, contrast, and a compact lime indicator or fill, never a
+identified by weight, contrast, and a compact tiffany indicator or fill, never a
 decorative side stripe. Narrow layouts collapse navigation structurally while
 preserving every critical destination.
 
@@ -254,7 +255,7 @@ Inspired by Clay's structured execution model and Attio's AI attributes:
 
 ### Do:
 
-- **Do** use `#E4FF00` sparingly for primary action, focus, and active state.
+- **Do** use `#2FD4C6` sparingly for primary action, focus, and active state.
 - **Do** keep account, deal, case, offer, and timeline context visibly
   connected.
 - **Do** use compact tables and split views when they improve scanning.
