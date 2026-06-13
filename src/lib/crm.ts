@@ -386,8 +386,35 @@ export const ROLE_LABEL: Record<Role, string> = {
   admin: "Administrator",
 };
 
-/** One demo persona per role — used by the sidebar user switcher. */
-export const DEMO_PERSONA_IDS = ["u_aino", "u_mikael", "u_sara", "u_admin"] as const;
+/** One demo persona per role — resolved from the current user list after sync. */
+export function demoPersonaIds(): string[] {
+  const pick = (role: Role) => users.find((u) => u.role === role)?.id;
+  const ids = [
+    pick("sales_rep"),
+    pick("sales_manager"),
+    pick("tam"),
+    pick("admin") ?? pick("finance"),
+  ].filter((id): id is string => Boolean(id));
+  return ids.length > 0 ? ids : users.slice(0, 4).map((u) => u.id);
+}
+
+export function defaultDemoUserId(): string {
+  return users.find((u) => u.role === "sales_rep")?.id ?? users[0]?.id ?? "";
+}
+
+export async function loginAsUser(userId: string): Promise<boolean> {
+  try {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 /** 3-year time-phased horizon, by quarter, starting next quarter from TODAY. */
 export const PERIODS: string[] = [
@@ -887,23 +914,30 @@ export {
 export type { Granularity, Series, RegionSeries } from "./crm-forecast.ts";
 
 
-export async function initCrmFromApi() {
+export async function initCrmFromApi(): Promise<{ ok: boolean; userId: string | null }> {
   console.log("Loading CRM data from API...");
   try {
-    const authRes = await fetch('/api/auth/users');
-    const apiUsers = await authRes.json();
-    if (apiUsers.length > 0) {
-      await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: apiUsers[0].id })
-      });
+    const authRes = await fetch("/api/auth/users", { credentials: "include" });
+    if (!authRes.ok) throw new Error("Failed to load users");
+    const apiUsers: { id: string; role: Role }[] = await authRes.json();
+
+    let sessionUserId: string | null = null;
+    const sessionRes = await fetch("/api/auth/session", { credentials: "include" });
+    if (sessionRes.ok) {
+      const session = await sessionRes.json();
+      sessionUserId = session.id ?? null;
     }
 
-    const res = await fetch('/api/sync');
+    const preferredId = apiUsers.find((u) => u.role === "sales_rep")?.id ?? apiUsers[0]?.id ?? null;
+    if (!sessionUserId && preferredId) {
+      const loggedIn = await loginAsUser(preferredId);
+      if (loggedIn) sessionUserId = preferredId;
+    }
+
+    const res = await fetch("/api/sync", { credentials: "include" });
     if (!res.ok) throw new Error("Sync failed");
     const data = await res.json();
-    
+
     users = data.users;
     accounts = data.accounts;
     contacts = data.contacts;
@@ -916,10 +950,17 @@ export async function initCrmFromApi() {
     aiInsights = data.aiInsights;
     activities = data.activities;
     notifications = data.notifications;
-    
-    return true;
+
+    const personas = demoPersonaIds();
+    const activeId = personas.includes(sessionUserId ?? "")
+      ? sessionUserId!
+      : (defaultDemoUserId() || personas[0] || null);
+    if (activeId) await loginAsUser(activeId);
+
+    return { ok: true, userId: activeId };
   } catch (e) {
     console.error("Failed to load from API", e);
-    return false;
+    const fallbackId = defaultDemoUserId() || null;
+    return { ok: false, userId: fallbackId };
   }
 }

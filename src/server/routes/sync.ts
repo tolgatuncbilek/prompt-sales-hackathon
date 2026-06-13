@@ -207,7 +207,7 @@ app.get('/', async (c) => {
     email: u.email,
     role: u.role,
     initials: monogram(u.name || ''),
-    title: u.role === 'sales_rep' ? 'Sales Representative' : u.role === 'tam' ? 'Technical Account Manager' : u.role === 'sales_manager' ? 'Sales Manager' : 'Finance'
+    title: u.role === 'sales_rep' ? 'Sales Representative' : u.role === 'tam' ? 'Technical Account Manager' : u.role === 'sales_manager' ? 'Sales Manager' : u.role === 'admin' ? 'Administrator' : 'Finance'
   }));
 
   const accounts = dbAccounts.map(a => ({
