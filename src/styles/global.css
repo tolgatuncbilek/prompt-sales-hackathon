@@ -797,6 +797,34 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 @media (max-width: 560px) { .modal-grid { grid-template-columns: 1fr; } }
 
 /* --------------------------------------------------------------------------
+   Record side-drawer (row click opens a collapsible split view)
+   -------------------------------------------------------------------------- */
+
+.row-click { cursor: pointer; }
+
+.drawer-scrim { position: fixed; inset: 0; z-index: 55; border: 0; background: rgba(3, 6, 11, 0.5); animation: fade-in var(--t-fast) both; }
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 56; width: min(860px, 95vw);
+  display: flex; flex-direction: column; background: var(--field); border-left: 1px solid var(--rule);
+  box-shadow: var(--shadow-drawer); animation: drawer-in var(--t-std) both;
+}
+@keyframes drawer-in { from { transform: translateX(28px); opacity: 0.5; } }
+.drawer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--rule); background: var(--field-2); flex: 0 0 auto; }
+.drawer-collapse { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px 8px 9px; border: 1px solid var(--rule); border-radius: var(--r-control); background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 600; cursor: pointer; transition: background var(--t-fast), color var(--t-fast); }
+.drawer-collapse:hover { background: var(--surface); color: var(--ink); }
+.drawer-collapse .icon { width: 16px; }
+.drawer-bar-actions { display: flex; gap: 8px; }
+.drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 22px 28px; }
+.drawer-body .record { padding-top: 6px; }
+.drawer-body .record-body, .drawer-body .case-body { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+.drawer-body .record-head { grid-template-columns: auto minmax(0, 1fr); }
+.drawer-body .record-actions { grid-column: 1 / -1; justify-content: flex-start; }
+.drawer-body .kpi-strip, .drawer-body .kpi-strip--tight { display: flex; overflow-x: auto; }
+.drawer-body .kpi { min-width: 150px; border-left: 1px solid var(--rule); }
+.drawer-body .kpi:first-child { border-left: 0; }
+@media (max-width: 640px) { .drawer { width: 100vw; } }
+
+/* --------------------------------------------------------------------------
    Responsive
    -------------------------------------------------------------------------- */
 

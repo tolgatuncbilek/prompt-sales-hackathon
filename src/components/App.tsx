@@ -119,6 +119,7 @@ const ICONS: Record<string, ReactNode> = {
   back: <path d="m14 6-6 6 6 6M8 12h12" />,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   close: <path d="m6 6 12 12M18 6 6 18" />,
+  expand: (<><path d="M14 4h6v6" /><path d="M10 20H4v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" /></>),
   mail: (<><path d="M3 6h18v12H3z" /><path d="m3 7 9 6 9-6" /></>),
   phone: <path d="M5 4h3l1.5 4-2 1.5a11 11 0 0 0 5 5l1.5-2 4 1.5V18a2 2 0 0 1-2 2A14 14 0 0 1 4 6a2 2 0 0 1 1-2z" />,
   clock: (<><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></>),
@@ -884,7 +885,7 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
               const openCases = casesForAccount(a.id).filter((c) => c.status !== "resolved" && c.status !== "closed").length;
               const worst = ad.find((d) => isOverdue(d)) ?? ad.find((d) => isStale(d));
               return (
-                <tr key={a.id}>
+                <tr key={a.id} className="row-click" onClick={() => ctx.openAccount(a.id)}>
                   <th scope="row">
                     <span className="account-cell">
                       <span className="account-logo" aria-hidden="true">{monogram(a.name)}</span>
@@ -912,7 +913,7 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
 // Account record
 // ===========================================================================
 
-function AccountRecord({ account: accountInput, ctx }: { account: Account; ctx: AppCtx }) {
+function AccountRecord({ account: accountInput, ctx, embedded }: { account: Account; ctx: AppCtx; embedded?: boolean }) {
   const account = ctx.eff("account", accountInput);
   const owner = userById(account.ownerId);
   const accDeals = dealsForAccount(account.id).map((d) => liveStage(ctx, d));
@@ -951,7 +952,7 @@ function AccountRecord({ account: accountInput, ctx }: { account: Account; ctx: 
 
   return (
     <section className="record">
-      <button className="back" onClick={() => ctx.go("accounts")} type="button"><Icon name="back" />Accounts</button>
+      {!embedded && <button className="back" onClick={() => ctx.go("accounts")} type="button"><Icon name="back" />Accounts</button>}
 
       <header className="record-head">
         <span className="account-logo lg" aria-hidden="true">{monogram(account.name)}</span>
@@ -1178,7 +1179,7 @@ function DealTable({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
             const d = ctx.eff("deal", base);
             const acc = accountById(d.accountId)!;
             return (
-              <tr key={d.id}>
+              <tr key={d.id} className="row-click" onClick={() => ctx.openAccount(d.accountId)}>
                 <th scope="row">
                   <span className="account-cell"><span className="account-logo sm" aria-hidden="true">{monogram(acc.name)}</span>
                     <span><CellText value={d.title} onCommit={(v) => ctx.patch("deal", d.id, "title", v)} /><small>{acc.name} · {d.channel === "direct" ? "Direct" : "Reseller"}{d.isPilot ? " · Pilot" : ""}</small></span></span>
@@ -1274,7 +1275,7 @@ function CaseTable({ cases, ctx, compact }: { cases: CaseRecord[]; ctx: AppCtx; 
             const c = ctx.eff("case", base);
             const sla = slaState(c);
             return (
-              <tr key={c.id}>
+              <tr key={c.id} className="row-click" onClick={() => ctx.openCase(c.id)}>
                 <th scope="row"><CellText value={c.title} onCommit={(v) => ctx.patch("case", c.id, "title", v)} /><small className="muted">{c.ref} · {accountById(c.accountId)!.name}{c.escalated ? " · escalated" : ""}</small></th>
                 <td><CellSelect value={c.priority} options={PRIORITY_OPTIONS} onCommit={(v) => ctx.patch("case", c.id, "priority", v)} /></td>
                 <td><CellSelect value={c.status} options={CASE_STATUS_OPTIONS} onCommit={(v) => ctx.patch("case", c.id, "status", v)} /></td>
@@ -1322,7 +1323,7 @@ function CasesView({ ctx }: { ctx: AppCtx }) {
   );
 }
 
-function CaseDetail({ caseRec: caseInput, ctx }: { caseRec: CaseRecord; ctx: AppCtx }) {
+function CaseDetail({ caseRec: caseInput, ctx, embedded }: { caseRec: CaseRecord; ctx: AppCtx; embedded?: boolean }) {
   const caseRec = ctx.eff("case", caseInput);
   const account = accountById(caseRec.accountId)!;
   const svc = serviceById(caseRec.serviceId);
@@ -1341,7 +1342,7 @@ function CaseDetail({ caseRec: caseInput, ctx }: { caseRec: CaseRecord; ctx: App
 
   return (
     <section className="record">
-      <button className="back" onClick={() => ctx.go("cases")} type="button"><Icon name="back" />Cases</button>
+      {!embedded && <button className="back" onClick={() => ctx.go("cases")} type="button"><Icon name="back" />Cases</button>}
       <header className="record-head record-head--case">
         <div className="record-head-main">
           <div className="record-title-row">
@@ -1741,6 +1742,14 @@ function MainApp() {
   const [accountId, setAccountId] = useState<string>(accounts[0]?.id || "");
   const [caseId, setCaseId] = useState<string>(seedCases[0]?.id || "");
   const [offerFocus, setOfferFocus] = useState<string | undefined>(undefined);
+  const [drawer, setDrawer] = useState<{ kind: "account" | "case"; id: string } | null>(null);
+
+  useEffect(() => {
+    if (!drawer) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setDrawer(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawer]);
 
   const user = userById(userId)!;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1800,12 +1809,18 @@ function MainApp() {
       : `${base.ref} rejected. The rep has been notified.`);
   };
 
+  const expandDrawer = () => {
+    if (!drawer) return;
+    setScreen(drawer.kind === "account" ? "account" : ("case" as Screen));
+    setDrawer(null);
+  };
+
   const ctx: AppCtx = {
     user,
-    go: (s) => { setScreen(s); setMenuOpen(false); },
-    openAccount: (id) => { setAccountId(id); setScreen("account"); setMenuOpen(false); },
-    openOffers: (id) => { setOfferFocus(id); setScreen("offers"); setMenuOpen(false); },
-    openCase: (id) => { setCaseId(id); setScreen("case" as Screen); setMenuOpen(false); },
+    go: (s) => { setScreen(s); setDrawer(null); setMenuOpen(false); },
+    openAccount: (id) => { setAccountId(id); setDrawer({ kind: "account", id }); setMenuOpen(false); },
+    openOffers: (id) => { setOfferFocus(id); setScreen("offers"); setDrawer(null); setMenuOpen(false); },
+    openCase: (id) => { setCaseId(id); setDrawer({ kind: "case", id }); setMenuOpen(false); },
     notify,
     dealStage, moveDeal,
     offerState, decideOffer,
@@ -1903,6 +1918,26 @@ function MainApp() {
       )}
 
       <main className="workspace">{content}</main>
+
+      {drawer && (
+        <>
+          <button className="drawer-scrim" aria-label="Close panel" type="button" onClick={() => setDrawer(null)} />
+          <aside className="drawer" role="dialog" aria-label={drawer.kind === "account" ? "Account record" : "Case detail"}>
+            <div className="drawer-bar">
+              <button className="drawer-collapse" type="button" onClick={() => setDrawer(null)}><Icon name="chevron" />Collapse</button>
+              <div className="drawer-bar-actions">
+                <button className="icon-btn" type="button" aria-label="Open full page" title="Open as full page" onClick={expandDrawer}><Icon name="expand" /></button>
+                <button className="icon-btn" type="button" aria-label="Close panel" onClick={() => setDrawer(null)}><Icon name="close" /></button>
+              </div>
+            </div>
+            <div className="drawer-body">
+              {drawer.kind === "account"
+                ? <AccountRecord account={accountById(drawer.id)!} ctx={ctx} embedded />
+                : <CaseDetail caseRec={seedCases.find((c) => c.id === drawer.id)!} ctx={ctx} embedded />}
+            </div>
+          </aside>
+        </>
+      )}
 
       {toast && <div className="toast" role="status">{toast.msg}</div>}
       {menuOpen && <button className="scrim" aria-label="Close menu" onClick={() => setMenuOpen(false)} type="button" />}
