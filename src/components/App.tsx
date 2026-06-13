@@ -3236,7 +3236,7 @@ export default function App() {
 
   useEffect(() => {
     void initCrmFromApi().then(({ userId }) => {
-      setInitialUserId(userId ?? defaultDemoUserId() || users[0]?.id || null);
+      setInitialUserId(userId ?? defaultDemoUserId() ?? users[0]?.id ?? null);
       setReady(true);
     });
   }, []);
