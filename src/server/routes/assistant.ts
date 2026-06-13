@@ -3,6 +3,7 @@ import { desc } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import {
   accounts,
+  contacts,
   activities,
   cases,
   deals,
@@ -117,8 +118,9 @@ app.post('/', async (c) => {
     return c.json({ error: 'OpenClaw assistant gateway is not configured' }, 503);
   }
 
-  const [accountRows, dealRows, caseRows, offerRows, activityRows] = await Promise.all([
+  const [accountRows, contactRows, dealRows, caseRows, offerRows, activityRows] = await Promise.all([
     db.select().from(accounts).orderBy(desc(accounts.updatedAt)).limit(100),
+    db.select().from(contacts).orderBy(contacts.name).limit(300),
     db.select().from(deals).orderBy(desc(deals.updatedAt)).limit(200),
     db.select().from(cases).orderBy(desc(cases.updatedAt)).limit(200),
     db.select().from(offers).orderBy(desc(offers.createdAt)).limit(100),
@@ -130,6 +132,7 @@ app.post('/', async (c) => {
     generatedAt: new Date().toISOString(),
     user: { id: user.id, name: user.name, role: user.role },
     accounts: trimSnapshot(accountRows, 100),
+    contacts: trimSnapshot(contactRows, 100),
     deals: trimSnapshot(dealRows, 200),
     cases: trimSnapshot(caseRows, 200),
     offers: trimSnapshot(offerRows, 100),

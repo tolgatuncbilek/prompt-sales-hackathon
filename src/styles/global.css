@@ -666,6 +666,7 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .tl:last-child::before { display: none; }
 .tl-dot { position: relative; z-index: 1; flex: 0 0 auto; width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: var(--raised); box-shadow: 0 0 0 3px var(--field); }
 .tl--stage .tl-dot { background: var(--accent); }
+.tl--email .tl-dot { background: var(--accent); }
 .tl--case .tl-dot { background: var(--amber); }
 .tl--offer .tl-dot { background: var(--green); }
 .tl--ai .tl-dot { background: var(--accent); box-shadow: 0 0 0 3px var(--field), 0 0 0 5px var(--accent-soft); }

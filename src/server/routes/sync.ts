@@ -57,6 +57,16 @@ function deriveActivity(
       return { kind: 'ai', summary: `AI insight generated${p.insight_type ? `: ${humanize(p.insight_type)}` : ''}.` };
     case 'note_added':
       return { kind: 'note', summary: typeof p.text === 'string' ? p.text : 'Note added.' };
+    case 'email_received':
+      return {
+        kind: 'email',
+        summary: `Email received from ${p.fromName || p.from}: ${p.subject}`,
+      };
+    case 'email_sent':
+      return {
+        kind: 'email',
+        summary: `Email sent to ${Array.isArray(p.to) ? p.to.join(', ') : p.to}: ${p.subject}`,
+      };
     default:
       return { kind: isAi ? 'ai' : 'note', summary: humanize(eventType) };
   }
@@ -366,7 +376,8 @@ app.get('/', async (c) => {
     confidence: Number(i.confidence),
     evidence: [],
     sources: i.sources || [],
-    status: i.status
+    status: i.status,
+    draftEmail: i.draftEmail || undefined
   }));
 
   // Map offer -> deal so offer activities also surface on the deal timeline.

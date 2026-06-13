@@ -17,6 +17,7 @@ export const aiInsights = pgTable('ai_insights', {
   body: text('body').notNull(),
   confidence: numeric('confidence', { precision: 3, scale: 2 }).notNull(),
   sources: jsonb('sources'),
+  draftEmail: text('draft_email'),
   status: insightStatus('status').default('pending_review').notNull(),
   reviewedBy: uuid('reviewed_by').references(() => users.id),
   reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
