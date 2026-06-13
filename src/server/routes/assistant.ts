@@ -82,7 +82,16 @@ function trimSnapshot<T>(rows: T[], limit: number): T[] {
 
 function parseAnswer(text: string): AssistantAnswer {
   const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```$/, '').trim();
-  const parsed = JSON.parse(cleaned) as Partial<AssistantAnswer>;
+  let parsed: Partial<AssistantAnswer>;
+  try {
+    parsed = JSON.parse(cleaned) as Partial<AssistantAnswer>;
+  } catch {
+    return {
+      answer: cleaned,
+      evidence: [],
+      actions: [],
+    };
+  }
   if (typeof parsed.answer !== 'string') throw new Error('Agent response did not contain an answer');
 
   return {
