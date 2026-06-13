@@ -36,7 +36,9 @@ import {
   casesForAccount,
   offersForAccount,
   activityForAccount,
+  activityForDeal,
   insightsForAccount,
+  insightsForDeal,
   serviceContractsForDeal,
   offerForDeal,
   isOpen,
@@ -59,7 +61,15 @@ import {
   daysSinceUpdate,
   offerList,
   offerNet,
+  offerLinesNetTotal,
+  offerGrandNet,
   lineNet,
+  unitPriceForLineNet,
+  catalogUnitPrice,
+  catalogLineLabel,
+  createOfferRecord,
+  persistOfferToApi,
+  persistOfferUpdateToApi,
   forecastByPeriod,
   rollUp,
   sumRows,
@@ -96,6 +106,7 @@ import type {
   Granularity,
   Measure,
   Offer,
+  OfferLine,
   Role,
   Series,
   Stage,
@@ -179,6 +190,38 @@ function StatusTag({ stage }: { stage: Stage }) {
 
 function ValidatedTag() {
   return <span className="validated-tag"><Icon name="check" />Lead validated</span>;
+}
+
+function ContactList({ contacts, note }: { contacts: ReturnType<typeof contactsForAccount>; note?: string }) {
+  if (!contacts.length) return <Empty>No contacts on this account.</Empty>;
+  return (
+    <>
+      {note && <p className="panel-note">{note}</p>}
+      <ul className="contact-list">
+        {contacts.map((c) => (
+          <li key={c.id}>
+            <Avatar name={c.name} />
+            <div className="contact-main">
+              <div className="contact-name-row">
+                <strong>{c.name}</strong>
+                {c.primary && <span className="mini-tag mini-tag--accent">Primary</span>}
+              </div>
+              <small className="contact-role">{CONTACT_ROLE_LABEL[c.roleType]}</small>
+              <a className="contact-link" href={`mailto:${c.email}`}>
+                <Icon name="mail" /><span>{c.email}</span>
+              </a>
+              <a className="contact-link" href={`tel:${c.phone}`}>
+                <Icon name="phone" /><span>{c.phone}</span>
+              </a>
+              <a className="contact-link" href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(`Meeting with ${c.name}`)}&add=${encodeURIComponent(c.email)}`} target="_blank" rel="noreferrer">
+                <Icon name="calendar" /><span>Meet with {c.name.split(" ")[0]}</span>
+              </a>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
 }
 
 function ConfirmModal({ title, body, confirmLabel, onConfirm, onCancel }: {
@@ -400,6 +443,7 @@ type AppCtx = {
   offerState: Record<string, Offer>;
   decideOffer: (offerId: string, decision: "approved" | "rejected", note?: string) => void;
   addOffer: (offer: Offer) => void;
+  updateOffer: (offerId: string, updater: (offer: Offer) => Offer) => void;
   addCase: (caseRec: CaseRecord) => void;
   insightStatus: Record<string, AiInsight["status"]>;
   setInsight: (id: string, status: AiInsight["status"]) => void;
@@ -450,7 +494,9 @@ function CellText({ value, onCommit, placeholder }: { value: string; onCommit: (
   );
 }
 
-function CellNumber({ value, onCommit, prefix }: { value: number; onCommit: (v: number) => void; prefix?: string }) {
+function CellNumber({ value, onCommit, prefix, min, max, step, integer }: {
+  value: number; onCommit: (v: number) => void; prefix?: string; min?: number; max?: number; step?: number; integer?: boolean;
+}) {
   return (
     <span className="cell-num" onClick={(e) => e.stopPropagation()}>
       {prefix && <span className="cell-num-prefix">{prefix}</span>}
@@ -459,9 +505,19 @@ function CellNumber({ value, onCommit, prefix }: { value: number; onCommit: (v: 
         className="cell-input cell-input--num"
         defaultValue={value}
         key={value}
-        min={0}
+        min={min ?? 0}
+        max={max}
+        step={step ?? (integer ? 1 : "any")}
         onClick={(e) => e.stopPropagation()}
-        onBlur={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v) && v !== value) onCommit(v); else e.target.value = String(value); }}
+        onBlur={(e) => {
+          let v = Number(e.target.value);
+          if (Number.isNaN(v)) { e.target.value = String(value); return; }
+          if (integer) v = Math.round(v);
+          if (min !== undefined) v = Math.max(min, v);
+          if (max !== undefined) v = Math.min(max, v);
+          if (v !== value) onCommit(v);
+          else e.target.value = String(value);
+        }}
         onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
       />
     </span>
@@ -1284,12 +1340,15 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
 function AccountRecord({ account: accountInput, ctx, embedded }: { account: Account; ctx: AppCtx; embedded?: boolean }) {
   const account = ctx.eff("account", accountInput);
   const [dealModal, setDealModal] = useState(false);
+  const [buildOfferModal, setBuildOfferModal] = useState(false);
   const owner = userById(account.ownerId);
   const accDeals = dealsForAccount(account.id).map((d) => liveDeal(ctx, d));
   const openDeals = accDeals.filter(isOpen);
   const accCases = casesForAccount(account.id);
   const openCases = accCases.filter((c) => c.status !== "resolved" && c.status !== "closed");
   const accOffers = offersForAccount(account.id).map((o) => ctx.offerState[o.id] ?? o);
+  const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
+  const selectedOffer = accOffers.find((o) => o.id === selectedOfferId) ?? accOffers[0] ?? null;
   const accInsights = insightsForAccount(account.id);
   const contacts = contactsForAccount(account.id);
 
@@ -1386,16 +1445,36 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
           <section>
             <SectionHead title="Offers" count={accOffers.length} />
             {accOffers.length ? (
-              <ul className="stack-list">
-                {accOffers.map((o) => (
-                  <li key={o.id}>
-                    <button className="row-main" onClick={() => ctx.openDeal(o.dealId)} type="button">
-                      <span><strong>{o.ref} · {dealById(o.dealId)!.title}</strong><small>v{o.version} · {o.discountPct > 0 ? `${o.discountPct}% discount` : "list price"}{o.lockedAt ? " · locked" : ""}</small></span>
-                    </button>
-                    <span className="row-side"><strong className="numeric">{fmtEur(offerNet(o))}</strong><OfferPill status={o.status} /></span>
-                  </li>
-                ))}
-              </ul>
+              <div className="offers-layout offers-layout--account">
+                <ul className="offers-list">
+                  {accOffers.map((o) => (
+                    <li key={o.id}>
+                      <button
+                        className={cx("offers-list-item", selectedOffer?.id === o.id && "is-active")}
+                        onClick={() => setSelectedOfferId(o.id)}
+                        type="button"
+                      >
+                        <div>
+                          <strong>{o.ref}</strong>
+                          <small>{dealById(o.dealId)!.title} · v{o.version}</small>
+                        </div>
+                        <div className="offers-list-side">
+                          <span className="numeric">{fmtEur(offerGrandNet(o))}</span>
+                          <OfferPill status={o.status} />
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {selectedOffer && (
+                  <OfferDetailPanel
+                    offer={selectedOffer}
+                    ctx={ctx}
+                    editable
+                    onBuildOffer={() => setBuildOfferModal(true)}
+                  />
+                )}
+              </div>
             ) : <Empty>No offers prepared yet.</Empty>}
           </section>
 
@@ -1437,29 +1516,7 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
 
           <section className="panel">
             <SectionHead title="Contacts" count={contacts.length} />
-            <ul className="contact-list">
-              {contacts.map((c) => (
-                <li key={c.id}>
-                  <Avatar name={c.name} />
-                  <div className="contact-main">
-                    <div className="contact-name-row">
-                      <strong>{c.name}</strong>
-                      {c.primary && <span className="mini-tag mini-tag--accent">Primary</span>}
-                    </div>
-                    <small className="contact-role">{CONTACT_ROLE_LABEL[c.roleType]}</small>
-                    <a className="contact-link" href={`mailto:${c.email}`}>
-                      <Icon name="mail" /><span>{c.email}</span>
-                    </a>
-                    <a className="contact-link" href={`tel:${c.phone}`}>
-                      <Icon name="phone" /><span>{c.phone}</span>
-                    </a>
-                    <a className="contact-link" href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(`Meeting with ${c.name}`)}&add=${encodeURIComponent(c.email)}`} target="_blank" rel="noreferrer">
-                      <Icon name="calendar" /><span>Meet with {c.name.split(" ")[0]}</span>
-                    </a>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <ContactList contacts={contacts} />
           </section>
 
           <section>
@@ -1475,6 +1532,373 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
         </aside>
       </div>
       {dealModal && <NewDealModal account={account} ctx={ctx} onClose={() => setDealModal(false)} />}
+      {buildOfferModal && (
+        <BuildOfferModal
+          deals={openDeals.length ? openDeals : accDeals}
+          deal={selectedOffer ? dealById(selectedOffer.dealId) : openDeals[0] ?? accDeals[0]}
+          ctx={ctx}
+          onClose={() => setBuildOfferModal(false)}
+          onCreated={(id) => setSelectedOfferId(id)}
+        />
+      )}
+    </section>
+  );
+}
+
+// ===========================================================================
+// Offer builder + detail
+// ===========================================================================
+
+type OfferItemDraft = {
+  key: string;
+  kind: "product" | "service";
+  catalogId: string;
+  quantity: string;
+  discountPct: string;
+};
+
+function emptyOfferItem(): OfferItemDraft {
+  const productId = products.find((p) => !p.retired)?.id ?? "";
+  return { key: crypto.randomUUID(), kind: "product", catalogId: productId, quantity: "100", discountPct: "0" };
+}
+
+function draftToLine(item: OfferItemDraft): OfferLine | null {
+  if (!item.catalogId) return null;
+  const productId = item.kind === "product" ? item.catalogId : null;
+  const serviceId = item.kind === "service" ? item.catalogId : null;
+  const quantity = Math.max(1, Number(item.quantity) || 1);
+  const discountPct = Math.min(100, Math.max(0, Number(item.discountPct) || 0));
+  return {
+    productId,
+    serviceId,
+    label: catalogLineLabel(productId, serviceId),
+    unitPrice: catalogUnitPrice(productId, serviceId),
+    quantity,
+    discountPct,
+  };
+}
+
+function BuildOfferModal({
+  deal,
+  deals,
+  ctx,
+  onClose,
+  onCreated,
+}: {
+  deal?: Deal;
+  deals?: Deal[];
+  ctx: AppCtx;
+  onClose: () => void;
+  onCreated?: (offerId: string) => void;
+}) {
+  const dealOptions = deals ?? (deal ? [deal] : []);
+  const [dealId, setDealId] = useState(deal?.id ?? dealOptions[0]?.id ?? "");
+  const selectedDeal = dealById(dealId) ?? deal ?? dealOptions[0];
+  const [items, setItems] = useState<OfferItemDraft[]>(() => [emptyOfferItem()]);
+  const [headlineDiscount, setHeadlineDiscount] = useState("0");
+  const [justification, setJustification] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const parsedLines = items.map(draftToLine).filter((l): l is OfferLine => l !== null);
+  const previewOffer: Offer | null = selectedDeal && parsedLines.length
+    ? {
+        id: "preview",
+        ref: "PREVIEW",
+        dealId: selectedDeal.id,
+        createdById: ctx.user.id,
+        version: 1,
+        status: "draft",
+        discountPct: Math.min(100, Math.max(0, Number(headlineDiscount) || 0)),
+        justification: null,
+        lockedAt: null,
+        createdAt: "",
+        lines: parsedLines,
+        approvals: [],
+      }
+    : null;
+
+  const updateItem = (key: string, patch: Partial<OfferItemDraft>) => {
+    setItems((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  };
+
+  const submit = async () => {
+    if (!selectedDeal || parsedLines.length !== items.length) return;
+    setSubmitting(true);
+    const disc = Math.min(100, Math.max(0, Number(headlineDiscount) || 0));
+    const offer = createOfferRecord({
+      dealId: selectedDeal.id,
+      createdById: ctx.user.id,
+      lines: parsedLines,
+      discountPct: disc,
+      justification: justification.trim() || null,
+    });
+    ctx.addOffer(offer);
+    persistOfferToApi(selectedDeal.id, offer);
+    ctx.notify(`${offer.ref} created for ${selectedDeal.title}.`);
+    onCreated?.(offer.id);
+    onClose();
+  };
+
+  const canSubmit = Boolean(selectedDeal) && parsedLines.length === items.length && items.every((i) => i.catalogId);
+
+  return (
+    <div className="modal-scrim" role="dialog" aria-modal="true" aria-labelledby="build-offer-title" onClick={onClose}>
+      <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <h2 id="build-offer-title">Build offer</h2>
+            <p className="modal-context">{selectedDeal ? selectedDeal.title : "Select a deal"}</p>
+          </div>
+          <button className="icon-btn" aria-label="Close" onClick={onClose} type="button"><Icon name="close" /></button>
+        </div>
+        <form className="modal-body" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+          {dealOptions.length > 1 && (
+            <label className="field"><span className="field-label">Deal</span>
+              <select value={dealId} onChange={(e) => setDealId(e.target.value)} required>
+                {dealOptions.map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}
+              </select>
+            </label>
+          )}
+
+          <div className="offer-builder">
+            <div className="offer-builder-head" aria-hidden="true">
+              <span>Type</span><span>Item</span><span>Qty</span><span>Disc. %</span><span>Unit</span><span>Net</span><span />
+            </div>
+            {items.map((item) => {
+              const line = draftToLine(item);
+              return (
+                <div key={item.key} className="offer-builder-row">
+                  <label className="field">
+                    <span className="field-label sr-only">Type</span>
+                    <select
+                      value={item.kind}
+                      onChange={(e) => {
+                        const kind = e.target.value as "product" | "service";
+                        const catalog = kind === "product"
+                          ? products.filter((p) => !p.retired)
+                          : services.filter((s) => !s.retired);
+                        updateItem(item.key, { kind, catalogId: catalog[0]?.id ?? "" });
+                      }}
+                    >
+                      <option value="product">Product</option>
+                      <option value="service">Service</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span className="field-label sr-only">Catalog item</span>
+                    <select
+                      value={item.catalogId}
+                      onChange={(e) => updateItem(item.key, { catalogId: e.target.value })}
+                      required
+                    >
+                      {(item.kind === "product" ? products.filter((p) => !p.retired) : services.filter((s) => !s.retired)).map((entry) => (
+                        <option key={entry.id} value={entry.id}>
+                          {entry.name}{item.kind === "product" ? ` — ${fmtEurExact((entry as typeof products[0]).listPrice)}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span className="field-label sr-only">Quantity</span>
+                    <input type="number" min="1" value={item.quantity} onChange={(e) => updateItem(item.key, { quantity: e.target.value })} required />
+                  </label>
+                  <label className="field">
+                    <span className="field-label sr-only">Line discount %</span>
+                    <input type="number" min="0" max="100" value={item.discountPct} onChange={(e) => updateItem(item.key, { discountPct: e.target.value })} />
+                  </label>
+                  <span className="offer-builder-read numeric">{line ? fmtEurExact(line.unitPrice) : "—"}</span>
+                  <span className="offer-builder-read numeric numeric--strong">{line ? fmtEurExact(lineNet(line)) : "—"}</span>
+                  <button
+                    className="icon-btn offer-builder-remove"
+                    type="button"
+                    aria-label="Remove line"
+                    disabled={items.length === 1}
+                    onClick={() => setItems((rows) => rows.filter((r) => r.key !== item.key))}
+                  >
+                    <Icon name="close" />
+                  </button>
+                </div>
+              );
+            })}
+            <button className="btn btn--secondary btn--sm offer-builder-add" type="button" onClick={() => setItems((rows) => [...rows, emptyOfferItem()])}>
+              <Icon name="plus" />Add new item
+            </button>
+          </div>
+
+          {previewOffer && (
+            <div className="offer-builder-summary">
+              <div><span>List total</span><strong className="numeric">{fmtEurExact(offerLinesNetTotal(previewOffer))}</strong></div>
+              <div><span>Net total</span><strong className="numeric">{fmtEurExact(offerGrandNet(previewOffer))}</strong></div>
+            </div>
+          )}
+
+          <div className="modal-grid">
+            <label className="field"><span className="field-label">Headline discount %</span>
+              <input type="number" min="0" max="100" value={headlineDiscount} onChange={(e) => setHeadlineDiscount(e.target.value)} />
+            </label>
+            <label className="field modal-grid-span"><span className="field-label">Justification</span>
+              <textarea value={justification} onChange={(e) => setJustification(e.target.value)} rows={2} placeholder="Required when headline discount is applied" />
+            </label>
+          </div>
+
+          <div className="modal-foot">
+            <button className="btn btn--ghost" type="button" onClick={onClose}>Cancel</button>
+            <button className="btn btn--primary" type="submit" disabled={submitting || !canSubmit}>Create offer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function OfferDetailPanel({
+  offer,
+  ctx,
+  onBuildOffer,
+  editable,
+}: {
+  offer: Offer;
+  ctx: AppCtx;
+  onBuildOffer?: () => void;
+  editable?: boolean;
+}) {
+  const deal = dealById(offer.dealId)!;
+  const account = accountById(deal.accountId)!;
+  const canManager = ctx.user.role === "sales_manager" && offer.status === "pending_manager";
+  const canFinance = ctx.user.role === "finance" && offer.status === "pending_finance";
+  const canEdit = Boolean(editable) && offer.status === "draft" && !offer.lockedAt;
+
+  const listTotal = offerLinesNetTotal(offer);
+  const netTotal = offerGrandNet(offer);
+
+  const patchOffer = (updater: (current: Offer) => Offer) => {
+    ctx.updateOffer(offer.id, updater);
+  };
+
+  const patchLine = (index: number, patch: Partial<OfferLine>) => {
+    patchOffer((current) => ({
+      ...current,
+      lines: current.lines.map((l, i) => (i === index ? { ...l, ...patch } : l)),
+    }));
+  };
+
+  return (
+    <section className="offer-detail">
+      <div className="offer-detail-head">
+        <div>
+          <span className="record-type">Offer {offer.ref} · v{offer.version}</span>
+          <h2>{deal.title}</h2>
+          <p className="muted">{account.name} · created by {userName(offer.createdById)} · {offer.createdAt}</p>
+        </div>
+        <div className="offer-detail-head-side">
+          {onBuildOffer && (
+            <button className="btn btn--primary btn--sm" onClick={onBuildOffer} type="button"><Icon name="plus" />Build offer</button>
+          )}
+          <OfferPill status={offer.status} />
+          {offer.lockedAt && <span className="locked-flag"><Icon name="lock" />Locked {offer.lockedAt}</span>}
+        </div>
+      </div>
+
+      <div className="offer-sheet">
+        <table className="offer-table">
+          <thead><tr><th>Item</th><th className="numeric">Unit</th><th className="numeric">Qty</th><th className="numeric">Disc.</th><th className="numeric">Net</th></tr></thead>
+          <tbody>
+            {offer.lines.map((l, i) => (
+              <tr key={i}>
+                <td>
+                  {canEdit ? (
+                    <CellText value={l.label} onCommit={(v) => patchLine(i, { label: v })} />
+                  ) : (
+                    l.label
+                  )}
+                  {l.serviceId && <span className="mini-tag">Service</span>}
+                </td>
+                <td className="numeric">
+                  {canEdit ? (
+                    <CellNumber value={l.unitPrice} prefix="€" min={0} onCommit={(v) => patchLine(i, { unitPrice: v })} />
+                  ) : fmtEurExact(l.unitPrice)}
+                </td>
+                <td className="numeric">
+                  {canEdit ? (
+                    <CellNumber value={l.quantity} min={1} integer onCommit={(v) => patchLine(i, { quantity: Math.max(1, Math.round(v)) })} />
+                  ) : l.quantity.toLocaleString("en-IE")}
+                </td>
+                <td className="numeric">
+                  {canEdit ? (
+                    <CellNumber value={l.discountPct} min={0} max={100} onCommit={(v) => patchLine(i, { discountPct: v })} />
+                  ) : l.discountPct > 0 ? `${l.discountPct}%` : "—"}
+                </td>
+                <td className="numeric numeric--strong">
+                  {canEdit ? (
+                    <CellNumber
+                      value={Math.round(lineNet(l) * 100) / 100}
+                      prefix="€"
+                      min={0}
+                      onCommit={(v) => patchLine(i, { unitPrice: unitPriceForLineNet(l, v) })}
+                    />
+                  ) : fmtEurExact(lineNet(l))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr><td colSpan={4}>List total</td><td className="numeric">{fmtEurExact(listTotal)}</td></tr>
+            <tr>
+              <td colSpan={4}>Headline discount</td>
+              <td className="numeric">
+                {canEdit ? (
+                  <CellNumber value={offer.discountPct} min={0} max={100} onCommit={(v) => patchOffer((o) => ({ ...o, discountPct: v }))} />
+                ) : `${offer.discountPct}%`}
+              </td>
+            </tr>
+            <tr className="offer-net"><td colSpan={4}>Net total</td><td className="numeric numeric--strong">{fmtEurExact(netTotal)}</td></tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {(canEdit || offer.justification) && (
+        <div className="approval-just">
+          <strong>Discount justification</strong>
+          {canEdit ? (
+            <textarea
+              className="offer-just-input"
+              defaultValue={offer.justification ?? ""}
+              key={`${offer.id}-just-${offer.justification ?? ""}`}
+              onBlur={(e) => {
+                const v = e.target.value.trim() || null;
+                if (v !== (offer.justification ?? null)) patchOffer((o) => ({ ...o, justification: v }));
+              }}
+              rows={2}
+              placeholder="Required when headline discount is applied"
+            />
+          ) : (
+            <p>{offer.justification}</p>
+          )}
+        </div>
+      )}
+
+      <SectionHead title="Approval workflow" />
+      <ol className="approval-steps">
+        {offer.approvals.length ? offer.approvals.map((a) => (
+          <li key={a.stepOrder} className={cx("approval-step", a.decision === "approved" && "is-approved", a.decision === "rejected" && "is-rejected")}>
+            <span className="approval-mark" aria-hidden="true">{a.decision === "approved" ? <Icon name="check" /> : a.decision === "rejected" ? <Icon name="close" /> : a.stepOrder}</span>
+            <div>
+              <strong>{a.stepOrder}. {a.roleRequired === "sales_manager" ? "Sales Manager" : "Finance"}</strong>
+              <small>{a.decision ? `${a.decision === "approved" ? "Approved" : "Rejected"} by ${userName(a.decidedById)} · ${a.decidedAt}${a.note ? ` — ${a.note}` : ""}` : "Awaiting decision"}</small>
+            </div>
+          </li>
+        )) : <li className="approval-step"><span className="approval-mark">—</span><div><strong>No approval required</strong><small>List-price offer; no discount to approve.</small></div></li>}
+      </ol>
+
+      {(canManager || canFinance) && (
+        <div className="offer-decide">
+          <p className="muted">{canManager ? "First approval — Sales Manager." : "Second approval — Finance. Approving locks the offer."}</p>
+          <div className="insight-actions">
+            <button className="btn btn--primary" onClick={() => ctx.decideOffer(offer.id, "approved")} type="button"><Icon name="check" />Approve</button>
+            <button className="btn btn--danger" onClick={() => ctx.decideOffer(offer.id, "rejected")} type="button">Reject</button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -1482,80 +1906,6 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
 // ===========================================================================
 // Deal detail — pipeline hub for validation, offers, and cases
 // ===========================================================================
-
-function CreateOfferModal({ deal, ctx, onClose }: { deal: Deal; ctx: AppCtx; onClose: () => void }) {
-  const [productId, setProductId] = useState(products.find((p) => !p.retired)?.id ?? "");
-  const [quantity, setQuantity] = useState("100");
-  const [discount, setDiscount] = useState("0");
-  const [justification, setJustification] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const product = products.find((p) => p.id === productId);
-
-  const submit = async () => {
-    if (!product) return;
-    setSubmitting(true);
-    const qty = Math.max(1, Number(quantity) || 1);
-    const disc = Math.min(100, Math.max(0, Number(discount) || 0));
-    const id = crypto.randomUUID();
-    const ref = `OFF-${Date.now().toString().slice(-4)}`;
-    const offer: Offer = {
-      id,
-      ref,
-      dealId: deal.id,
-      createdById: ctx.user.id,
-      version: 1,
-      status: disc > 0 ? "pending_manager" : "draft",
-      discountPct: disc,
-      justification: justification.trim() || null,
-      lockedAt: null,
-      createdAt: new Date().toISOString().slice(0, 10),
-      lines: [{ productId: product.id, serviceId: null, label: product.name, unitPrice: product.listPrice, quantity: qty, discountPct: disc }],
-      approvals: disc > 0
-        ? [
-            { stepOrder: 1, roleRequired: "sales_manager", decidedById: null, decision: null, note: null, decidedAt: null },
-            { stepOrder: 2, roleRequired: "finance", decidedById: null, decision: null, note: null, decidedAt: null },
-          ]
-        : [],
-    };
-    ctx.addOffer(offer);
-    fetch(`/api/offers/deals/${deal.id}/offers`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ discount_pct: disc, justification: justification.trim() || null }),
-    }).catch(console.error);
-    ctx.notify(`${ref} created for ${deal.title}.`);
-    onClose();
-  };
-
-  return (
-    <div className="modal-scrim" role="dialog" aria-modal="true" aria-labelledby="create-offer-title" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <div><h2 id="create-offer-title">Create offer</h2><p className="modal-context">{deal.title}</p></div>
-          <button className="icon-btn" aria-label="Close" onClick={onClose} type="button"><Icon name="close" /></button>
-        </div>
-        <form className="modal-body" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
-          <label className="field"><span className="field-label">Product</span>
-            <select value={productId} onChange={(e) => setProductId(e.target.value)}>
-              {products.filter((p) => !p.retired).map((p) => <option key={p.id} value={p.id}>{p.name} — {fmtEurExact(p.listPrice)}</option>)}
-            </select>
-          </label>
-          <div className="modal-grid">
-            <label className="field"><span className="field-label">Quantity</span><input type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} required /></label>
-            <label className="field"><span className="field-label">Discount %</span><input type="number" min="0" max="100" value={discount} onChange={(e) => setDiscount(e.target.value)} /></label>
-          </div>
-          <label className="field"><span className="field-label">Justification</span>
-            <textarea value={justification} onChange={(e) => setJustification(e.target.value)} rows={2} placeholder="Required when discount is applied" />
-          </label>
-          <div className="modal-foot">
-            <button className="btn btn--ghost" type="button" onClick={onClose}>Cancel</button>
-            <button className="btn btn--primary" type="submit" disabled={submitting || !product}>Create offer</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
 
 function CreateCaseModal({ deal, ctx, onClose }: { deal: Deal; ctx: AppCtx; onClose: () => void }) {
   const account = accountById(deal.accountId)!;
@@ -1636,10 +1986,29 @@ function CreateCaseModal({ deal, ctx, onClose }: { deal: Deal; ctx: AppCtx; onCl
 function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCtx; embedded?: boolean }) {
   const deal = liveDeal(ctx, ctx.eff("deal", dealInput));
   const account = accountById(deal.accountId)!;
+  const contacts = contactsForAccount(deal.accountId);
+  const dealInsights = insightsForDeal(deal.id);
+  const baseActivity = activityForDeal(deal.id);
   const [offerModal, setOfferModal] = useState(false);
   const [caseModal, setCaseModal] = useState(false);
+  const [logged, setLogged] = useState<{ kind: "note" | "meeting" | "call" | "email"; summary: string; when: string; actor: string }[]>([]);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [draftKind, setDraftKind] = useState<"note" | "meeting" | "call" | "email">("note");
+  const [draft, setDraft] = useState("");
   const dealOffers = offersForDeal(deal.id).map((o) => ctx.offerState[o.id] ?? o);
   const dealCases = casesForDeal(deal.id);
+
+  const submitLog = () => {
+    if (!draft.trim()) return;
+    setLogged((l) => [{ kind: draftKind, summary: draft.trim(), when: "Just now", actor: ctx.user.name }, ...l]);
+    setDraft("");
+    setComposerOpen(false);
+    ctx.notify("Activity logged to the deal timeline.");
+  };
+
+  const contactNote = deal.stage === "lead" && !deal.leadValidated
+    ? "Reach out to confirm need, budget holder, and timeline before validating this lead."
+    : undefined;
 
   return (
     <section className="record">
@@ -1659,6 +2028,7 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
           </p>
         </div>
         <div className="record-actions">
+          <button className="btn btn--secondary" onClick={() => setComposerOpen((v) => !v)} aria-expanded={composerOpen} type="button">Log activity</button>
           {deal.stage === "lead" && !deal.leadValidated && (
             <button className="btn btn--secondary" onClick={() => ctx.validateLead(deal.id)} type="button"><Icon name="check" />Validate lead</button>
           )}
@@ -1719,9 +2089,44 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
               </ul>
             ) : <Empty>{deal.stage === "customer_testing" ? "No cases yet — create one for customer testing support." : "Cases appear here once the deal reaches Customer testing."}</Empty>}
           </section>
+
+          <section>
+            <SectionHead title="Activity" count={baseActivity.length + logged.length} />
+            {composerOpen && (
+              <div className="composer">
+                <div className="composer-kinds">
+                  {(["note", "meeting", "call", "email"] as const).map((k) => (
+                    <button key={k} className={cx("chip", draftKind === k && "chip--active")} onClick={() => setDraftKind(k)} type="button" aria-pressed={draftKind === k}>{k[0]!.toUpperCase() + k.slice(1)}</button>
+                  ))}
+                </div>
+                <textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={`Log a ${draftKind} for ${deal.title}…`} rows={2}
+                  onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submitLog(); if (e.key === "Escape") setComposerOpen(false); }} />
+                <div className="composer-actions">
+                  <span className="muted">⌘↵ to save</span>
+                  <button className="btn btn--ghost btn--sm" onClick={() => setComposerOpen(false)} type="button">Cancel</button>
+                  <button className="btn btn--primary btn--sm" onClick={submitLog} disabled={!draft.trim()} type="button">Log activity</button>
+                </div>
+              </div>
+            )}
+            {baseActivity.length || logged.length ? (
+              <ol className="timeline">
+                {logged.map((e, i) => (
+                  <li key={`l${i}`} className={`tl tl--${e.kind}`}><span className="tl-dot" /><div><strong>{e.summary}</strong><small>{e.actor} · {e.when}</small></div></li>
+                ))}
+                {baseActivity.map((e) => (
+                  <li key={e.id} className={cx(`tl tl--${e.kind}`, e.isAi && "tl--ai")}><span className="tl-dot" /><div><strong>{e.isAi && <Icon name="spark" />}{e.summary}</strong><small>{e.isAi ? "AI agent" : userName(e.actorId)} · {e.when}</small></div></li>
+                ))}
+              </ol>
+            ) : <Empty>No activity logged for this deal yet.</Empty>}
+          </section>
         </div>
 
         <aside className="record-side">
+          <section className="panel">
+            <SectionHead title="Account contacts" count={contacts.length} />
+            <ContactList contacts={contacts} note={contactNote} />
+          </section>
+
           <section className="panel">
             <SectionHead title="Deal economics" />
             <dl className="meta-dl">
@@ -1730,10 +2135,27 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
               <div><dt>Gross margin</dt><dd className="numeric">{fmtEur(dealMeasureTotal(deal, "gm"))}</dd></div>
             </dl>
           </section>
+
+          <section>
+            <SectionHead title="AI deal review" count={dealInsights.length} />
+            {dealInsights.length ? (
+              <div className="insight-stack">
+                {dealInsights.map((i) => (
+                  <InsightCard key={i.id} insight={i} status={ctx.insightStatus[i.id] ?? i.status}
+                    onAccept={() => { ctx.setInsight(i.id, "accepted"); ctx.notify("Accepted. No CRM data changed automatically."); }}
+                    onDismiss={() => { ctx.setInsight(i.id, "dismissed"); ctx.notify("Dismissed."); }} />
+                ))}
+              </div>
+            ) : (
+              <Empty>No AI suggestions for this deal yet.</Empty>
+            )}
+          </section>
         </aside>
       </div>
 
-      {offerModal && <CreateOfferModal deal={deal} ctx={ctx} onClose={() => setOfferModal(false)} />}
+      {offerModal && (
+        <BuildOfferModal deal={deal} ctx={ctx} onClose={() => setOfferModal(false)} />
+      )}
       {caseModal && <CreateCaseModal deal={deal} ctx={ctx} onClose={() => setCaseModal(false)} />}
     </section>
   );
@@ -2047,26 +2469,20 @@ function CaseDetail({ caseRec: caseInput, ctx, embedded }: { caseRec: CaseRecord
 function OffersView({ ctx, focus }: { ctx: AppCtx; focus?: string }) {
   const list = seedOffers.map((o) => ctx.offerState[o.id] ?? o);
   const [selected, setSelected] = useState<string>(focus ?? list[0]?.id ?? "");
+  const [buildOfferModal, setBuildOfferModal] = useState(false);
   useEffect(() => { if (focus) setSelected(focus); }, [focus]);
   const offer = list.find((o) => o.id === selected) ?? list[0]!;
-  const deal = dealById(offer.dealId)!;
-  const account = accountById(deal.accountId)!;
-
-  const canManager = ctx.user.role === "sales_manager" && offer.status === "pending_manager";
-  const canFinance = ctx.user.role === "finance" && offer.status === "pending_finance";
 
   return (
     <>
-      <PageHead title="Offers" actions={
-        <button className="btn btn--primary" onClick={() => ctx.notify("Offer builder opened — start from the catalog.")} type="button"><Icon name="plus" />Build offer</button>
-      } />
+      <PageHead title="Offers" />
       <div className="offers-layout">
         <ul className="offers-list">
           {list.map((o) => {
             const d = dealById(o.dealId)!;
             return (
               <li key={o.id}>
-                <button className={cx("offers-list-item", o.id === selected && "is-active")} onClick={() => ctx.openDeal(d.id)} type="button">
+                <button className={cx("offers-list-item", o.id === selected && "is-active")} onClick={() => setSelected(o.id)} type="button">
                   <div><strong>{o.ref}</strong><small>{accountById(d.accountId)!.name}</small></div>
                   <div className="offers-list-side"><span className="numeric">{fmtEur(offerNet(o))}</span><OfferPill status={o.status} /></div>
                 </button>
@@ -2075,70 +2491,16 @@ function OffersView({ ctx, focus }: { ctx: AppCtx; focus?: string }) {
           })}
         </ul>
 
-        <section className="offer-detail">
-          <div className="offer-detail-head">
-            <div>
-              <span className="record-type">Offer {offer.ref} · v{offer.version}</span>
-              <h2>{deal.title}</h2>
-              <p className="muted">{account.name} · created by {userName(offer.createdById)} · {offer.createdAt}</p>
-            </div>
-            <div className="offer-detail-head-side">
-              <OfferPill status={offer.status} />
-              {offer.lockedAt && <span className="locked-flag"><Icon name="lock" />Locked {offer.lockedAt}</span>}
-            </div>
-          </div>
-
-          {/* Offer is rendered on a light "document" surface per DESIGN.md */}
-          <div className="offer-sheet">
-            <table className="offer-table">
-              <thead><tr><th>Item</th><th className="numeric">Unit</th><th className="numeric">Qty</th><th className="numeric">Disc.</th><th className="numeric">Net</th></tr></thead>
-              <tbody>
-                {offer.lines.map((l, i) => (
-                  <tr key={i}>
-                    <td>{l.label}{l.serviceId && <span className="mini-tag">Service</span>}</td>
-                    <td className="numeric">{fmtEurExact(l.unitPrice)}</td>
-                    <td className="numeric">{l.quantity.toLocaleString("en-IE")}</td>
-                    <td className="numeric">{l.discountPct > 0 ? `${l.discountPct}%` : "—"}</td>
-                    <td className="numeric numeric--strong">{fmtEurExact(lineNet(l))}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr><td colSpan={4}>List total</td><td className="numeric">{fmtEurExact(offerList(offer))}</td></tr>
-                <tr><td colSpan={4}>Headline discount</td><td className="numeric">{offer.discountPct}%</td></tr>
-                <tr className="offer-net"><td colSpan={4}>Net total</td><td className="numeric numeric--strong">{fmtEurExact(offerNet(offer))}</td></tr>
-              </tfoot>
-            </table>
-          </div>
-
-          {offer.justification && (
-            <div className="approval-just"><strong>Discount justification</strong><p>{offer.justification}</p></div>
-          )}
-
-          <SectionHead title="Approval workflow" />
-          <ol className="approval-steps">
-            {offer.approvals.length ? offer.approvals.map((a) => (
-              <li key={a.stepOrder} className={cx("approval-step", a.decision === "approved" && "is-approved", a.decision === "rejected" && "is-rejected")}>
-                <span className="approval-mark" aria-hidden="true">{a.decision === "approved" ? <Icon name="check" /> : a.decision === "rejected" ? <Icon name="close" /> : a.stepOrder}</span>
-                <div>
-                  <strong>{a.stepOrder}. {a.roleRequired === "sales_manager" ? "Sales Manager" : "Finance"}</strong>
-                  <small>{a.decision ? `${a.decision === "approved" ? "Approved" : "Rejected"} by ${userName(a.decidedById)} · ${a.decidedAt}${a.note ? ` — ${a.note}` : ""}` : "Awaiting decision"}</small>
-                </div>
-              </li>
-            )) : <li className="approval-step"><span className="approval-mark">—</span><div><strong>No approval required</strong><small>List-price offer; no discount to approve.</small></div></li>}
-          </ol>
-
-          {(canManager || canFinance) && (
-            <div className="offer-decide">
-              <p className="muted">{canManager ? "First approval — Sales Manager." : "Second approval — Finance. Approving locks the offer."}</p>
-              <div className="insight-actions">
-                <button className="btn btn--primary" onClick={() => ctx.decideOffer(offer.id, "approved")} type="button"><Icon name="check" />Approve</button>
-                <button className="btn btn--danger" onClick={() => ctx.decideOffer(offer.id, "rejected")} type="button">Reject</button>
-              </div>
-            </div>
-          )}
-        </section>
+        <OfferDetailPanel offer={offer} ctx={ctx} onBuildOffer={() => setBuildOfferModal(true)} />
       </div>
+      {buildOfferModal && (
+        <BuildOfferModal
+          deal={dealById(offer.dealId)!}
+          ctx={ctx}
+          onClose={() => setBuildOfferModal(false)}
+          onCreated={(id) => setSelected(id)}
+        />
+      )}
     </>
   );
 }
@@ -2802,6 +3164,17 @@ function MainApp() {
     bumpAccounts();
   };
 
+  const updateOffer = (offerId: string, updater: (offer: Offer) => Offer) => {
+    const base = offerState[offerId] ?? seedOffers.find((o) => o.id === offerId);
+    if (!base) return;
+    const updated = updater({ ...base });
+    setOfferState((m) => ({ ...m, [offerId]: updated }));
+    const idx = seedOffers.findIndex((o) => o.id === offerId);
+    if (idx >= 0) seedOffers[idx] = updated;
+    bumpAccounts();
+    if (updated.status === "draft") persistOfferUpdateToApi(updated);
+  };
+
   const addCase = (caseRec: CaseRecord) => {
     seedCases.unshift(caseRec);
     bumpAccounts();
@@ -2847,7 +3220,7 @@ function MainApp() {
     openCase: (id) => { setCaseId(id); setDrawer({ kind: "case", id }); setMenuOpen(false); },
     notify,
     dealStage, dealLeadValidated, requestMoveDeal, validateLead, moveDeal,
-    offerState, decideOffer, addOffer, addCase,
+    offerState, decideOffer, addOffer, updateOffer, addCase,
     insightStatus, setInsight: (id, s) => setInsightStatus((m) => ({ ...m, [id]: s })),
     caseNotes, addNote: (cid, n) => setCaseNotes((m) => ({ ...m, [cid]: [n, ...(m[cid] ?? [])] })),
     patch, eff, addAccount, addDeal, updateDeal,

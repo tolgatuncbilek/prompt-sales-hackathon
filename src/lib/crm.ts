@@ -210,6 +210,7 @@ export type ActivityKind =
 export type Activity = {
   id: string;
   accountId: string;
+  dealId?: string | null;
   actorId: string | null; // null when written by OpenClaw
   kind: ActivityKind;
   summary: string;
@@ -868,21 +869,21 @@ export let offers: Offer[] = [
 ];
 
 export let activities: Activity[] = [
-  { id: "act_1", accountId: "a_nordcom", actorId: null, kind: "ai", summary: "AI account review generated: confirm pilot acceptance criteria before Friday.", when: "13 Jun 2026", isAi: true },
-  { id: "act_2", accountId: "a_nordcom", actorId: "u_aino", kind: "stage", summary: "Moved Field crew rollout — wave 2 to Customer test.", when: "26 May 2026", isAi: false },
-  { id: "act_3", accountId: "a_nordcom", actorId: "u_aino", kind: "meeting", summary: "Technical review with field operations.", when: "16 May 2026", isAi: false },
-  { id: "act_4", accountId: "a_nordcom", actorId: "u_aino", kind: "offer", summary: "Offer OFF-1188 v3 sent to procurement.", when: "11 Jun 2026", isAi: false },
-  { id: "act_5", accountId: "a_nordcom", actorId: "u_sara", kind: "case", summary: "CASE-3041 opened: battery policy clarification.", when: "04 Jun 2026", isAi: false },
-  { id: "act_6", accountId: "a_vektor", actorId: null, kind: "ai", summary: "AI next action: ask the reseller to confirm the customer-test window.", when: "13 Jun 2026", isAi: true },
-  { id: "act_7", accountId: "a_vektor", actorId: "u_elias", kind: "stage", summary: "Moved Driver terminal refresh to RFP / offer given.", when: "02 Jun 2026", isAi: false },
-  { id: "act_8", accountId: "a_vektor", actorId: "u_oskari", kind: "case", summary: "CASE-3120 escalated to connectivity provider.", when: "11 Jun 2026", isAi: false },
-  { id: "act_9", accountId: "a_lumen", actorId: "u_sara", kind: "case", summary: "CASE-2890 SLA breached on encryption attestation.", when: "12 Jun 2026", isAi: false },
-  { id: "act_10", accountId: "a_lumen", actorId: "u_aino", kind: "stage", summary: "Moved Frame renewal to Contract negotiation.", when: "28 May 2026", isAi: false },
-  { id: "act_11", accountId: "a_lumen", actorId: null, kind: "ai", summary: "AI risk flag: close date passed; no revised procurement date recorded.", when: "13 Jun 2026", isAi: true },
-  { id: "act_12", accountId: "a_arctic", actorId: "u_elias", kind: "meeting", summary: "Discovery call booked for 17 June.", when: "10 Jun 2026", isAi: false },
-  { id: "act_13", accountId: "a_arctic", actorId: "u_elias", kind: "note", summary: "Account created from inbound enquiry.", when: "08 May 2026", isAi: false },
-  { id: "act_14", accountId: "a_halcyon", actorId: "u_elias", kind: "offer", summary: "Offer OFF-1175 approved and locked.", when: "06 Jun 2026", isAi: false },
-  { id: "act_15", accountId: "a_halcyon", actorId: "u_elias", kind: "stage", summary: "Moved Antwerp pilot to Customer test.", when: "28 May 2026", isAi: false },
+  { id: "act_1", accountId: "a_nordcom", dealId: "d_nordcom", actorId: null, kind: "ai", summary: "AI account review generated: confirm pilot acceptance criteria before Friday.", when: "13 Jun 2026", isAi: true },
+  { id: "act_2", accountId: "a_nordcom", dealId: "d_nordcom", actorId: "u_aino", kind: "stage", summary: "Moved Field crew rollout — wave 2 to Customer testing.", when: "26 May 2026", isAi: false },
+  { id: "act_3", accountId: "a_nordcom", dealId: "d_nordcom", actorId: "u_aino", kind: "meeting", summary: "Technical review with field operations.", when: "16 May 2026", isAi: false },
+  { id: "act_4", accountId: "a_nordcom", dealId: "d_nordcom", actorId: "u_aino", kind: "offer", summary: "Offer OFF-1188 v3 sent to procurement.", when: "11 Jun 2026", isAi: false },
+  { id: "act_5", accountId: "a_nordcom", dealId: "d_nordcom", actorId: "u_sara", kind: "case", summary: "CASE-3041 opened: battery policy clarification.", when: "04 Jun 2026", isAi: false },
+  { id: "act_6", accountId: "a_vektor", dealId: "d_vektor", actorId: null, kind: "ai", summary: "AI next action: ask the reseller to confirm the customer-test window.", when: "13 Jun 2026", isAi: true },
+  { id: "act_7", accountId: "a_vektor", dealId: "d_vektor", actorId: "u_elias", kind: "stage", summary: "Moved Driver terminal refresh to Offer.", when: "02 Jun 2026", isAi: false },
+  { id: "act_8", accountId: "a_vektor", dealId: "d_vektor", actorId: "u_oskari", kind: "case", summary: "CASE-3120 escalated to connectivity provider.", when: "11 Jun 2026", isAi: false },
+  { id: "act_9", accountId: "a_lumen", dealId: "d_lumen", actorId: "u_sara", kind: "case", summary: "CASE-2890 SLA breached on encryption attestation.", when: "12 Jun 2026", isAi: false },
+  { id: "act_10", accountId: "a_lumen", dealId: "d_lumen", actorId: "u_aino", kind: "stage", summary: "Moved Frame renewal to Final negotiation.", when: "28 May 2026", isAi: false },
+  { id: "act_11", accountId: "a_lumen", dealId: "d_lumen", actorId: null, kind: "ai", summary: "AI risk flag: close date passed; no revised procurement date recorded.", when: "13 Jun 2026", isAi: true },
+  { id: "act_12", accountId: "a_arctic", dealId: "d_arctic", actorId: "u_elias", kind: "meeting", summary: "Discovery call booked for 17 June.", when: "10 Jun 2026", isAi: false },
+  { id: "act_13", accountId: "a_arctic", dealId: "d_arctic", actorId: "u_elias", kind: "note", summary: "Account created from inbound enquiry.", when: "08 May 2026", isAi: false },
+  { id: "act_14", accountId: "a_halcyon", dealId: "d_halcyon", actorId: "u_elias", kind: "offer", summary: "Offer OFF-1175 approved and locked.", when: "06 Jun 2026", isAi: false },
+  { id: "act_15", accountId: "a_halcyon", dealId: "d_halcyon", actorId: "u_elias", kind: "stage", summary: "Moved Antwerp pilot to Customer testing.", when: "28 May 2026", isAi: false },
 ];
 
 export let aiInsights: AiInsight[] = [
@@ -1026,8 +1027,14 @@ export function offersForAccount(accountId: string): Offer[] {
 export function activityForAccount(accountId: string): Activity[] {
   return activities.filter((a) => a.accountId === accountId);
 }
+export function activityForDeal(dealId: string): Activity[] {
+  return activities.filter((a) => a.dealId === dealId);
+}
 export function insightsForAccount(accountId: string): AiInsight[] {
   return aiInsights.filter((i) => i.accountId === accountId);
+}
+export function insightsForDeal(dealId: string): AiInsight[] {
+  return aiInsights.filter((i) => i.dealId === dealId);
 }
 export function serviceContractsForDeal(dealId: string): ServiceContract[] {
   return serviceContracts.filter((sc) => sc.dealId === dealId);
@@ -1173,14 +1180,167 @@ export function caseAgeDays(c: CaseRecord): number {
 
 // Offer maths --------------------------------------------------------------
 
+export function lineListSubtotal(line: OfferLine): number {
+  return line.unitPrice * line.quantity;
+}
+
 export function lineNet(line: OfferLine): number {
-  return line.unitPrice * line.quantity * (1 - line.discountPct / 100);
+  return lineListSubtotal(line) * (1 - line.discountPct / 100);
 }
+
+/** Sum of list prices before any line discount. */
 export function offerList(offer: Offer): number {
-  return offer.lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
+  return offer.lines.reduce((s, l) => s + lineListSubtotal(l), 0);
 }
-export function offerNet(offer: Offer): number {
+
+/** Sum of line net values (after line-level discounts, before headline discount). */
+export function offerLinesNetTotal(offer: Offer): number {
   return offer.lines.reduce((s, l) => s + lineNet(l), 0);
+}
+
+/** @deprecated alias — use offerLinesNetTotal for line nets or offerGrandNet for final total */
+export function offerNet(offer: Offer): number {
+  return offerLinesNetTotal(offer);
+}
+
+/** Final offer total after headline discount is applied to the line net sum. */
+export function offerGrandNet(offer: Offer): number {
+  const linesNet = offerLinesNetTotal(offer);
+  return linesNet * (1 - offer.discountPct / 100);
+}
+
+export function unitPriceForLineNet(line: OfferLine, net: number): number {
+  const qty = Math.max(1, line.quantity);
+  const factor = 1 - line.discountPct / 100;
+  if (factor <= 0) return line.unitPrice;
+  return net / (qty * factor);
+}
+
+/** Default list prices for services (products use catalog listPrice). */
+export const SERVICE_LIST_PRICES: Record<string, number> = {
+  s_mdm: 14,
+  s_lifecycle: 234_000,
+  s_warranty: 96_000,
+  s_repair: 72_000,
+  s_sim: 6,
+};
+
+export function catalogUnitPrice(productId: string | null, serviceId: string | null): number {
+  if (productId) return products.find((p) => p.id === productId)?.listPrice ?? 0;
+  if (serviceId) return SERVICE_LIST_PRICES[serviceId] ?? 0;
+  return 0;
+}
+
+export function catalogLineLabel(productId: string | null, serviceId: string | null): string {
+  if (productId) return products.find((p) => p.id === productId)?.name ?? "Product";
+  if (serviceId) {
+    const svc = services.find((s) => s.id === serviceId);
+    if (!svc) return "Service";
+    if (svc.id === "s_mdm" || svc.id === "s_sim") return `${svc.name} (monthly, per device)`;
+    if (svc.id === "s_lifecycle" || svc.id === "s_warranty" || svc.id === "s_repair") return `${svc.name} (3 yr)`;
+    return svc.name;
+  }
+  return "Item";
+}
+
+export function approvalStepsForOffer(discountPct: number): ApprovalStep[] {
+  if (discountPct <= 0) return [];
+  return [
+    { stepOrder: 1, roleRequired: "sales_manager", decidedById: null, decision: null, note: null, decidedAt: null },
+    { stepOrder: 2, roleRequired: "finance", decidedById: null, decision: null, note: null, decidedAt: null },
+  ];
+}
+
+export function offerStatusForDiscount(discountPct: number): OfferStatus {
+  return discountPct > 0 ? "pending_manager" : "draft";
+}
+
+export function nextOfferVersion(dealId: string): number {
+  const existing = offersForDeal(dealId);
+  return existing.length ? Math.max(...existing.map((o) => o.version)) + 1 : 1;
+}
+
+export function createOfferRecord(params: {
+  dealId: string;
+  createdById: string;
+  lines: OfferLine[];
+  discountPct: number;
+  justification: string | null;
+}): Offer {
+  const discountPct = Math.min(100, Math.max(0, params.discountPct));
+  return {
+    id: crypto.randomUUID(),
+    ref: `OFF-${Date.now().toString().slice(-4)}`,
+    dealId: params.dealId,
+    createdById: params.createdById,
+    version: nextOfferVersion(params.dealId),
+    status: offerStatusForDiscount(discountPct),
+    discountPct,
+    justification: params.justification?.trim() || null,
+    lockedAt: null,
+    createdAt: new Date().toISOString().slice(0, 10),
+    lines: params.lines,
+    approvals: approvalStepsForOffer(discountPct),
+  };
+}
+
+export function persistOfferUpdateToApi(offer: Offer): void {
+  fetch(`/api/offers/${offer.id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      discount_pct: offer.discountPct,
+      justification: offer.justification,
+    }),
+  }).catch(console.error);
+
+  fetch(`/api/offers/${offer.id}/lines`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(
+      offer.lines.map((l) => ({
+        product_id: l.productId,
+        service_id: l.serviceId,
+        unit_price: l.unitPrice,
+        quantity: l.quantity,
+        discount_pct: l.discountPct,
+      })),
+    ),
+  }).catch(console.error);
+}
+
+export function persistOfferToApi(dealId: string, offer: Offer): void {
+  fetch(`/api/offers/deals/${dealId}/offers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      version: offer.version,
+      discount_pct: offer.discountPct,
+      justification: offer.justification,
+    }),
+  })
+    .then((r) => r.json())
+    .then((created) => {
+      const offerId = created.id ?? offer.id;
+      return fetch(`/api/offers/${offerId}/lines`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          offer.lines.map((l) => ({
+            product_id: l.productId,
+            service_id: l.serviceId,
+            unit_price: l.unitPrice,
+            quantity: l.quantity,
+            discount_pct: l.discountPct,
+          })),
+        ),
+      }).then(() => {
+        if (offer.discountPct > 0) {
+          return fetch(`/api/offers/${offerId}/submit`, { method: "POST" });
+        }
+      });
+    })
+    .catch(console.error);
 }
 
 // Forecast aggregation -----------------------------------------------------
