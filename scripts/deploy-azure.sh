@@ -85,7 +85,7 @@ if az containerapp show \
     --name "${APP}" \
     --resource-group "${RESOURCE_GROUP}" \
     --image "${IMAGE}" \
-    --set-env-vars HOST=0.0.0.0 PORT=3000 NODE_ENV=production \
+    --set-env-vars HOST=0.0.0.0 PORT=3000 NODE_ENV=production SESSION_SECRET=hackathon-prod-secret-change-me \
     --min-replicas 0 \
     --max-replicas 1 \
     --output none
@@ -101,7 +101,7 @@ else
     --registry-password "${REGISTRY_PASSWORD}" \
     --ingress external \
     --target-port 3000 \
-    --env-vars HOST=0.0.0.0 PORT=3000 NODE_ENV=production \
+    --env-vars HOST=0.0.0.0 PORT=3000 NODE_ENV=production SESSION_SECRET=hackathon-prod-secret-change-me \
     --min-replicas 0 \
     --max-replicas 1 \
     --output none

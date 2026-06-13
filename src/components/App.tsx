@@ -77,6 +77,7 @@ import {
   forecastTotal,
   weightedForecast,
   securedForecast,
+  initCrmFromApi,
 } from "../lib/crm.ts";
 import type {
   Account,
@@ -1464,12 +1465,22 @@ const NAV: { screen: Screen; label: string; icon: string }[] = [
 ];
 
 export default function App() {
-  const [userId, setUserId] = useState<string>("u_aino");
-  const user = userById(userId)!;
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    initCrmFromApi().then(() => setReady(true));
+  }, []);
+  if (!ready) return <div style={{ padding: "2rem", color: "white" }}>Syncing with backend...</div>;
+  return <MainApp />;
+}
+
+function MainApp() {
+  const [userId, setUserId] = useState<string>(users[0]?.id || "");
   const [screen, setScreen] = useState<Screen>("home");
-  const [accountId, setAccountId] = useState<string>("a_nordcom");
-  const [caseId, setCaseId] = useState<string>("case_2890");
+  const [accountId, setAccountId] = useState<string>(accounts[0]?.id || "");
+  const [caseId, setCaseId] = useState<string>(seedCases[0]?.id || "");
   const [offerFocus, setOfferFocus] = useState<string | undefined>(undefined);
+
+  const user = userById(userId)!;
   const [menuOpen, setMenuOpen] = useState(false);
   const [roleMenu, setRoleMenu] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -1494,6 +1505,7 @@ export default function App() {
     if (!deal) return;
     if ((dealStage[id] ?? deal.stage) === stage) return;
     setDealStage((m) => ({ ...m, [id]: stage }));
+    fetch(`/api/deals/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage }) }).catch(console.error);
     notify(`Moved ${deal.title} to ${STAGE_META[stage].short}.`);
   };
 
@@ -1511,6 +1523,7 @@ export default function App() {
     else status = "locked";
     const locked = status === "locked" ? "Just now" : base.lockedAt;
     setOfferState((m) => ({ ...m, [offerId]: { ...base, approvals, status, lockedAt: locked } }));
+    fetch(`/api/offers/${offerId}/decide`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, note }) }).catch(console.error);
     notify(decision === "approved"
       ? status === "locked" ? `${base.ref} fully approved and locked.` : `${base.ref} approved — routed to Finance.`
       : `${base.ref} rejected. The rep has been notified.`);

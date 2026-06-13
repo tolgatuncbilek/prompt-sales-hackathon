@@ -368,7 +368,7 @@ export function periodYear(period: string): string {
 // Seed data
 // ---------------------------------------------------------------------------
 
-export const users: User[] = [
+export let users: User[] = [
   { id: "u_aino", name: "Aino Lahti", email: "aino.lahti@hmd.example", role: "sales_rep", initials: "AL", title: "Sales Representative" },
   { id: "u_elias", name: "Elias Niemi", email: "elias.niemi@hmd.example", role: "sales_rep", initials: "EN", title: "Sales Representative" },
   { id: "u_sara", name: "Sara Miettinen", email: "sara.miettinen@hmd.example", role: "tam", initials: "SM", title: "Technical Account Manager" },
@@ -377,7 +377,7 @@ export const users: User[] = [
   { id: "u_veera", name: "Veera Salonen", email: "veera.salonen@hmd.example", role: "finance", initials: "VS", title: "Finance" },
 ];
 
-export const accounts: Account[] = [
+export let accounts: Account[] = [
   {
     id: "a_nordcom",
     name: "Nordcom Mobility",
@@ -450,7 +450,7 @@ export const accounts: Account[] = [
   },
 ];
 
-export const contacts: Contact[] = [
+export let contacts: Contact[] = [
   { id: "c_nordcom_1", accountId: "a_nordcom", name: "Marit Brandt", email: "m.brandt@nordcom.example", phone: "+49 40 553 118", roleType: "tech_decision_maker", primary: true },
   { id: "c_nordcom_2", accountId: "a_nordcom", name: "Tobias Reiner", email: "t.reiner@nordcom.example", phone: "+49 40 553 207", roleType: "budget_holder" },
   { id: "c_nordcom_3", accountId: "a_nordcom", name: "Lena Vogt", email: "l.vogt@nordcom.example", phone: "+49 40 553 442", roleType: "influencer" },
@@ -464,7 +464,7 @@ export const contacts: Contact[] = [
   { id: "c_halcyon_2", accountId: "a_halcyon", name: "Anouk Jansen", email: "a.jansen@halcyon.example", phone: "+32 3 226 1152", roleType: "tech_decision_maker" },
 ];
 
-export const products: ProductCatalogItem[] = [
+export let products: ProductCatalogItem[] = [
   { id: "p_xr21", name: "HMD XR-21 rugged 5G", category: "Device", listPrice: 466, retired: false },
   { id: "p_t30", name: "HMD T-30 field tablet", category: "Device", listPrice: 612, retired: false },
   { id: "p_pulse", name: "HMD Pulse handheld", category: "Device", listPrice: 312, retired: false },
@@ -472,7 +472,7 @@ export const products: ProductCatalogItem[] = [
   { id: "p_xr11", name: "HMD XR-11 (previous gen)", category: "Device", listPrice: 388, retired: true },
 ];
 
-export const services: ServiceCatalogItem[] = [
+export let services: ServiceCatalogItem[] = [
   { id: "s_mdm", name: "Secure MDM", serviceType: "Device management", isThirdParty: false, retired: false },
   { id: "s_lifecycle", name: "Device Lifecycle Management", serviceType: "Managed service", isThirdParty: false, retired: false },
   { id: "s_warranty", name: "Extended Warranty (3 yr)", serviceType: "Warranty", isThirdParty: false, retired: false },
@@ -480,7 +480,7 @@ export const services: ServiceCatalogItem[] = [
   { id: "s_sim", name: "SIM Provisioning", serviceType: "Connectivity", isThirdParty: true, retired: false },
 ];
 
-export const deals: Deal[] = [
+export let deals: Deal[] = [
   {
     id: "d_nordcom",
     accountId: "a_nordcom",
@@ -614,7 +614,7 @@ export const deals: Deal[] = [
   },
 ];
 
-export const serviceContracts: ServiceContract[] = [
+export let serviceContracts: ServiceContract[] = [
   {
     id: "sc_nordcom_mdm",
     dealId: "d_nordcom",
@@ -716,7 +716,7 @@ export const serviceContracts: ServiceContract[] = [
   },
 ];
 
-export const cases: CaseRecord[] = [
+export let cases: CaseRecord[] = [
   {
     id: "case_3041", ref: "CASE-3041", accountId: "a_nordcom", serviceId: "s_mdm", ownerId: "u_sara", contactId: "c_nordcom_1",
     title: "Battery policy clarification for cold-storage crews", status: "in_progress", priority: "high", escalated: false,
@@ -772,7 +772,7 @@ export const cases: CaseRecord[] = [
   },
 ];
 
-export const offers: Offer[] = [
+export let offers: Offer[] = [
   {
     id: "off_1188", ref: "OFF-1188", dealId: "d_nordcom", createdById: "u_aino", version: 3,
     status: "pending_finance", discountPct: 12,
@@ -828,7 +828,7 @@ export const offers: Offer[] = [
   },
 ];
 
-export const activities: Activity[] = [
+export let activities: Activity[] = [
   { id: "act_1", accountId: "a_nordcom", actorId: null, kind: "ai", summary: "AI account review generated: confirm pilot acceptance criteria before Friday.", when: "13 Jun 2026", isAi: true },
   { id: "act_2", accountId: "a_nordcom", actorId: "u_aino", kind: "stage", summary: "Moved Field crew rollout — wave 2 to Customer test.", when: "26 May 2026", isAi: false },
   { id: "act_3", accountId: "a_nordcom", actorId: "u_aino", kind: "meeting", summary: "Technical review with field operations.", when: "16 May 2026", isAi: false },
@@ -846,7 +846,7 @@ export const activities: Activity[] = [
   { id: "act_15", accountId: "a_halcyon", actorId: "u_elias", kind: "stage", summary: "Moved Antwerp pilot to Customer test.", when: "28 May 2026", isAi: false },
 ];
 
-export const aiInsights: AiInsight[] = [
+export let aiInsights: AiInsight[] = [
   {
     id: "ai_nordcom_next", accountId: "a_nordcom", dealId: "d_nordcom", caseId: null, type: "next_action",
     headline: "Confirm pilot acceptance criteria and book the technical review before Friday.",
@@ -936,7 +936,7 @@ export const aiInsights: AiInsight[] = [
   },
 ];
 
-export const notifications: Notification[] = [
+export let notifications: Notification[] = [
   { id: "n_1", userId: "u_aino", kind: "ai", body: "AI insights updated for Nordcom Mobility.", read: false, when: "13 Jun, 09:42", link: { screen: "account", id: "a_nordcom" } },
   { id: "n_2", userId: "u_aino", kind: "stage", body: "Field crew rollout — wave 2 has not moved in 18 days.", read: false, when: "13 Jun, 08:00", link: { screen: "account", id: "a_nordcom" } },
   { id: "n_3", userId: "u_aino", kind: "offer", body: "OFF-1188 cleared Sales Manager approval — now with Finance.", read: true, when: "12 Jun, 16:20", link: { screen: "offers", id: "off_1188" } },
@@ -1291,4 +1291,42 @@ export function securedForecast(dealList: Deal[], m: Measure): number {
     .filter(inForecast)
     .filter((d) => d.stage === "committed" || d.stage === "confirmed")
     .reduce((s, d) => s + dealMeasureTotal(d, m), 0);
+}
+
+
+export async function initCrmFromApi() {
+  console.log("Loading CRM data from API...");
+  try {
+    const authRes = await fetch('/api/auth/users');
+    const apiUsers = await authRes.json();
+    if (apiUsers.length > 0) {
+      await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: apiUsers[0].id })
+      });
+    }
+
+    const res = await fetch('/api/sync');
+    if (!res.ok) throw new Error("Sync failed");
+    const data = await res.json();
+    
+    users = data.users;
+    accounts = data.accounts;
+    contacts = data.contacts;
+    products = data.products;
+    services = data.services;
+    deals = data.deals;
+    serviceContracts = data.serviceContracts;
+    cases = data.cases;
+    offers = data.offers;
+    aiInsights = data.aiInsights;
+    activities = data.activities;
+    notifications = data.notifications;
+    
+    return true;
+  } catch (e) {
+    console.error("Failed to load from API", e);
+    return false;
+  }
 }
