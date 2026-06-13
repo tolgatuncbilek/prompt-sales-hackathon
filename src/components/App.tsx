@@ -1582,42 +1582,32 @@ function MainApp() {
       </header>
 
       <aside className={cx("sidebar", menuOpen && "sidebar--open")}>
-        <div className="sidebar-header">
-          <div className="role-switch">
-            <button className="role-btn" onClick={() => setRoleMenu((v) => !v)} aria-expanded={roleMenu} type="button">
-              <Avatar name={user.name} />
-              <span className="role-name">{user.name}</span>
-              <Icon name="chevronDown" className="chevron-icon" />
-            </button>
-            {roleMenu && (
-              <div className="role-menu" role="menu">
-                <div className="role-menu-section-label">Select User / Role</div>
-                <ul className="role-menu-list">
-                  {users.filter((u, i, arr) => arr.findIndex((x) => x.role === u.role) === i).map((u) => (
-                    <li key={u.id} role="none">
-                      <button role="menuitemradio" aria-checked={u.role === user.role} className={cx("role-option", u.role === user.role && "is-active")}
-                        onClick={() => { setUserId(u.id); setRoleMenu(false); setScreen("home"); notify(`Viewing as ${ROLE_LABEL[u.role]} — ${u.name}.`); }} type="button">
-                        <Avatar name={u.name} size="xs" />
-                        <span className="role-option-text">
-                          <strong>{u.name}</strong>
-                          <small>{ROLE_LABEL[u.role]}</small>
-                        </span>
-                        {u.role === user.role && <Icon name="check" className="check-icon" />}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-          <div className="sidebar-header-actions">
-            <button className="header-action-btn" onClick={() => notify("Global search is coming soon.")} title="Search" type="button">
-              <Icon name="search" />
-            </button>
-            <button className="header-action-btn" onClick={() => notify("Creation workflow is coming soon.")} title="New record" type="button">
-              <Icon name="plus" />
-            </button>
-          </div>
+        <div className="role-switch">
+          <button className="role-btn" onClick={() => setRoleMenu((v) => !v)} aria-expanded={roleMenu} type="button">
+            <Avatar name={user.name} />
+            <span className="role-name">{user.name}</span>
+            <Icon name="chevronDown" className="chevron-icon" />
+          </button>
+          {roleMenu && (
+            <div className="role-menu" role="menu">
+              <div className="role-menu-section-label">Select User / Role</div>
+              <ul className="role-menu-list">
+                {users.filter((u, i, arr) => arr.findIndex((x) => x.role === u.role) === i).map((u) => (
+                  <li key={u.id} role="none">
+                    <button role="menuitemradio" aria-checked={u.role === user.role} className={cx("role-option", u.role === user.role && "is-active")}
+                      onClick={() => { setUserId(u.id); setRoleMenu(false); setScreen("home"); notify(`Viewing as ${ROLE_LABEL[u.role]} — ${u.name}.`); }} type="button">
+                      <Avatar name={u.name} size="xs" />
+                      <span className="role-option-text">
+                        <strong>{u.name}</strong>
+                        <small>{ROLE_LABEL[u.role]}</small>
+                      </span>
+                      {u.role === user.role && <Icon name="check" className="check-icon" />}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         <nav aria-label="Primary" className="sidebar-nav">
