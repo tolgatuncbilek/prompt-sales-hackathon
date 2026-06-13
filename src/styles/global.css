@@ -456,7 +456,6 @@ tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
   flex-wrap: wrap;
 }
 .modal--sm { max-width: 28rem; }
-.modal--wide { max-width: 52rem; width: min(100% - 32px, 52rem); }
 .validated-tag {
   display: inline-flex;
   align-items: center;
@@ -772,10 +771,11 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .offer-builder-head,
 .offer-builder-row {
   display: grid;
-  grid-template-columns: 92px minmax(0, 1.4fr) 72px 72px 88px 88px 32px;
-  gap: 8px;
+  grid-template-columns: 96px minmax(0, 1.6fr) 80px 76px 96px 96px 36px;
+  gap: 10px;
   align-items: end;
 }
+.offer-builder-row .field { min-width: 0; }
 .offer-builder-head {
   padding: 0 2px;
   color: var(--ink-3);
@@ -1210,6 +1210,10 @@ tbody tr:hover .row-open { color: var(--ink-2); }
   border-radius: var(--r-surface);
   padding: 24px;
   box-shadow: var(--shadow-float);
+}
+.modal.modal--wide {
+  width: min(calc(100vw - 40px), 50rem);
+  max-width: min(calc(100vw - 40px), 50rem);
 }
 .modal-head {
   display: flex;
