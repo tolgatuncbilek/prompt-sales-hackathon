@@ -386,7 +386,8 @@ tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
 .status-tag--closed .status-dot { background: var(--ink-3); }
 
 /* Inline cell editing (spreadsheet-speed) */
-.cell-edit { padding: 0; }
+.cell-edit { padding: 0; position: relative; display: inline-flex; align-items: center; }
+.cell-edit > .icon { position: absolute; right: 8px; width: 13px; color: var(--ink-3); pointer-events: none; flex: none; }
 .inline-edit { position: relative; display: inline-flex; align-items: center; }
 .inline-edit .icon { position: absolute; right: 8px; width: 13px; color: var(--ink-3); pointer-events: none; }
 .inline-stage {
