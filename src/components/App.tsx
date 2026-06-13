@@ -181,6 +181,14 @@ function RiskTag({ deal }: { deal: Deal }) {
   );
 }
 
+function activityHint(deal: Deal): string {
+  const days = daysSinceUpdate(deal);
+  if (days === 0) return "Updated today";
+  if (days === 1) return "Updated yesterday";
+  if (days >= 14) return `No activities for ${days} days`;
+  return `Updated ${days} days ago`;
+}
+
 function PriorityTag({ priority }: { priority: CaseRecord["priority"] }) {
   return <span className={`prio prio--${priority}`}>{PRIORITY_LABEL[priority]}</span>;
 }
@@ -1368,7 +1376,7 @@ function DealTable({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
   return (
     <div className="table-wrap card-edge">
       <table>
-        <thead><tr><th>Deal</th><th>Status</th><th>Owner</th><th>Close</th><th className="numeric">Next qtr</th><th className="numeric">3-yr total</th><th className="numeric">GM</th><th>Signal</th><th aria-label="Open" /></tr></thead>
+        <thead><tr><th>Deal</th><th>Status</th><th>Signal</th><th>Owner</th><th>Expected close</th><th className="numeric">Next qtr</th><th className="numeric">3-yr total</th><th className="numeric">GM</th><th aria-label="Open" /></tr></thead>
         <tbody>
           {deals.map((base) => {
             const d = ctx.eff("deal", base);
@@ -1380,12 +1388,12 @@ function DealTable({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
                     <span><CellText value={d.title} onCommit={(v) => ctx.patch("deal", d.id, "title", v)} /><small>{acc.name} · {d.channel === "direct" ? "Direct" : "Reseller"}{d.isPilot ? " · Pilot" : ""}</small></span></span>
                 </th>
                 <td className="cell-edit"><InlineStage deal={d} ctx={ctx} /></td>
+                <td><span className="signal-cell"><RiskTag deal={d} /><small className="activity-hint">{activityHint(d)}</small></span></td>
                 <td><CellSelect value={d.ownerId} options={REP_OPTIONS} onCommit={(v) => ctx.patch("deal", d.id, "ownerId", v)} /></td>
                 <td className={isOverdue(d) ? "t-danger" : ""}><CellDate value={d.expectedClose} onCommit={(v) => ctx.patch("deal", d.id, "expectedClose", v)} /></td>
                 <td className="numeric">{fmtEur(nextQuarterValue(d))}</td>
                 <td className="numeric numeric--strong">{fmtEur(dealTotal(d))}</td>
                 <td className="numeric">{fmtEur(dealMeasureTotal(d, "gm"))}</td>
-                <td><RiskTag deal={d} /></td>
                 <td><OpenButton label={`Open ${acc.name}`} onClick={() => ctx.openAccount(d.accountId)} /></td>
               </tr>
             );
