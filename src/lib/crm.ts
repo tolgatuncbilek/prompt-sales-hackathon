@@ -38,12 +38,12 @@ export type CasePriority = "low" | "medium" | "high" | "critical";
 export type InvoiceModel = "one_off" | "fixed_term" | "monthly_recurring";
 
 export type OfferStatus =
-  | "draft"
+  | "sales_rep"
   | "pending_manager"
-  | "pending_finance"
-  | "approved"
-  | "rejected"
-  | "locked";
+  | "made"
+  | "rejected";
+
+export type ApprovalRole = "sales_rep" | "sales_manager";
 
 export type InsightType =
   | "enrichment"
@@ -175,7 +175,7 @@ export type OfferLine = {
 
 export type ApprovalStep = {
   stepOrder: number;
-  roleRequired: "sales_manager" | "finance";
+  roleRequired: ApprovalRole;
   decidedById: string | null;
   decision: "approved" | "rejected" | null;
   note: string | null;
@@ -367,12 +367,15 @@ export const INVOICE_MODEL_LABEL: Record<InvoiceModel, string> = {
 };
 
 export const OFFER_STATUS_LABEL: Record<OfferStatus, string> = {
-  draft: "Draft",
+  sales_rep: "With Sales Representative",
   pending_manager: "Pending — Sales Manager",
-  pending_finance: "Pending — Finance",
-  approved: "Approved",
+  made: "Offer made",
   rejected: "Rejected",
-  locked: "Locked",
+};
+
+export const APPROVAL_ROLE_LABEL: Record<ApprovalRole, string> = {
+  sales_rep: "Sales Representative",
+  sales_manager: "Sales Manager",
 };
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -812,10 +815,31 @@ export let cases: CaseRecord[] = [
   },
 ];
 
+export function defaultOfferWorkflow(): ApprovalStep[] {
+  return [
+    { stepOrder: 1, roleRequired: "sales_rep", decidedById: null, decision: null, note: null, decidedAt: null },
+    { stepOrder: 2, roleRequired: "sales_manager", decidedById: null, decision: null, note: null, decidedAt: null },
+  ];
+}
+
+export function approvalTimestamp(): string {
+  return new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+export function offerWorkflowSteps(offer: Offer): ApprovalStep[] {
+  const steps = offer.approvals.filter((a) => a.roleRequired === "sales_rep" || a.roleRequired === "sales_manager");
+  return steps.length >= 2 ? steps.sort((a, b) => a.stepOrder - b.stepOrder).slice(0, 2) : defaultOfferWorkflow();
+}
+
+export function approvalStepActionLabel(step: ApprovalStep): string {
+  if (step.decision !== "approved") return "";
+  return step.roleRequired === "sales_rep" ? "Submitted by" : "Approved by";
+}
+
 export let offers: Offer[] = [
   {
     id: "off_1188", ref: "OFF-1188", dealId: "d_nordcom", createdById: "u_aino", version: 3,
-    status: "pending_finance", discountPct: 12,
+    status: "made", discountPct: 12,
     justification: "Wave-2 volume commitment of 1,660 devices and a 3-year MDM commitment; matching the wave-1 pilot pricing to keep the rollout on a single standard.",
     lockedAt: null, createdAt: "2026-06-11",
     lines: [
@@ -825,8 +849,8 @@ export let offers: Offer[] = [
       { productId: null, serviceId: "s_warranty", label: "Extended Warranty (3 yr)", unitPrice: 96000, quantity: 1, discountPct: 0 },
     ],
     approvals: [
-      { stepOrder: 1, roleRequired: "sales_manager", decidedById: "u_mikael", decision: "approved", note: "Volume and term justify the discount.", decidedAt: "2026-06-12" },
-      { stepOrder: 2, roleRequired: "finance", decidedById: null, decision: null, note: null, decidedAt: null },
+      { stepOrder: 1, roleRequired: "sales_rep", decidedById: "u_aino", decision: "approved", note: null, decidedAt: "2026-06-11" },
+      { stepOrder: 2, roleRequired: "sales_manager", decidedById: "u_mikael", decision: "approved", note: "Volume and term justify the discount.", decidedAt: "2026-06-12" },
     ],
   },
   {
@@ -839,32 +863,32 @@ export let offers: Offer[] = [
       { productId: null, serviceId: "s_lifecycle", label: "Device Lifecycle Management (3 yr)", unitPrice: 234000, quantity: 1, discountPct: 0 },
     ],
     approvals: [
-      { stepOrder: 1, roleRequired: "sales_manager", decidedById: null, decision: null, note: null, decidedAt: null },
-      { stepOrder: 2, roleRequired: "finance", decidedById: null, decision: null, note: null, decidedAt: null },
+      { stepOrder: 1, roleRequired: "sales_rep", decidedById: "u_aino", decision: "approved", note: null, decidedAt: "2026-06-09" },
+      { stepOrder: 2, roleRequired: "sales_manager", decidedById: null, decision: null, note: null, decidedAt: null },
     ],
   },
   {
     id: "off_1175", ref: "OFF-1175", dealId: "d_halcyon", createdById: "u_elias", version: 2,
-    status: "locked", discountPct: 5,
+    status: "made", discountPct: 5,
     justification: "Pilot pricing for one market with two committed follow-on markets in the account plan.",
-    lockedAt: "2026-06-06", createdAt: "2026-05-28",
+    lockedAt: null, createdAt: "2026-05-28",
     lines: [
       { productId: "p_pulse", serviceId: null, label: "HMD Pulse handheld", unitPrice: 312, quantity: 760, discountPct: 5 },
       { productId: null, serviceId: "s_repair", label: "Onsite Repair & Swap", unitPrice: 72000, quantity: 1, discountPct: 0 },
     ],
     approvals: [
-      { stepOrder: 1, roleRequired: "sales_manager", decidedById: "u_mikael", decision: "approved", note: "Follow-on commitment recorded.", decidedAt: "2026-06-04" },
-      { stepOrder: 2, roleRequired: "finance", decidedById: "u_veera", decision: "approved", note: "Margin holds with the follow-on volume.", decidedAt: "2026-06-06" },
+      { stepOrder: 1, roleRequired: "sales_rep", decidedById: "u_elias", decision: "approved", note: null, decidedAt: "2026-05-28" },
+      { stepOrder: 2, roleRequired: "sales_manager", decidedById: "u_mikael", decision: "approved", note: "Follow-on commitment recorded.", decidedAt: "2026-06-04" },
     ],
   },
   {
     id: "off_1204", ref: "OFF-1204", dealId: "d_vektor", createdById: "u_elias", version: 3,
-    status: "draft", discountPct: 0, justification: null, lockedAt: null, createdAt: "2026-06-12",
+    status: "sales_rep", discountPct: 0, justification: null, lockedAt: null, createdAt: "2026-06-12",
     lines: [
       { productId: "p_pulse", serviceId: null, label: "HMD Pulse handheld", unitPrice: 312, quantity: 1260, discountPct: 0 },
       { productId: null, serviceId: "s_sim", label: "SIM Provisioning (monthly, per device)", unitPrice: 6, quantity: 1260, discountPct: 0 },
     ],
-    approvals: [],
+    approvals: defaultOfferWorkflow(),
   },
 ];
 
@@ -1288,16 +1312,12 @@ export function catalogLineLabel(productId: string | null, serviceId: string | n
   return "Item";
 }
 
-export function approvalStepsForOffer(discountPct: number): ApprovalStep[] {
-  if (discountPct <= 0) return [];
-  return [
-    { stepOrder: 1, roleRequired: "sales_manager", decidedById: null, decision: null, note: null, decidedAt: null },
-    { stepOrder: 2, roleRequired: "finance", decidedById: null, decision: null, note: null, decidedAt: null },
-  ];
+export function approvalStepsForOffer(_discountPct: number): ApprovalStep[] {
+  return defaultOfferWorkflow();
 }
 
-export function offerStatusForDiscount(discountPct: number): OfferStatus {
-  return discountPct > 0 ? "pending_manager" : "draft";
+export function offerStatusForDiscount(_discountPct: number): OfferStatus {
+  return "sales_rep";
 }
 
 export function nextOfferVersion(dealId: string): number {

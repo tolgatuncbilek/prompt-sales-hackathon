@@ -71,6 +71,11 @@ import {
   createOfferRecord,
   persistOfferToApi,
   persistOfferUpdateToApi,
+  offerWorkflowSteps,
+  approvalStepActionLabel,
+  approvalTimestamp,
+  APPROVAL_ROLE_LABEL,
+  defaultOfferWorkflow,
   forecastByPeriod,
   rollUp,
   sumRows,
@@ -445,6 +450,8 @@ type AppCtx = {
   moveDeal: (id: string, stage: Stage) => void;
   offerState: Record<string, Offer>;
   decideOffer: (offerId: string, decision: "approved" | "rejected", note?: string) => void;
+  submitOfferForApproval: (offerId: string) => void;
+  approveOfferMade: (offerId: string) => void;
   addOffer: (offer: Offer) => void;
   updateOffer: (offerId: string, updater: (offer: Offer) => Offer) => void;
   addCase: (caseRec: CaseRecord) => void;
@@ -938,7 +945,7 @@ function RepDashboard({ ctx }: { ctx: AppCtx }) {
   const openPipeline = myDeals.reduce((s, d) => s + dealTotal(d), 0);
   const weightedNext = myDeals.reduce((s, d) => s + nextQuarterValue(d) * probability(d.stage), 0);
   const myOffers = seedOffers.map((o) => ctx.offerState[o.id] ?? o).filter((o) => o.createdById === ctx.user.id);
-  const pendingOffers = myOffers.filter((o) => o.status === "pending_manager" || o.status === "pending_finance");
+  const pendingOffers = myOffers.filter((o) => o.status === "pending_manager");
 
   return (
     <>
@@ -1078,7 +1085,7 @@ function ManagerDashboard({ ctx }: { ctx: AppCtx }) {
           <SectionHead title="Offers awaiting your approval" count={pendingApprovals.length} />
           {pendingApprovals.length ? (
             <div className="insight-stack">
-              {pendingApprovals.map((o) => <ApprovalCard key={o.id} offer={o} role="sales_manager" ctx={ctx} />)}
+              {pendingApprovals.map((o) => <ApprovalCard key={o.id} offer={o} ctx={ctx} />)}
             </div>
           ) : <Empty>No discounted offers waiting on Sales Manager approval.</Empty>}
         </section>
@@ -1093,7 +1100,6 @@ function FinanceDashboard({ ctx }: { ctx: AppCtx }) {
   const totalService = rows.reduce((s, r) => s + r.weightedService, 0);
   const gmTotal = forecastTotal(live, "gm");
   const netTotal = forecastTotal(live, "net_sales");
-  const pendingApprovals = seedOffers.map((o) => ctx.offerState[o.id] ?? o).filter((o) => o.status === "pending_finance");
 
   return (
     <>
@@ -1121,12 +1127,8 @@ function FinanceDashboard({ ctx }: { ctx: AppCtx }) {
         </section>
 
         <section>
-          <SectionHead title="Offers awaiting Finance approval" count={pendingApprovals.length} />
-          {pendingApprovals.length ? (
-            <div className="insight-stack">
-              {pendingApprovals.map((o) => <ApprovalCard key={o.id} offer={o} role="finance" ctx={ctx} />)}
-            </div>
-          ) : <Empty>No offers waiting on the second (Finance) approval.</Empty>}
+          <SectionHead title="Offer approvals" />
+          <Empty>Offer approval is handled by Sales Representative and Sales Manager in Accounts.</Empty>
         </section>
       </div>
     </>
@@ -1137,11 +1139,11 @@ function FinanceDashboard({ ctx }: { ctx: AppCtx }) {
 // Offer approval card (shared by manager + finance dashboards and offers view)
 // ===========================================================================
 
-function ApprovalCard({ offer, role, ctx }: { offer: Offer; role: "sales_manager" | "finance"; ctx: AppCtx }) {
+function ApprovalCard({ offer, ctx }: { offer: Offer; ctx: AppCtx }) {
   const deal = dealById(offer.dealId)!;
   const account = accountById(deal.accountId)!;
   const [note, setNote] = useState("");
-  const step1 = offer.approvals.find((a) => a.roleRequired === "sales_manager");
+  const repStep = offerWorkflowSteps(offer).find((a) => a.roleRequired === "sales_rep");
 
   return (
     <article className="insight insight--approval">
@@ -1152,22 +1154,22 @@ function ApprovalCard({ offer, role, ctx }: { offer: Offer; role: "sales_manager
       <h3 className="insight-headline">{deal.title}</h3>
       <div className="approval-figs">
         <div><span>List</span><strong className="numeric">{fmtEurExact(offerList(offer))}</strong></div>
-        <div><span>Net</span><strong className="numeric">{fmtEurExact(offerNet(offer))}</strong></div>
+        <div><span>Net</span><strong className="numeric">{fmtEurExact(offerGrandNet(offer))}</strong></div>
         <div><span>Created by</span><strong>{userName(offer.createdById)}</strong></div>
       </div>
       {offer.justification && (
         <div className="approval-just"><strong>Justification</strong><p>{offer.justification}</p></div>
       )}
-      {role === "finance" && step1?.decision === "approved" && (
-        <p className="approval-prior"><Icon name="check" />Sales Manager approved {step1.decidedAt} — {step1.note}</p>
+      {repStep?.decision === "approved" && (
+        <p className="approval-prior"><Icon name="check" />Submitted by {userName(repStep.decidedById)} — {repStep.decidedAt}</p>
       )}
       <label className="approval-note">
         <span className="sr-only">Decision note</span>
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note for the rep" />
       </label>
       <div className="insight-actions">
-        <button className="btn btn--primary btn--sm" type="button" onClick={() => ctx.decideOffer(offer.id, "approved", note)}>
-          <Icon name="check" />Approve
+        <button className="btn btn--primary btn--sm" type="button" onClick={() => ctx.approveOfferMade(offer.id)}>
+          <Icon name="check" />Approve offer
         </button>
         <button className="btn btn--danger btn--sm" type="button" onClick={() => ctx.decideOffer(offer.id, "rejected", note)}>Reject</button>
       </div>
@@ -1386,7 +1388,7 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
         <Kpi label="Weighted, next quarter" value={fmtEur(weightedNext)} />
         <Kpi label="3-year total" value={fmtEur(threeYear)} />
         <Kpi label="Active cases" value={`${openCases.length}`} tone={openCases.length ? "warn" : undefined} />
-        <Kpi label="Open offers" value={`${accOffers.filter((o) => o.status !== "locked" && o.status !== "rejected").length}`} />
+        <Kpi label="Open offers" value={`${accOffers.filter((o) => o.status !== "made" && o.status !== "rejected").length}`} />
       </div>
 
       <div className="record-body">
@@ -1583,7 +1585,7 @@ function BuildOfferModal({
         dealId: selectedDeal.id,
         createdById: ctx.user.id,
         version: 1,
-        status: "draft",
+        status: "sales_rep",
         discountPct: Math.min(100, Math.max(0, Number(headlineDiscount) || 0)),
         justification: null,
         lockedAt: null,
@@ -1804,9 +1806,10 @@ function OfferDetailPanel({
 }) {
   const deal = dealById(offer.dealId)!;
   const account = accountById(deal.accountId)!;
-  const canManager = ctx.user.role === "sales_manager" && offer.status === "pending_manager";
-  const canFinance = ctx.user.role === "finance" && offer.status === "pending_finance";
-  const canEdit = offer.status !== "rejected";
+  const workflow = offerWorkflowSteps(offer);
+  const canEdit = offer.status === "sales_rep";
+  const canSubmit = offer.status === "sales_rep" && (ctx.user.role === "sales_rep" || offer.createdById === ctx.user.id);
+  const canManagerApprove = offer.status === "pending_manager" && ctx.user.role === "sales_manager";
 
   const listTotal = offerLinesNetTotal(offer);
   const netTotal = offerGrandNet(offer);
@@ -1828,14 +1831,13 @@ function OfferDetailPanel({
         <div>
           <span className="record-type">Offer {offer.ref} · v{offer.version}</span>
           <h2>{deal.title}</h2>
-          <p className="muted">{account.name} · created by {userName(offer.createdById)} · {offer.createdAt}</p>
+          <p className="muted">{account.name} · Created by {userName(offer.createdById)} · {offer.createdAt}</p>
         </div>
         <div className="offer-detail-head-side">
           {onBuildOffer && (
             <button className="btn btn--primary btn--sm" onClick={onBuildOffer} type="button"><Icon name="plus" />Build offer</button>
           )}
           <OfferPill status={offer.status} />
-          {offer.lockedAt && <span className="locked-flag"><Icon name="lock" />Locked {offer.lockedAt}</span>}
         </div>
       </div>
 
@@ -1923,27 +1925,62 @@ function OfferDetailPanel({
       )}
 
       <SectionHead title="Approval workflow" />
+      <p className="offer-stage-label">Current stage: <strong>{OFFER_STATUS_LABEL[offer.status]}</strong></p>
       <ol className="approval-steps">
-        {offer.approvals.length ? offer.approvals.map((a) => (
-          <li key={a.stepOrder} className={cx("approval-step", a.decision === "approved" && "is-approved", a.decision === "rejected" && "is-rejected")}>
-            <span className="approval-mark" aria-hidden="true">{a.decision === "approved" ? <Icon name="check" /> : a.decision === "rejected" ? <Icon name="close" /> : a.stepOrder}</span>
-            <div>
-              <strong>{a.stepOrder}. {a.roleRequired === "sales_manager" ? "Sales Manager" : "Finance"}</strong>
-              <small>{a.decision ? `${a.decision === "approved" ? "Approved" : "Rejected"} by ${userName(a.decidedById)} · ${a.decidedAt}${a.note ? ` — ${a.note}` : ""}` : "Awaiting decision"}</small>
-            </div>
-          </li>
-        )) : <li className="approval-step"><span className="approval-mark">—</span><div><strong>No approval required</strong><small>List-price offer; no discount to approve.</small></div></li>}
+        {workflow.map((step) => {
+          const isActive =
+            (offer.status === "sales_rep" && step.roleRequired === "sales_rep" && !step.decision)
+            || (offer.status === "pending_manager" && step.roleRequired === "sales_manager" && !step.decision);
+          const showSubmit = canSubmit && step.roleRequired === "sales_rep" && !step.decision;
+          const showApprove = canManagerApprove && step.roleRequired === "sales_manager" && !step.decision;
+          return (
+            <li
+              key={step.stepOrder}
+              className={cx(
+                "approval-step",
+                step.decision === "approved" && "is-approved",
+                step.decision === "rejected" && "is-rejected",
+                isActive && "is-active",
+              )}
+            >
+              <span className="approval-mark" aria-hidden="true">
+                {step.decision === "approved" ? <Icon name="check" /> : step.decision === "rejected" ? <Icon name="close" /> : step.stepOrder}
+              </span>
+              <div className="approval-step-body">
+                <div className="approval-step-row">
+                  <strong>{step.stepOrder}. {APPROVAL_ROLE_LABEL[step.roleRequired]}</strong>
+                  {showSubmit && (
+                    <button className="btn btn--secondary btn--sm" type="button" onClick={() => ctx.submitOfferForApproval(offer.id)}>
+                      Send for Sales Manager approval
+                    </button>
+                  )}
+                  {showApprove && (
+                    <button className="btn btn--primary btn--sm" type="button" onClick={() => ctx.approveOfferMade(offer.id)}>
+                      Approve offer
+                    </button>
+                  )}
+                </div>
+                {!step.decision && isActive && (
+                  <small className="approval-step-status">In progress — action required</small>
+                )}
+                {!step.decision && !isActive && offer.status !== "rejected" && offer.status !== "made" && (
+                  <small className="approval-step-status">Waiting on prior step</small>
+                )}
+                {step.decision === "approved" && (
+                  <p className="approval-step-meta">
+                    {approvalStepActionLabel(step)} {userName(step.decidedById)} — {step.decidedAt}
+                  </p>
+                )}
+                {step.decision === "rejected" && (
+                  <p className="approval-step-meta approval-step-meta--rejected">
+                    Rejected by {userName(step.decidedById)} — {step.decidedAt}{step.note ? ` — ${step.note}` : ""}
+                  </p>
+                )}
+              </div>
+            </li>
+          );
+        })}
       </ol>
-
-      {(canManager || canFinance) && (
-        <div className="offer-decide">
-          <p className="muted">{canManager ? "First approval — Sales Manager." : "Second approval — Finance. Approving locks the offer."}</p>
-          <div className="insight-actions">
-            <button className="btn btn--primary" onClick={() => ctx.decideOffer(offer.id, "approved")} type="button"><Icon name="check" />Approve</button>
-            <button className="btn btn--danger" onClick={() => ctx.decideOffer(offer.id, "rejected")} type="button">Reject</button>
-          </div>
-        </div>
-      )}
     </section>
   );
 }
@@ -3235,34 +3272,79 @@ function MainApp() {
     bumpAccounts();
   };
 
+  const submitOfferForApproval = (offerId: string) => {
+    const base = offerState[offerId] ?? seedOffers.find((o) => o.id === offerId);
+    if (!base || base.status !== "sales_rep") return;
+    const stamp = approvalTimestamp();
+    const approvals = offerWorkflowSteps(base).map((a) =>
+      a.roleRequired === "sales_rep"
+        ? { ...a, decision: "approved" as const, decidedById: user.id, decidedAt: stamp, note: null }
+        : a,
+    );
+    const updated: Offer = { ...base, status: "pending_manager", approvals };
+    setOfferState((m) => ({ ...m, [offerId]: updated }));
+    const idx = seedOffers.findIndex((o) => o.id === offerId);
+    if (idx >= 0) seedOffers[idx] = updated;
+    bumpAccounts();
+    const decisionDeal = dealById(base.dealId);
+    if (decisionDeal) {
+      recordActivity({
+        accountId: decisionDeal.accountId,
+        dealId: decisionDeal.id,
+        actorId: user.id,
+        kind: "offer",
+        summary: `${base.ref} submitted for Sales Manager approval.`,
+      });
+    }
+    notify(`${base.ref} sent for Sales Manager approval.`);
+  };
+
+  const approveOfferMade = (offerId: string) => {
+    const base = offerState[offerId] ?? seedOffers.find((o) => o.id === offerId);
+    if (!base || base.status !== "pending_manager") return;
+    const stamp = approvalTimestamp();
+    const approvals = offerWorkflowSteps(base).map((a) =>
+      a.roleRequired === "sales_manager"
+        ? { ...a, decision: "approved" as const, decidedById: user.id, decidedAt: stamp, note: "Offer approved." }
+        : a,
+    );
+    const updated: Offer = { ...base, status: "made", approvals, lockedAt: null };
+    setOfferState((m) => ({ ...m, [offerId]: updated }));
+    const idx = seedOffers.findIndex((o) => o.id === offerId);
+    if (idx >= 0) seedOffers[idx] = updated;
+    bumpAccounts();
+    const decisionDeal = dealById(base.dealId);
+    if (decisionDeal) {
+      recordActivity({
+        accountId: decisionDeal.accountId,
+        dealId: decisionDeal.id,
+        actorId: user.id,
+        kind: "offer",
+        summary: `${base.ref} approved — offer is made.`,
+      });
+    }
+    notify(`${base.ref} approved. Offer is made.`);
+  };
+
   const decideOffer = (offerId: string, decision: "approved" | "rejected", note?: string) => {
     const base = offerState[offerId] ?? seedOffers.find((o) => o.id === offerId);
     if (!base) return;
-    const step = base.approvals.find((a) => !a.decision);
-    if (!step) return;
-    const approvals = base.approvals.map((a) =>
-      a.stepOrder === step.stepOrder ? { ...a, decision, decidedById: user.id, note: note?.trim() || (decision === "approved" ? "Approved." : "Rejected."), decidedAt: "Just now" } : a,
+    if (decision === "approved") {
+      approveOfferMade(offerId);
+      return;
+    }
+    const stamp = approvalTimestamp();
+    const role: "sales_rep" | "sales_manager" = base.status === "pending_manager" ? "sales_manager" : "sales_rep";
+    const approvals = offerWorkflowSteps(base).map((a) =>
+      a.roleRequired === role
+        ? { ...a, decision: "rejected" as const, decidedById: user.id, note: note?.trim() || "Rejected.", decidedAt: stamp }
+        : a,
     );
-    let status: Offer["status"] = base.status;
-    if (decision === "rejected") status = "rejected";
-    else if (step.roleRequired === "sales_manager") status = "pending_finance";
-    else status = "locked";
-    const locked = status === "locked" ? "Just now" : base.lockedAt;
-    setOfferState((m) => ({ ...m, [offerId]: { ...base, approvals, status, lockedAt: locked } }));
-    fetch(`/api/offers/${offerId}/decide`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, note }) }).catch(console.error);
-    const decisionDeal = dealById(base.dealId);
-    if (decisionDeal) recordActivity({
-      accountId: decisionDeal.accountId,
-      dealId: decisionDeal.id,
-      actorId: user.id,
-      kind: "offer",
-      summary: decision === "approved"
-        ? status === "locked" ? `${base.ref} fully approved and locked.` : `${base.ref} approved — routed to Finance.`
-        : `${base.ref} rejected.`,
-    });
-    notify(decision === "approved"
-      ? status === "locked" ? `${base.ref} fully approved and locked.` : `${base.ref} approved — routed to Finance.`
-      : `${base.ref} rejected. The rep has been notified.`);
+    setOfferState((m) => ({ ...m, [offerId]: { ...base, approvals, status: "rejected" } }));
+    const idx = seedOffers.findIndex((o) => o.id === offerId);
+    if (idx >= 0) seedOffers[idx] = { ...base, approvals, status: "rejected" };
+    bumpAccounts();
+    notify(`${base.ref} rejected.`);
   };
 
   const expandDrawer = () => {
@@ -3285,7 +3367,7 @@ function MainApp() {
     openCase: (id) => { setCaseId(id); setDrawer({ kind: "case", id }); setMenuOpen(false); },
     notify,
     dealStage, dealLeadValidated, requestMoveDeal, validateLead, moveDeal,
-    offerState, decideOffer, addOffer, updateOffer, addCase,
+    offerState, decideOffer, submitOfferForApproval, approveOfferMade, addOffer, updateOffer, addCase,
     insightStatus, setInsight: (id, s) => setInsightStatus((m) => ({ ...m, [id]: s })),
     caseNotes, addNote: (cid, n) => setCaseNotes((m) => ({ ...m, [cid]: [n, ...(m[cid] ?? [])] })),
     patch, eff, addAccount, addDeal, updateDeal, logActivity,
@@ -3339,7 +3421,7 @@ function MainApp() {
         <nav aria-label="Primary" className="sidebar-nav">
           {NAV.map((item) => {
             const count = item.screen === "cases" ? seedCases.filter((c) => (c.status !== "resolved" && c.status !== "closed") && (user.role !== "tam" || c.ownerId === user.id)).length
-              : item.screen === "offers" ? seedOffers.map((o) => offerState[o.id] ?? o).filter((o) => (user.role === "sales_manager" && o.status === "pending_manager") || (user.role === "finance" && o.status === "pending_finance")).length
+              : item.screen === "offers" ? seedOffers.map((o) => offerState[o.id] ?? o).filter((o) => user.role === "sales_manager" && o.status === "pending_manager").length
               : 0;
             return (
               <button key={item.screen} className={cx("nav", activeNav === item.screen && "nav--active")} onClick={() => ctx.go(item.screen)} type="button">

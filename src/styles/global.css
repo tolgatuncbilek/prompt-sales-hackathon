@@ -397,12 +397,11 @@ tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
 .prio--low { background: var(--raised); color: var(--ink-3); }
 
 .pill { display: inline-flex; align-items: center; padding: 3px 10px; border: 1px solid var(--rule); border-radius: var(--r-pill); font-size: 10.5px; font-weight: 650; white-space: nowrap; }
-.pill--open, .pill--offer-draft { color: var(--ink-2); }
+.pill--open, .pill--offer-sales_rep { color: var(--ink-2); }
 .pill--in_progress { border-color: var(--accent-line); color: var(--accent); }
-.pill--escalated, .pill--offer-pending_manager, .pill--offer-pending_finance { border-color: rgba(255, 200, 87, 0.4); color: var(--amber); }
-.pill--resolved, .pill--offer-approved { border-color: rgba(78, 217, 154, 0.4); color: var(--green); }
+.pill--escalated, .pill--offer-pending_manager { border-color: rgba(255, 200, 87, 0.4); color: var(--amber); }
+.pill--resolved, .pill--offer-made { border-color: rgba(78, 217, 154, 0.4); color: var(--green); }
 .pill--closed, .pill--offer-rejected { color: var(--ink-3); }
-.pill--offer-locked { border-color: var(--accent-line); color: var(--accent); }
 
 .sla { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--ink-2); }
 .sla .icon { width: 14px; }
@@ -735,9 +734,16 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .approval-mark { display: grid; place-items: center; width: 26px; height: 26px; flex: 0 0 auto; border: 1px solid var(--rule); border-radius: 50%; background: var(--surface); color: var(--ink-2); font-size: 12px; font-weight: 650; }
 .approval-mark .icon { width: 15px; }
 .approval-step.is-approved .approval-mark { border-color: var(--green); background: var(--green-soft); color: var(--green); }
+.approval-step.is-active .approval-mark { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .approval-step.is-rejected .approval-mark { border-color: var(--red); background: var(--red-soft); color: var(--red); }
 .approval-step strong { display: block; font-size: 12.5px; }
 .approval-step small { display: block; margin-top: 3px; color: var(--ink-3); font-size: 11px; }
+.approval-step-body { flex: 1; min-width: 0; }
+.approval-step-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.approval-step-meta { margin: 6px 0 0; font-size: 11.5px; color: var(--green); line-height: 1.45; }
+.approval-step-meta--rejected { color: var(--red); }
+.approval-step-status { display: block; margin-top: 4px; color: var(--ink-3); font-size: 11px; }
+.offer-stage-label { margin: 0 0 12px; font-size: 12px; color: var(--ink-2); }
 .offer-decide { margin-top: 18px; padding: 16px; border: 1px solid var(--accent-line); border-radius: var(--r-surface); background: var(--accent-soft); }
 .offer-decide .muted { margin-bottom: 12px; color: var(--ink-2); }
 
