@@ -1,6 +1,7 @@
 // HMD Secure AI-Native CRM — Seed data.
 // Pure static definitions separated from crm.ts logic.
 
+import { defaultOfferWorkflow } from "./crm.ts";
 import type {
   User,
   Account,
