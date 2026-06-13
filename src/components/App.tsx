@@ -1924,7 +1924,6 @@ function MainApp() {
           <button className="drawer-scrim" aria-label="Close panel" type="button" onClick={() => setDrawer(null)} />
           <aside className="drawer" role="dialog" aria-label={drawer.kind === "account" ? "Account record" : "Case detail"}>
             <div className="drawer-bar">
-              <button className="drawer-collapse" type="button" onClick={() => setDrawer(null)}><Icon name="chevron" />Collapse</button>
               <div className="drawer-bar-actions">
                 <button className="icon-btn" type="button" aria-label="Open full page" title="Open as full page" onClick={expandDrawer}><Icon name="expand" /></button>
                 <button className="icon-btn" type="button" aria-label="Close panel" onClick={() => setDrawer(null)}><Icon name="close" /></button>

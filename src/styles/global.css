@@ -565,7 +565,7 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .chip { padding: 6px 12px; border: 1px solid var(--rule); border-radius: var(--r-control); background: var(--field); color: var(--ink-2); font-size: 11px; font-weight: 600; cursor: pointer; transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast); }
 .chip:hover { color: var(--ink); }
 .chip--active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
-.composer textarea { width: 100%; min-height: 52px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--r-control); background: var(--field); color: var(--ink); font: inherit; font-size: 13px; line-height: 1.5; resize: vertical; }
+.composer textarea { width: 100%; min-height: 52px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--r-control); background: var(--field); color: var(--ink); font: inherit; font-size: 13px; line-height: 1.5; resize: none; }
 .composer textarea::placeholder { color: var(--ink-3); }
 .composer textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .composer-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
@@ -768,7 +768,7 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .field-opt { padding: 1px 7px; border-radius: var(--r-pill); background: var(--raised); color: var(--ink-3); font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
 .field input, .field textarea {
   width: 100%; padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--r-control);
-  background: var(--field); color: var(--ink); font: inherit; font-size: 13px; line-height: 1.5; resize: vertical;
+  background: var(--field); color: var(--ink); font: inherit; font-size: 13px; line-height: 1.5; resize: none;
 }
 .field input:focus-visible, .field textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .field input::placeholder { color: var(--ink-3); }
@@ -809,10 +809,7 @@ tbody tr:hover .row-open { color: var(--ink-2); }
   box-shadow: var(--shadow-drawer); animation: drawer-in var(--t-std) both;
 }
 @keyframes drawer-in { from { transform: translateX(28px); opacity: 0.5; } }
-.drawer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--rule); background: var(--field-2); flex: 0 0 auto; }
-.drawer-collapse { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px 8px 9px; border: 1px solid var(--rule); border-radius: var(--r-control); background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 600; cursor: pointer; transition: background var(--t-fast), color var(--t-fast); }
-.drawer-collapse:hover { background: var(--surface); color: var(--ink); }
-.drawer-collapse .icon { width: 16px; }
+.drawer-bar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--rule); background: var(--field-2); flex: 0 0 auto; }
 .drawer-bar-actions { display: flex; gap: 8px; }
 .drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 22px 28px; }
 .drawer-body .record { padding-top: 6px; }
