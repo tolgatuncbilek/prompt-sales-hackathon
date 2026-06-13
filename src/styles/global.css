@@ -111,16 +111,38 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
   place-items: center;
 }
 
-.startup-spinner span {
-  width: 32px;
-  height: 32px;
-  border: 2px solid var(--rule);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: startup-spin 700ms linear infinite;
+.startup-spinner .orbit {
+  width: 240px;
+  height: 240px;
+  position: relative;
+  display: grid;
+  place-items: center;
 }
 
-@keyframes startup-spin { to { transform: rotate(360deg); } }
+.startup-spinner .orbit-ring {
+  position: absolute;
+  inset: 0;
+  border: 2px dashed var(--rule);
+  border-radius: 50%;
+  opacity: 0.3;
+}
+
+.startup-spinner img {
+  width: 80px;
+  height: auto;
+  animation: startup-spin 3s linear infinite;
+  filter: drop-shadow(0 0 24px rgba(0,0,0,0.5));
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: -40px 0 0 -40px;
+  transform-origin: center center;
+}
+
+@keyframes startup-spin {
+  from { transform: rotate(0deg) translateX(120px); }
+  to   { transform: rotate(360deg) translateX(120px); }
+}
 
 .sidebar {
   position: fixed; inset: 0 auto 0 0; z-index: 30; width: var(--sidebar);
@@ -763,6 +785,20 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 
 .scrim { display: none; }
+
+.crm-streaming { white-space: pre-wrap; }
+
+.crm-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--accent);
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  animation: crm-blink 600ms step-end infinite;
+}
+
+@keyframes crm-blink { 50% { opacity: 0; } }
 
 /* --------------------------------------------------------------------------
    CRM assistant

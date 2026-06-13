@@ -2084,8 +2084,10 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
   const [approvedActions, setApprovedActions] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [streamingId, setStreamingId] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const streamRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (open) window.setTimeout(() => inputRef.current?.focus(), 0);
@@ -2142,6 +2144,7 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
     setError(null);
     setApprovedActions(new Set());
     setLoading(true);
+    if (streamRef.current) clearInterval(streamRef.current);
     setMessages((current) => [
       ...current,
       { id: `msg_${crypto.randomUUID()}`, role: "user", content: next },
@@ -2156,29 +2159,53 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "The assistant could not answer.");
+
+      const words = (payload.answer || "").split(" ");
+      const msgId = `msg_${crypto.randomUUID()}`;
+
       setMessages((current) => {
         const withoutStatus = current.filter((entry) => entry.role !== "status");
         return [
           ...withoutStatus,
           {
-            id: `msg_${crypto.randomUUID()}`,
+            id: msgId,
             role: "assistant",
-            content: payload.answer,
+            content: "",
             evidence: payload.evidence ?? [],
             actions: payload.actions ?? [],
             uncertainty: payload.uncertainty,
           },
         ];
       });
-      setAnswer(payload);
+      setStreamingId(msgId);
+
+      let idx = 0;
+      streamRef.current = setInterval(() => {
+        idx++;
+        if (idx >= words.length) {
+          if (streamRef.current) clearInterval(streamRef.current);
+          streamRef.current = null;
+          setMessages((current) =>
+            current.map((m) => (m.id === msgId ? { ...m, content: words.join(" ") } : m))
+          );
+          setStreamingId(null);
+          setAnswer(payload);
+          setLoading(false);
+          return;
+        }
+        setMessages((current) =>
+          current.map((m) => (m.id === msgId ? { ...m, content: words.slice(0, idx).join(" ") } : m))
+        );
+      }, 25);
     } catch (requestError) {
+      if (streamRef.current) { clearInterval(streamRef.current); streamRef.current = null; }
+      setStreamingId(null);
       const message = requestError instanceof Error ? requestError.message : "The assistant could not answer.";
       setError(message);
       setMessages((current) => [
         ...current.filter((entry) => entry.role !== "status"),
         { id: `msg_${crypto.randomUUID()}`, role: "error", content: message },
       ]);
-    } finally {
       setLoading(false);
     }
   };
@@ -2204,8 +2231,11 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
             ) : entry.role === "assistant" ? (
               <div className="crm-message crm-message--assistant" key={entry.id}>
                 <span className="ai-badge"><Icon name="spark" />Draft answer</span>
-                <p>{entry.content}</p>
-                {entry.evidence.length > 0 && (
+                <p className={entry.id === streamingId ? "crm-streaming" : ""}>
+                  {entry.content}
+                  {entry.id === streamingId && <span className="crm-cursor" aria-hidden="true" />}
+                </p>
+                {entry.evidence.length > 0 && entry.id !== streamingId && (
                   <div className="crm-evidence">
                     <strong>Evidence</strong>
                     {entry.evidence.map((item, index) => item.url ? (
@@ -2215,7 +2245,7 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
                     ))}
                   </div>
                 )}
-                {entry.actions.length > 0 && (
+                {entry.actions.length > 0 && entry.id !== streamingId && (
                   <div className="crm-actions">
                     <strong>Proposed actions</strong>
                     {entry.actions.map((action) => {
@@ -2235,7 +2265,7 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
                     })}
                   </div>
                 )}
-                {entry.uncertainty && <small>{entry.uncertainty}</small>}
+                {entry.uncertainty && entry.id !== streamingId && <small>{entry.uncertainty}</small>}
               </div>
             ) : entry.role === "status" ? (
               <div className="crm-message crm-message--assistant crm-message--loading" key={entry.id} role="status">{entry.content}</div>
@@ -2281,7 +2311,10 @@ export default function App() {
   if (!ready) {
     return (
       <main className="startup-spinner" role="status" aria-label="Loading">
-        <span aria-hidden="true" />
+        <div className="orbit">
+          <div className="orbit-ring" aria-hidden="true" />
+          <img src="/nokia-3310.svg" alt="" />
+        </div>
       </main>
     );
   }
