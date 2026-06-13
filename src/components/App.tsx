@@ -2808,7 +2808,7 @@ function MainApp() {
 
   const expandDrawer = () => {
     if (!drawer) return;
-    setScreen(drawer.kind === "account" ? "account" : ("case" as Screen));
+    setScreen(drawer.kind === "account" ? "account" : drawer.kind === "deal" ? "deal" : ("case" as Screen));
     setDrawer(null);
   };
 
@@ -2816,12 +2816,12 @@ function MainApp() {
     user,
     go: (s) => { setScreen(s); setDrawer(null); setMenuOpen(false); },
     openAccount: (id) => { setAccountId(id); setDrawer({ kind: "account", id }); setMenuOpen(false); },
-    openDeal: (id) => { setDealId(id); setScreen("deal"); setDrawer(null); setMenuOpen(false); },
+    openDeal: (id) => { setDealId(id); setDrawer({ kind: "deal", id }); setMenuOpen(false); },
     openOffers: (id) => {
       const offer = id ? seedOffers.find((o) => o.id === id) : undefined;
-      if (offer) { setDealId(offer.dealId); setScreen("deal"); }
-      else { setOfferFocus(id); setScreen("offers"); }
-      setDrawer(null); setMenuOpen(false);
+      if (offer) { setDealId(offer.dealId); setDrawer({ kind: "deal", id: offer.dealId }); }
+      else { setOfferFocus(id); setScreen("offers"); setDrawer(null); }
+      setMenuOpen(false);
     },
     openCase: (id) => { setCaseId(id); setDrawer({ kind: "case", id }); setMenuOpen(false); },
     notify,
@@ -2926,7 +2926,7 @@ function MainApp() {
       {drawer && (
         <>
           <button className="drawer-scrim" aria-label="Close panel" type="button" onClick={() => setDrawer(null)} />
-          <aside className="drawer" role="dialog" aria-label={drawer.kind === "account" ? "Account record" : "Case detail"}>
+          <aside className="drawer" role="dialog" aria-label={drawer.kind === "account" ? "Account record" : drawer.kind === "deal" ? "Deal detail" : "Case detail"}>
             <div className="drawer-bar">
               <div className="drawer-bar-actions">
                 <button className="icon-btn" type="button" aria-label="Open full page" title="Open as full page" onClick={expandDrawer}><Icon name="expand" /></button>
@@ -2936,7 +2936,9 @@ function MainApp() {
             <div className="drawer-body">
               {drawer.kind === "account"
                 ? <AccountRecord account={accountById(drawer.id)!} ctx={ctx} embedded />
-                : <CaseDetail caseRec={seedCases.find((c) => c.id === drawer.id)!} ctx={ctx} embedded />}
+                : drawer.kind === "deal"
+                  ? <DealDetail deal={dealById(drawer.id)!} ctx={ctx} embedded />
+                  : <CaseDetail caseRec={seedCases.find((c) => c.id === drawer.id)!} ctx={ctx} embedded />}
             </div>
           </aside>
         </>
