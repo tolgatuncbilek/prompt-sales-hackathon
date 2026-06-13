@@ -165,6 +165,7 @@ export type CaseRecord = {
 };
 
 export type OfferLine = {
+  kind: "product" | "service";
   productId: string | null;
   serviceId: string | null;
   label: string;
@@ -675,6 +676,7 @@ export function isStale(deal: Deal): boolean {
 }
 
 export function isOverdue(deal: Deal): boolean {
+  if (!deal.expectedClose?.trim()) return false;
   return isOpen(deal) && daysBetween(TODAY, new Date(deal.expectedClose)) > 0;
 }
 
@@ -723,7 +725,119 @@ export function caseAgeDays(c: CaseRecord): number {
   return daysBetween(TODAY, new Date(c.createdAt));
 }
 
-// Offer maths --------------------------------------------------------------
+/** Services selectable when building an offer. */
+export const OFFER_BUILDER_SERVICE_IDS = ["s_fota", "s_emm"] as const;
+
+export function offerBuilderProducts(): ProductCatalogItem[] {
+  return products.filter((p) => !p.retired);
+}
+
+export function offerBuilderServices(): ServiceCatalogItem[] {
+  return services.filter((s) => OFFER_BUILDER_SERVICE_IDS.includes(s.id as (typeof OFFER_BUILDER_SERVICE_IDS)[number]));
+}
+
+export function offerLineKind(line: OfferLine): "product" | "service" {
+  return line.kind ?? (line.productId ? "product" : "service");
+}
+
+export function offerProductNetTotal(offer: Offer): number {
+  const linesNet = offer.lines
+    .filter((l) => offerLineKind(l) === "product")
+    .reduce((s, l) => s + lineNet(l), 0);
+  const totalLines = offerLinesNetTotal(offer);
+  if (totalLines <= 0) return 0;
+  return linesNet * (1 - offer.discountPct / 100);
+}
+
+export function offerServiceNetTotal(offer: Offer): number {
+  const linesNet = offer.lines
+    .filter((l) => offerLineKind(l) === "service")
+    .reduce((s, l) => s + lineNet(l), 0);
+  const totalLines = offerLinesNetTotal(offer);
+  if (totalLines <= 0) return 0;
+  return linesNet * (1 - offer.discountPct / 100);
+}
+
+export function dealGrossMargin(device: number, service: number): number {
+  return (device + service) * 0.5;
+}
+
+export function setDealRevenue(deal: Deal, deviceValue: number, serviceValue: number) {
+  const period = deal.devicePhases[0]?.period ?? NEXT_QUARTER;
+  deal.deviceUnitPrice = deviceValue;
+  deal.devicePhases = deviceValue > 0 ? [{ period, units: 1 }] : [];
+
+  for (let index = serviceContracts.length - 1; index >= 0; index -= 1) {
+    if (serviceContracts[index]?.dealId === deal.id) serviceContracts.splice(index, 1);
+  }
+  if (serviceValue > 0) {
+    serviceContracts.unshift({
+      id: `sc_${deal.id}_${Date.now()}`,
+      dealId: deal.id,
+      serviceId: services[0]?.id ?? "",
+      invoiceModel: "one_off",
+      startDate: new Date().toISOString().slice(0, 10),
+      endDate: null,
+      fixedValue: serviceValue,
+      monthlyRate: null,
+      expectedDevices: null,
+      phases: [{ period, value: serviceValue }],
+    });
+  }
+}
+
+export function setDealNextQuarterRevenue(deal: Deal, nextQuarterValue: number) {
+  const period = NEXT_QUARTER;
+  const svcNq = serviceInPeriod(deal.id, period);
+  const deviceVal = Math.max(0, nextQuarterValue - svcNq);
+  const otherPhases = deal.devicePhases.filter((p) => p.period !== period);
+  if (deviceVal > 0) {
+    deal.deviceUnitPrice = deviceVal;
+    deal.devicePhases = [...otherPhases, { period, units: 1 }];
+  } else {
+    deal.devicePhases = otherPhases;
+    if (!otherPhases.length) deal.deviceUnitPrice = 0;
+  }
+}
+
+export function syncDealFromMadeOffer(deal: Deal, offer: Offer) {
+  const device = offerProductNetTotal(offer);
+  const service = offerServiceNetTotal(offer);
+  const period = NEXT_QUARTER;
+  deal.deviceUnitPrice = device;
+  deal.devicePhases = device > 0 ? [{ period, units: 1 }] : [];
+  for (let index = serviceContracts.length - 1; index >= 0; index -= 1) {
+    if (serviceContracts[index]?.dealId === deal.id) serviceContracts.splice(index, 1);
+  }
+  if (service > 0) {
+    serviceContracts.unshift({
+      id: `sc_${deal.id}_${Date.now()}`,
+      dealId: deal.id,
+      serviceId: offer.lines.find((l) => offerLineKind(l) === "service")?.serviceId ?? services[0]?.id ?? "",
+      invoiceModel: "one_off",
+      startDate: new Date().toISOString().slice(0, 10),
+      endDate: null,
+      fixedValue: service,
+      monthlyRate: null,
+      expectedDevices: null,
+      phases: [{ period, value: service }],
+    });
+  }
+}
+
+export function madeOfferForDeal(dealId: string, offerLookup?: (id: string) => Offer | undefined): Offer | undefined {
+  return offers
+    .map((o) => offerLookup?.(o.id) ?? o)
+    .filter((o) => o.dealId === dealId && o.status === "made")
+    .sort((a, b) => b.version - a.version)[0];
+}
+
+export function fmtExpectedClose(iso: string): string {
+  if (!iso?.trim()) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-IE", { day: "2-digit", month: "short", year: "numeric" });
+}
 
 export function lineListSubtotal(line: OfferLine): number {
   return line.unitPrice * line.quantity;
@@ -768,6 +882,9 @@ export const SERVICE_LIST_PRICES: Record<string, number> = {
   s_warranty: 96_000,
   s_repair: 72_000,
   s_sim: 6,
+  s_fota: 18_000,
+  s_emm: 12_000,
+  s_tech_compat: 0,
 };
 
 export function catalogUnitPrice(productId: string | null, serviceId: string | null): number {
@@ -782,7 +899,8 @@ export function catalogLineLabel(productId: string | null, serviceId: string | n
     const svc = services.find((s) => s.id === serviceId);
     if (!svc) return "Service";
     if (svc.id === "s_mdm" || svc.id === "s_sim") return `${svc.name} (monthly, per device)`;
-    if (svc.id === "s_lifecycle" || svc.id === "s_warranty" || svc.id === "s_repair") return `${svc.name} (3 yr)`;
+    if (svc.id === "s_fota") return `${svc.name} (per year)`;
+    if (svc.id === "s_emm") return `${svc.name} (per year)`;
     return svc.name;
   }
   return "Item";

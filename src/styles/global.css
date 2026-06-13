@@ -1134,7 +1134,15 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .drawer-body .record-actions { grid-column: 1 / -1; justify-content: flex-start; }
 .drawer-body .kpi-strip, .drawer-body .kpi-strip--tight { display: flex; overflow-x: auto; }
 .drawer-body .kpi { min-width: 150px; border-left: 1px solid var(--rule); }
-.drawer-body .kpi:first-child { border-left: 0; }
+.kpi--editable .cell-edit { width: 100%; }
+.kpi--editable .cell-input { font-size: 18px; font-weight: 650; }
+.kpi-date-input {
+  width: 100%; margin-top: 2px; padding: 4px 6px; border: 1px solid var(--rule);
+  border-radius: var(--r-control); background: var(--field); color: var(--ink);
+  font: inherit; font-size: 13px; font-weight: 600;
+}
+.economics-note { margin: 0 0 10px; font-size: 11px; }
+.stack-list--compact li { padding: 8px 0; }
 @media (max-width: 640px) { .drawer { width: 100vw; } }
 
 /* --------------------------------------------------------------------------

@@ -74,6 +74,17 @@ import {
   offerLinesNetTotal,
   offerGrandNet,
   lineNet,
+  offerLineKind,
+  offerBuilderProducts,
+  offerBuilderServices,
+  offerProductNetTotal,
+  offerServiceNetTotal,
+  dealGrossMargin,
+  setDealRevenue,
+  setDealNextQuarterRevenue,
+  syncDealFromMadeOffer,
+  madeOfferForDeal,
+  fmtExpectedClose,
   unitPriceForLineNet,
   catalogUnitPrice,
   catalogLineLabel,
@@ -908,30 +919,10 @@ const INDUSTRY_OPTIONS: Opt[] = [
 ];
 
 function replaceDealRevenue(deal: Deal, deviceValue: number, serviceValue: number) {
-  const period = deal.devicePhases[0]?.period ?? "2026-Q2";
-  deal.deviceUnitPrice = deviceValue;
-  deal.devicePhases = deviceValue > 0 ? [{ period, units: 1 }] : [];
-
-  const existing = serviceContractsForDeal(deal.id);
-  for (let index = serviceContracts.length - 1; index >= 0; index -= 1) {
-    if (serviceContracts[index]?.dealId === deal.id) serviceContracts.splice(index, 1);
-  }
-  if (serviceValue > 0) {
-    const base = existing[0];
-    serviceContracts.unshift({
-      id: base?.id ?? `sc_${deal.id}`,
-      dealId: deal.id,
-      serviceId: base?.serviceId ?? services[0]?.id ?? "",
-      invoiceModel: "one_off",
-      startDate: base?.startDate ?? "2026-06-13",
-      endDate: null,
-      fixedValue: serviceValue,
-      monthlyRate: null,
-      expectedDevices: null,
-      phases: [{ period, value: serviceValue }],
-    });
-  }
+  setDealRevenue(deal, deviceValue, serviceValue);
 }
+
+const YEAR_OPTIONS: Opt[] = Array.from({ length: 10 }, (_, i) => ({ value: String(i + 1), label: `${i + 1} ${i === 0 ? "year" : "years"}` }));
 
 function NewDealModal({ account, ctx, onClose }: { account?: Account; ctx: AppCtx; onClose: () => void }) {
   const [accountId, setAccountId] = useState(account?.id ?? accounts[0]?.id ?? "");
@@ -1727,8 +1718,8 @@ type OfferItemDraft = {
 };
 
 function emptyOfferItem(): OfferItemDraft {
-  const productId = products.find((p) => !p.retired)?.id ?? "";
-  return { key: crypto.randomUUID(), kind: "product", catalogId: productId, quantity: "100", discountPct: "0" };
+  const productId = offerBuilderProducts()[0]?.id ?? "";
+  return { key: crypto.randomUUID(), kind: "product", catalogId: productId, quantity: "1", discountPct: "0" };
 }
 
 function draftToLine(item: OfferItemDraft): OfferLine | null {
@@ -1738,6 +1729,7 @@ function draftToLine(item: OfferItemDraft): OfferLine | null {
   const quantity = Math.max(1, Number(item.quantity) || 1);
   const discountPct = Math.min(100, Math.max(0, Number(item.discountPct) || 0));
   return {
+    kind: item.kind,
     productId,
     serviceId,
     label: catalogLineLabel(productId, serviceId),
@@ -1833,13 +1825,11 @@ function BuildOfferModal({
 
           <div className="offer-builder">
             <div className="offer-builder-head" aria-hidden="true">
-              <span>Type</span><span>Item</span><span>Qty</span><span>Disc. %</span><span>Unit</span><span>Net</span><span />
+              <span>Type</span><span>Item</span><span>Qty / Yrs</span><span>Disc. %</span><span>Unit</span><span>Net</span><span />
             </div>
             {items.map((item) => {
               const line = draftToLine(item);
-              const catalogItems = item.kind === "product"
-                ? products.filter((p) => !p.retired)
-                : services.filter((s) => !s.retired);
+              const catalogItems = item.kind === "product" ? offerBuilderProducts() : offerBuilderServices();
               return (
                 <div key={item.key} className="offer-builder-row">
                   <div className="field">
@@ -1848,14 +1838,12 @@ function BuildOfferModal({
                       value={item.kind}
                       options={[
                         { value: "product", label: "Product" },
-                        { value: "service", label: "Service" }
+                        { value: "service", label: "Service" },
                       ]}
                       onChange={(val) => {
                         const kind = val as "product" | "service";
-                        const catalog = kind === "product"
-                          ? products.filter((p) => !p.retired)
-                          : services.filter((s) => !s.retired);
-                        updateItem(item.key, { kind, catalogId: catalog[0]?.id ?? "" });
+                        const catalog = kind === "product" ? offerBuilderProducts() : offerBuilderServices();
+                        updateItem(item.key, { kind, catalogId: catalog[0]?.id ?? "", quantity: "1" });
                       }}
                     />
                   </div>
@@ -1865,15 +1853,26 @@ function BuildOfferModal({
                       value={item.catalogId}
                       options={catalogItems.map((entry) => ({
                         value: entry.id,
-                        label: entry.name + (item.kind === "product" ? ` — ${fmtEurExact((entry as typeof products[0]).listPrice)}` : "")
+                        label: entry.name + (item.kind === "product" ? ` — ${fmtEurExact((entry as typeof products[0]).listPrice)}` : ""),
                       }))}
                       onChange={(val) => updateItem(item.key, { catalogId: val })}
                     />
                   </div>
-                  <label className="field">
-                    <span className="field-label sr-only">Quantity</span>
-                    <input type="number" min="1" value={item.quantity} onChange={(e) => updateItem(item.key, { quantity: e.target.value })} required />
-                  </label>
+                  {item.kind === "service" ? (
+                    <div className="field">
+                      <span className="field-label sr-only">Years</span>
+                      <CustomSelect
+                        value={item.quantity}
+                        options={YEAR_OPTIONS}
+                        onChange={(val) => updateItem(item.key, { quantity: val })}
+                      />
+                    </div>
+                  ) : (
+                    <label className="field">
+                      <span className="field-label sr-only">Quantity</span>
+                      <input type="number" min="1" value={item.quantity} onChange={(e) => updateItem(item.key, { quantity: e.target.value })} required />
+                    </label>
+                  )}
                   <label className="field">
                     <span className="field-label sr-only">Line discount %</span>
                     <input type="number" min="0" max="100" value={item.discountPct} onChange={(e) => updateItem(item.key, { discountPct: e.target.value })} />
@@ -2037,7 +2036,7 @@ function OfferDetailPanel({
 
       <div className="offer-sheet">
         <table className="offer-table">
-          <thead><tr><th>Item</th><th className="numeric">Unit</th><th className="numeric">Qty</th><th className="numeric">Disc.</th><th className="numeric">Net</th></tr></thead>
+          <thead><tr><th>Item</th><th>Type</th><th className="numeric">Unit</th><th className="numeric">Qty / Yrs</th><th className="numeric">Disc.</th><th className="numeric">Net</th></tr></thead>
           <tbody>
             {offer.lines.map((l, i) => (
               <tr key={i}>
@@ -2047,8 +2046,8 @@ function OfferDetailPanel({
                   ) : (
                     l.label
                   )}
-                  {l.serviceId && <span className="mini-tag">Service</span>}
                 </td>
+                <td><span className="mini-tag">{offerLineKind(l) === "product" ? "Product" : "Service"}</span></td>
                 <td className="numeric">
                   {canEdit ? (
                     <OfferEditNumber value={l.unitPrice} prefix="€" min={0} ariaLabel="Unit price" onCommit={(v) => patchLine(i, { unitPrice: v })} />
@@ -2079,16 +2078,16 @@ function OfferDetailPanel({
             ))}
           </tbody>
           <tfoot>
-            <tr><td colSpan={4}>List total</td><td className="numeric">{fmtEurExact(listTotal)}</td></tr>
+            <tr><td colSpan={5}>List total</td><td className="numeric">{fmtEurExact(listTotal)}</td></tr>
             <tr>
-              <td colSpan={4}>Headline discount</td>
+              <td colSpan={5}>Headline discount</td>
               <td className="numeric">
                 {canEdit ? (
                   <OfferEditNumber value={offer.discountPct} min={0} max={100} ariaLabel="Headline discount percent" onCommit={(v) => patchOffer((o) => ({ ...o, discountPct: v }))} />
                 ) : `${offer.discountPct}%`}
               </td>
             </tr>
-            <tr className="offer-net"><td colSpan={4}>Net total</td><td className="numeric numeric--strong">{fmtEurExact(netTotal)}</td></tr>
+            <tr className="offer-net"><td colSpan={5}>Net total</td><td className="numeric numeric--strong">{fmtEurExact(netTotal)}</td></tr>
           </tfoot>
         </table>
       </div>
@@ -2275,7 +2274,16 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
   const [draftKind, setDraftKind] = useState<"note" | "meeting" | "call" | "email">("note");
   const [draft, setDraft] = useState("");
   const dealOffers = offersForDeal(deal.id).map((o) => ctx.offerState[o.id] ?? o);
-  const dealCases = casesForDeal(deal.id);
+  const dealCases = casesForDeal(deal.id).map((c) => ctx.eff("case", c));
+  const isLead = deal.stage === "lead";
+  const madeOffer = madeOfferForDeal(deal.id, (id) => ctx.offerState[id] ?? seedOffers.find((o) => o.id === id));
+  const economicsLocked = Boolean(madeOffer);
+  const deviceVal = deviceTotal(deal);
+  const serviceVal = serviceTotal(deal.id);
+  const totalVal = dealTotal(deal);
+  const nqVal = nextQuarterValue(deal);
+  const weightedVal = weightedTotal(deal);
+  const gmVal = dealGrossMargin(deviceVal, serviceVal);
 
   const submitLog = () => {
     if (!draft.trim()) return;
@@ -2321,10 +2329,38 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
       </header>
 
       <div className="kpi-strip kpi-strip--tight">
-        <Kpi label="Total value" value={fmtEur(dealTotal(deal))} />
-        <Kpi label="Next quarter" value={fmtEur(nextQuarterValue(deal))} />
-        <Kpi label="Weighted" value={fmtEur(weightedTotal(deal))} />
-        <Kpi label="Expected close" value={new Date(deal.expectedClose).toLocaleDateString("en-IE", { day: "2-digit", month: "short", year: "numeric" })} tone={isOverdue(deal) ? "warn" : undefined} />
+        {isLead && !economicsLocked ? (
+          <>
+            <div className="kpi kpi--editable">
+              <span className="kpi-label">Total value</span>
+              <CellNumber value={totalVal} prefix="€" min={0} onCommit={(v) => void ctx.updateDeal(deal, { total: v })} />
+            </div>
+            <div className="kpi kpi--editable">
+              <span className="kpi-label">Next quarter</span>
+              <CellNumber value={nqVal} prefix="€" min={0} onCommit={(v) => void ctx.updateDeal(deal, { nextQuarter: v })} />
+            </div>
+            <div className="kpi kpi--editable">
+              <span className="kpi-label">Weighted</span>
+              <CellNumber value={weightedVal} prefix="€" min={0} onCommit={(v) => void ctx.updateDeal(deal, { weighted: v })} />
+            </div>
+            <div className="kpi kpi--editable">
+              <span className="kpi-label">Expected close</span>
+              <input
+                type="date"
+                className="kpi-date-input"
+                value={deal.expectedClose?.slice(0, 10) ?? ""}
+                onChange={(e) => void ctx.updateDeal(deal, { expectedClose: e.target.value })}
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <Kpi label="Total value" value={fmtEur(totalVal)} />
+            <Kpi label="Next quarter" value={fmtEur(nqVal)} />
+            <Kpi label="Weighted" value={fmtEur(weightedVal)} />
+            <Kpi label="Expected close" value={fmtExpectedClose(deal.expectedClose)} tone={isOverdue(deal) ? "warn" : undefined} />
+          </>
+        )}
       </div>
 
       <div className="record-body">
@@ -2343,10 +2379,10 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
               <ul className="stack-list">
                 {dealOffers.map((o) => (
                   <li key={o.id}>
-                    <button className="row-main" onClick={() => ctx.openDeal(deal.id)} type="button">
+                    <button className="row-main" onClick={() => ctx.openOffers(o.id)} type="button">
                       <span><strong>{o.ref}</strong><small>v{o.version} · {o.discountPct > 0 ? `${o.discountPct}% discount` : "list price"}</small></span>
                     </button>
-                    <span className="row-side"><strong className="numeric">{fmtEur(offerNet(o))}</strong><OfferPill status={o.status} /></span>
+                    <span className="row-side"><strong className="numeric">{fmtEur(offerGrandNet(o))}</strong><OfferPill status={o.status} /></span>
                   </li>
                 ))}
               </ul>
@@ -2359,7 +2395,7 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
               <ul className="stack-list">
                 {dealCases.map((c) => (
                   <li key={c.id}>
-                    <button className="row-main" onClick={() => ctx.openDeal(deal.id)} type="button">
+                    <button className="row-main" onClick={() => ctx.openCase(c.id)} type="button">
                       <span><strong>{c.title}</strong><small>{c.ref} · {CASE_STATUS_LABEL[c.status]}</small></span>
                     </button>
                     <span className="row-side"><PriorityTag priority={c.priority} /></span>
@@ -2398,6 +2434,35 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
         </div>
 
         <aside className="record-side">
+          {embedded && dealOffers.length > 0 && (
+            <section className="panel">
+              <SectionHead title="Offers" count={dealOffers.length} />
+              <ul className="stack-list stack-list--compact">
+                {dealOffers.map((o) => (
+                  <li key={o.id}>
+                    <button className="row-main" type="button" onClick={() => ctx.openOffers(o.id)}>
+                      <span><strong>{o.ref}</strong><small>{OFFER_STATUS_LABEL[o.status]}</small></span>
+                    </button>
+                    <span className="row-side"><OfferPill status={o.status} /></span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {embedded && dealCases.length > 0 && (
+            <section className="panel">
+              <SectionHead title="Cases" count={dealCases.length} />
+              <ul className="stack-list stack-list--compact">
+                {dealCases.map((c) => (
+                  <li key={c.id}>
+                    <button className="row-main" type="button" onClick={() => ctx.openCase(c.id)}>
+                      <span><strong>{c.title}</strong><small>{CASE_STATUS_LABEL[c.status]}</small></span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           <section className="panel">
             <SectionHead title="Account contacts" count={contacts.length} />
             <ContactList contacts={contacts} note={contactNote} />
@@ -2405,10 +2470,25 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
 
           <section className="panel">
             <SectionHead title="Deal economics" />
+            {madeOffer && <p className="muted economics-note">Values from offer {madeOffer.ref} (made).</p>}
             <dl className="meta-dl">
-              <div><dt>Device</dt><dd className="numeric">{fmtEur(deviceTotal(deal))}</dd></div>
-              <div><dt>Service</dt><dd className="numeric">{fmtEur(serviceTotal(deal.id))}</dd></div>
-              <div><dt>Gross margin</dt><dd className="numeric">{fmtEur(dealMeasureTotal(deal, "gm"))}</dd></div>
+              <div>
+                <dt>Device</dt>
+                <dd className="numeric">
+                  {isLead && !economicsLocked ? (
+                    <CellNumber value={deviceVal} prefix="€" min={0} onCommit={(v) => void ctx.updateDeal(deal, { device: v })} />
+                  ) : fmtEurExact(deviceVal)}
+                </dd>
+              </div>
+              <div>
+                <dt>Service</dt>
+                <dd className="numeric">
+                  {isLead && !economicsLocked ? (
+                    <CellNumber value={serviceVal} prefix="€" min={0} onCommit={(v) => void ctx.updateDeal(deal, { service: v })} />
+                  ) : fmtEurExact(serviceVal)}
+                </dd>
+              </div>
+              <div><dt>Gross margin</dt><dd className="numeric">{fmtEurExact(gmVal)}</dd></div>
             </dl>
           </section>
 
@@ -2560,7 +2640,7 @@ function DealCard({ deal, ctx, dragId, setDragId, setOver, draggable }: {
       <div className="deal-card-figs"><span className="numeric numeric--strong">{fmtEur(dealTotal(deal))}</span><RiskTag deal={deal} /></div>
       <div className="deal-card-foot">
         <span className="board-owner"><Avatar name={userName(deal.ownerId)} size="xs" />{userName(deal.ownerId)}</span>
-        <span className="board-close"><Icon name="clock" />{new Date(deal.expectedClose).toLocaleDateString("en-IE", { day: "2-digit", month: "short" })}</span>
+        <span className="board-close"><Icon name="clock" />{fmtExpectedClose(deal.expectedClose)}</span>
       </div>
     </article>
   );
@@ -3364,7 +3444,13 @@ function MainApp({ initialUserId }: { initialUserId: string }) {
   };
   const updateDeal = async (
     deal: Deal,
-    updates: Partial<Pick<Deal, "title" | "stage" | "apiStage" | "channel" | "leadValidated">> & { device?: number; service?: number; total?: number },
+    updates: Partial<Pick<Deal, "title" | "stage" | "apiStage" | "channel" | "leadValidated" | "expectedClose">> & {
+      device?: number;
+      service?: number;
+      total?: number;
+      nextQuarter?: number;
+      weighted?: number;
+    },
   ) => {
     const previous = {
       title: deal.title,
@@ -3372,12 +3458,37 @@ function MainApp({ initialUserId }: { initialUserId: string }) {
       apiStage: deal.apiStage,
       channel: deal.channel,
       leadValidated: deal.leadValidated,
+      expectedClose: deal.expectedClose,
       device: deviceTotal(deal),
       service: serviceTotal(deal.id),
     };
-    const device = updates.device ?? (updates.total !== undefined ? Math.max(0, updates.total - previous.service) : previous.device);
-    const service = updates.service ?? (updates.total !== undefined ? Math.min(previous.service, updates.total) : previous.service);
-    const total = updates.total ?? device + service;
+
+    if (updates.expectedClose !== undefined) {
+      deal.expectedClose = updates.expectedClose;
+    }
+
+    let device = updates.device ?? previous.device;
+    let service = updates.service ?? previous.service;
+
+    if (updates.total !== undefined) {
+      device = Math.max(0, updates.total - service);
+    } else if (updates.weighted !== undefined) {
+      const total = updates.weighted / probability(deal.stage);
+      device = Math.max(0, total - service);
+    }
+
+    if (updates.device !== undefined) device = updates.device;
+    if (updates.service !== undefined) service = updates.service;
+
+    if (updates.nextQuarter !== undefined) {
+      setDealNextQuarterRevenue(deal, updates.nextQuarter);
+      bumpAccounts();
+      return;
+    }
+
+    const total = updates.total ?? updates.weighted !== undefined
+      ? device + service
+      : device + service;
     const nextStage = updates.stage ?? deal.stage;
 
     Object.assign(deal, {
@@ -3541,6 +3652,7 @@ function MainApp({ initialUserId }: { initialUserId: string }) {
     bumpAccounts();
     const decisionDeal = dealById(base.dealId);
     if (decisionDeal) {
+      syncDealFromMadeOffer(decisionDeal, updated);
       recordActivity({
         accountId: decisionDeal.accountId,
         dealId: decisionDeal.id,
@@ -3592,9 +3704,9 @@ function MainApp({ initialUserId }: { initialUserId: string }) {
     openAccount: (id) => { setAccountId(id); setDrawer({ kind: "account", id }); setMenuOpen(false); },
     openDeal: (id) => { setDealId(id); setDrawer({ kind: "deal", id }); setMenuOpen(false); },
     openOffers: (id) => {
-      const offer = id ? seedOffers.find((o) => o.id === id) : undefined;
-      if (offer) { setDealId(offer.dealId); setDrawer({ kind: "deal", id: offer.dealId }); }
-      else { setOfferFocus(id); setScreen("offers"); setDrawer(null); }
+      setOfferFocus(id);
+      setScreen("offers");
+      setDrawer(null);
       setMenuOpen(false);
     },
     openCase: (id) => { setCaseId(id); setDrawer({ kind: "case", id }); setMenuOpen(false); },
