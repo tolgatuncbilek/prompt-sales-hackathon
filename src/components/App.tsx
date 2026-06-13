@@ -1,6 +1,14 @@
 import { useEffect, useId, useReducer, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { marked } from "marked";
+
+const mdRenderer = new marked.Renderer();
+mdRenderer.html = () => "";
+
+function md(text: string): string {
+  return marked.parse(text, { renderer: mdRenderer, async: false }) as string;
+}
 import {
   ROLE_LABEL,
   STAGE_META,
@@ -165,6 +173,8 @@ const ICONS: Record<string, ReactNode> = {
   settings: (<><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></>),
   userPlus: (<><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="16" y1="11" x2="22" y2="11" /></>),
   calendar: (<><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>),
+  attach: <path d="M16 5v11a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v11a1.5 1.5 0 0 1-3 0V7" />,
+  remove: <path d="M7 7l10 10M17 7l-10 10" />,
 };
 
 function Icon({ name, className }: { name: string; className?: string }) {
@@ -3000,23 +3010,42 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
   const [threadId, setThreadId] = useState<string>(() => `thread_${crypto.randomUUID()}`);
   const [messages, setMessages] = useState<Array<
     | { id: string; role: "user"; content: string }
-    | { id: string; role: "assistant"; content: string; evidence: Array<{ type: string; id?: string; label: string; url?: string }>; actions: Array<{ id: string; label: string; kind: string; target?: string; value?: string; preview?: string }>; uncertainty?: string }
+    | { id: string; role: "assistant"; content: string; evidence: Array<{ type: string; id?: string; label: string; url?: string }>; uncertainty?: string }
     | { id: string; role: "status"; content: string }
     | { id: string; role: "error"; content: string }
   >>([]);
   const [answer, setAnswer] = useState<{
     answer: string;
     evidence: Array<{ type: string; id?: string; label: string; url?: string }>;
-    actions: Array<{ id: string; label: string; kind: string; target?: string; value?: string; preview?: string }>;
     uncertainty?: string;
   } | null>(null);
-  const [approvedActions, setApprovedActions] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [streamingId, setStreamingId] = useState<string | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; size: number; dataUrl: string }>>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAttach = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files) return;
+    const readers = Array.from(files).map((file) => new Promise<{ name: string; size: number; dataUrl: string }>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ name: file.name, size: file.size, dataUrl: reader.result as string });
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    }));
+    Promise.all(readers).then((results) => {
+      setAttachedFiles((prev) => [...prev, ...results]);
+    });
+    event.target.value = "";
+  };
+
+  const removeFile = (name: string) => {
+    setAttachedFiles((prev) => prev.filter((f) => f.name !== name));
+  };
 
   useEffect(() => {
     if (open) window.setTimeout(() => inputRef.current?.focus(), 0);
@@ -3057,26 +3086,28 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
     setDraft("");
     setAnswer(null);
     setError(null);
-    setApprovedActions(new Set());
+    setAttachedFiles([]);
     setLoading(false);
   };
 
   const ask = async (value: string) => {
     const next = value.trim();
     if (!next || loading) return;
+    const files = attachedFiles.map((f) => ({ name: f.name, dataUrl: f.dataUrl }));
+    const userMsgContent = files.length > 0 ? `${next}\n\n[Attached: ${files.map((f) => f.name).join(", ")}]` : next;
     const nextMessages = [
       ...messages,
-      { id: `msg_${crypto.randomUUID()}`, role: "user" as const, content: next },
+      { id: `msg_${crypto.randomUUID()}`, role: "user" as const, content: userMsgContent },
     ];
     setDraft("");
+    setAttachedFiles([]);
     setAnswer(null);
     setError(null);
-    setApprovedActions(new Set());
     setLoading(true);
     if (streamRef.current) clearInterval(streamRef.current);
     setMessages((current) => [
       ...current,
-      { id: `msg_${crypto.randomUUID()}`, role: "user", content: next },
+      { id: `msg_${crypto.randomUUID()}`, role: "user", content: userMsgContent },
       { id: `msg_${crypto.randomUUID()}`, role: "status", content: "Reviewing CRM context…" },
     ]);
 
@@ -3084,7 +3115,11 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
       const response = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: next, messages: nextMessages.map((entry) => ({ role: entry.role, content: entry.content })) }),
+        body: JSON.stringify({
+          message: next,
+          messages: nextMessages.map((entry) => ({ role: entry.role, content: entry.content })),
+          files: files.length > 0 ? files : undefined,
+        }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "The assistant could not answer.");
@@ -3101,7 +3136,6 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
             role: "assistant",
             content: "",
             evidence: payload.evidence ?? [],
-            actions: payload.actions ?? [],
             uncertainty: payload.uncertainty,
           },
         ];
@@ -3159,11 +3193,7 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
               <div className="crm-message crm-message--user" key={entry.id}>{entry.content}</div>
             ) : entry.role === "assistant" ? (
               <div className="crm-message crm-message--assistant" key={entry.id}>
-                <span className="ai-badge"><Icon name="spark" />Draft answer</span>
-                <p className={entry.id === streamingId ? "crm-streaming" : ""}>
-                  {entry.content}
-                  {entry.id === streamingId && <span className="crm-cursor" aria-hidden="true" />}
-                </p>
+                <div className={entry.id === streamingId ? "crm-markdown crm-streaming" : "crm-markdown"} dangerouslySetInnerHTML={{ __html: md(entry.content) }} />
                 {entry.evidence.length > 0 && entry.id !== streamingId && (
                   <div className="crm-evidence">
                     <strong>Evidence</strong>
@@ -3174,26 +3204,7 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
                     ))}
                   </div>
                 )}
-                {entry.actions.length > 0 && entry.id !== streamingId && (
-                  <div className="crm-actions">
-                    <strong>Proposed actions</strong>
-                    {entry.actions.map((action) => {
-                      const approved = approvedActions.has(action.id);
-                      return (
-                        <div className="crm-action" key={action.id}>
-                          <span>{action.preview || action.label}</span>
-                          <button
-                            type="button"
-                            disabled={approved}
-                            onClick={() => setApprovedActions((current) => new Set(current).add(action.id))}
-                          >
-                            {approved ? "Approved in UI" : "Approve"}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+
                 {entry.uncertainty && entry.id !== streamingId && <small>{entry.uncertainty}</small>}
               </div>
             ) : entry.role === "status" ? (
@@ -3222,6 +3233,23 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
           }}
           placeholder="Ask about accounts, deals, cases, or forecasts"
         />
+        {attachedFiles.length > 0 && (
+          <div className="crm-attachments">
+            {attachedFiles.map((f) => (
+              <span className="crm-attachment-chip" key={f.name}>
+                <Icon name="attach" />
+                <span className="crm-attachment-name">{f.name}</span>
+                <button type="button" className="crm-attachment-remove" aria-label={`Remove ${f.name}`} onClick={() => removeFile(f.name)}>
+                  <Icon name="remove" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <input type="file" ref={fileInputRef} multiple className="crm-file-input" onChange={handleAttach} aria-label="Attach files" />
+        <button type="button" className="crm-attach-btn" aria-label="Attach files" onClick={() => fileInputRef.current?.click()}>
+          <Icon name="attach" />
+        </button>
         <button className="crm-send" type="submit" aria-label="Send question" disabled={!draft.trim() || loading}>
           <Icon name="arrowRight" />
         </button>

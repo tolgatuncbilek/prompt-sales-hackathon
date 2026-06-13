@@ -14,15 +14,6 @@ import type { AuthVariables } from '../middleware/auth.js';
 const app = new Hono<{ Variables: AuthVariables }>();
 const astroEnv = import.meta.env as Record<string, string | undefined>;
 
-type AssistantAction = {
-  id: string;
-  label: string;
-  kind: 'navigate' | 'filter' | 'draft';
-  target?: string;
-  value?: string;
-  preview?: string;
-};
-
 type AssistantAnswer = {
   answer: string;
   evidence: Array<{
@@ -31,7 +22,6 @@ type AssistantAnswer = {
     label: string;
     url?: string;
   }>;
-  actions: AssistantAction[];
   uncertainty?: string;
 };
 
@@ -49,9 +39,9 @@ Rules:
 - Clearly distinguish external research from internal CRM evidence.
 - Cite every material claim using evidence entries.
 - You have no authority to modify CRM data.
-- You may propose UI-only draft actions. They are previews until the user explicitly approves.
-- Never claim an action was completed.
 - If evidence is insufficient, say so.
+- You can install any npm package with \`bun add <pkg>\` and any Python package with \`uv add <pkg>\`. Use this when you need a library or tool to answer the question.
+- You can include images using standard Markdown image syntax: ![alt text](url).
 
 Return only valid JSON:
 {
@@ -62,16 +52,6 @@ Return only valid JSON:
       "id": "CRM id when applicable",
       "label": "human-readable source",
       "url": "external source URL when applicable"
-    }
-  ],
-  "actions": [
-    {
-      "id": "stable short id",
-      "label": "action label",
-      "kind": "navigate|filter|draft",
-      "target": "accounts|deals|cases|offers|forecast or record id",
-      "value": "optional filter value",
-      "preview": "draft content or proposed UI change"
     }
   ],
   "uncertainty": "optional limitation"
@@ -90,7 +70,6 @@ function parseAnswer(text: string): AssistantAnswer {
     return {
       answer: cleaned,
       evidence: [],
-      actions: [],
     };
   }
   if (typeof parsed.answer !== 'string') throw new Error('Agent response did not contain an answer');
@@ -98,18 +77,18 @@ function parseAnswer(text: string): AssistantAnswer {
   return {
     answer: parsed.answer,
     evidence: Array.isArray(parsed.evidence) ? parsed.evidence.slice(0, 12) : [],
-    actions: Array.isArray(parsed.actions) ? parsed.actions.slice(0, 5) : [],
     uncertainty: typeof parsed.uncertainty === 'string' ? parsed.uncertainty : undefined,
   };
 }
 
 app.post('/', async (c) => {
-  const body = await c.req.json<{ message?: string; messages?: ConversationMessage[] }>();
+  const body = await c.req.json<{ message?: string; messages?: ConversationMessage[]; files?: Array<{ name: string; dataUrl: string }> }>();
   const message = body.message?.trim();
   const messages = Array.isArray(body.messages) ? body.messages.filter((entry) => entry && typeof entry.content === 'string') : [];
   if (!message || message.length > 4000) {
     return c.json({ error: 'message must contain between 1 and 4000 characters' }, 400);
   }
+  const files = Array.isArray(body.files) ? body.files.slice(0, 5) : [];
 
   const apiKey = process.env.OPENCLAW_KEY || astroEnv.OPENCLAW_KEY;
   const endpoint = process.env.OPENCLAW_URL || astroEnv.OPENCLAW_URL;
@@ -156,7 +135,7 @@ app.post('/', async (c) => {
           : [{ role: 'user', content: message }]),
         {
           role: 'user',
-          content: `CRM snapshot:\n${JSON.stringify(snapshot)}\n\nCurrent user question:\n${message}`,
+          content: `CRM snapshot:\n${JSON.stringify(snapshot)}\n\n${files.length > 0 ? `Attached files:\n${files.map((f) => `${f.name} (${((f.dataUrl.length * 3) / 4 / 1024).toFixed(0)} KB base64)`).join('\n')}\n\n` : ''}Current user question:\n${message}`,
         },
       ],
     }),
