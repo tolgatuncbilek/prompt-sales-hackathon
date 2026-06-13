@@ -366,7 +366,22 @@ function InsightCard({
 type Screen = "home" | "accounts" | "account" | "deals" | "deal" | "cases" | "offers" | "forecast" | "catalog";
 type Toast = { id: number; msg: string } | null;
 
-type LeadValidationPrompt = { dealId: string; targetStage: Stage } | null;
+type PendingStageChange = { dealId: string; fromStage: Stage; targetStage: Stage; validateLead: boolean } | null;
+
+function stageChangeModalCopy(deal: Deal, from: Stage, to: Stage, validateLead: boolean): { title: string; body: string; confirmLabel: string } {
+  if (validateLead) {
+    return {
+      title: "Are you validating this lead?",
+      body: "Moving this deal to Offer confirms the lead is qualified. Do you want to validate the lead and advance the deal?",
+      confirmLabel: "Yes, validate and move to Offer",
+    };
+  }
+  return {
+    title: "Change deal status?",
+    body: `Move "${deal.title}" from ${STAGE_META[from].label} to ${STAGE_META[to].label}?`,
+    confirmLabel: `Move to ${STAGE_META[to].label}`,
+  };
+}
 
 type AppCtx = {
   user: User;
@@ -2612,7 +2627,7 @@ function MainApp() {
   const [dealId, setDealId] = useState<string>(seedDeals[0]?.id || "");
   const [offerFocus, setOfferFocus] = useState<string | undefined>(undefined);
   const [drawer, setDrawer] = useState<{ kind: "account" | "case" | "deal"; id: string } | null>(null);
-  const [leadValidationPrompt, setLeadValidationPrompt] = useState<LeadValidationPrompt>(null);
+  const [stageChangePrompt, setStageChangePrompt] = useState<PendingStageChange>(null);
 
   useEffect(() => {
     if (!drawer) return;
@@ -2768,12 +2783,18 @@ function MainApp() {
     const deal = dealById(id);
     if (!deal) return;
     const current = dealStage[id] ?? deal.stage;
-    const validated = dealLeadValidated[id] ?? deal.leadValidated ?? false;
-    if (current === "lead" && stage === "offer" && !validated) {
-      setLeadValidationPrompt({ dealId: id, targetStage: stage });
+    if (current === stage) return;
+    if (deal.channel === "reseller" && stage === "final_negotiation") {
+      notify("Reseller deals cannot move to Final negotiation.");
       return;
     }
-    moveDeal(id, stage);
+    const validated = dealLeadValidated[id] ?? deal.leadValidated ?? false;
+    setStageChangePrompt({
+      dealId: id,
+      fromStage: current,
+      targetStage: stage,
+      validateLead: current === "lead" && stage === "offer" && !validated,
+    });
   };
 
   const addOffer = (offer: Offer) => {
@@ -2855,6 +2876,11 @@ function MainApp() {
   else content = <CatalogView ctx={ctx} />;
 
   const activeNav = screen === "account" ? "accounts" : screen === "deal" ? "deals" : (screen as string) === "case" ? "cases" : screen;
+
+  const pendingStageDeal = stageChangePrompt ? dealById(stageChangePrompt.dealId) : undefined;
+  const stageChangeCopy = stageChangePrompt && pendingStageDeal
+    ? stageChangeModalCopy(pendingStageDeal, stageChangePrompt.fromStage, stageChangePrompt.targetStage, stageChangePrompt.validateLead)
+    : null;
 
   return (
     <div className="shell">
@@ -2958,17 +2984,17 @@ function MainApp() {
       </footer>
 
       {toast && <div className="toast" role="status">{toast.msg}</div>}
-      {leadValidationPrompt && (
+      {stageChangePrompt && stageChangeCopy && (
         <ConfirmModal
-          title="Are you validating this lead?"
-          body="Moving this deal to Offer confirms the lead is qualified. Do you want to validate the lead and advance the deal?"
-          confirmLabel="Yes, validate and move to Offer"
+          title={stageChangeCopy.title}
+          body={stageChangeCopy.body}
+          confirmLabel={stageChangeCopy.confirmLabel}
           onConfirm={() => {
-            validateLead(leadValidationPrompt.dealId);
-            moveDeal(leadValidationPrompt.dealId, leadValidationPrompt.targetStage);
-            setLeadValidationPrompt(null);
+            if (stageChangePrompt.validateLead) validateLead(stageChangePrompt.dealId);
+            moveDeal(stageChangePrompt.dealId, stageChangePrompt.targetStage);
+            setStageChangePrompt(null);
           }}
-          onCancel={() => setLeadValidationPrompt(null)}
+          onCancel={() => setStageChangePrompt(null)}
         />
       )}
       {menuOpen && <button className="scrim" aria-label="Close menu" onClick={() => setMenuOpen(false)} type="button" />}
