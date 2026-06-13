@@ -8,6 +8,7 @@ Prompt Sales Hackathon challenge sponsored by HMD.
 - Production uses a separate Azure PostgreSQL Flexible Server in `rg-hmd-secure-crm`.
 - The CRM assistant is backed by a dedicated Hermes/OpenClaw gateway at the production URL configured in Azure.
 - `New chat` starts a fresh assistant thread; each thread keeps its own browser-side history.
+- Production now points `DATABASE_URL` at `hmd-secure-crm-pg.postgres.database.azure.com` and the database is seeded with the demo CRM dataset.
 
 ## Challenge
 
