@@ -30,14 +30,20 @@
   --paper: #f2f6fb;
   --paper-ink: #16202e;
   --paper-rule: #d3dce6;
-  --r-control: 4px;
-  --r-surface: 8px;
+  --r-control: 5px;
+  --r-surface: 10px;
   --r-pill: 999px;
   --sidebar: 232px;
-  --t-fast: 160ms cubic-bezier(0.22, 1, 0.36, 1);
-  --t-std: 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --t-fast: 160ms var(--ease-out);
+  --t-std: 240ms var(--ease-out);
   --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.32);
   --shadow-drawer: 0 0 24px rgba(0, 0, 0, 0.24);
+  /* Restrained elevation: a faint top light-catch + soft layered shadow.
+     Default surfaces stay flat; these lift the surfaces that carry signal. */
+  --ring-top: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+  --elev-1: var(--ring-top), 0 1px 2px rgba(0, 0, 0, 0.28), 0 4px 10px -4px rgba(0, 0, 0, 0.38);
+  --elev-2: var(--ring-top), 0 4px 10px -3px rgba(0, 0, 0, 0.34), 0 14px 30px -10px rgba(0, 0, 0, 0.5);
   font-family: Archivo, "Arial Nova", Helvetica, Arial, sans-serif;
   font-synthesis: none;
   color: var(--ink);
@@ -51,7 +57,11 @@ html { min-width: 320px; background: var(--field); }
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--field);
+  /* Faint teal aura at the top so the near-black field reads as lit, not dead-flat. */
+  background:
+    radial-gradient(1100px 520px at 78% -8%, rgba(47, 212, 198, 0.05), transparent 62%),
+    linear-gradient(180deg, #080c13 0%, var(--field) 38%);
+  background-attachment: fixed;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -161,15 +171,20 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
 .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
 
 .nav {
-  min-height: 32px; display: flex; align-items: center; gap: 9px; padding: 0 8px;
+  position: relative; min-height: 34px; display: flex; align-items: center; gap: 9px; padding: 0 8px;
   border: 0; border-radius: var(--r-control); background: transparent; color: var(--ink-2);
   font-size: 12.5px; font-weight: 500; text-align: left; cursor: pointer;
   transition: background var(--t-fast), color var(--t-fast);
 }
-.nav .icon { width: 16px; height: 16px; color: var(--ink-3); transition: color var(--t-fast); }
+.nav .icon { width: 16px; height: 16px; color: var(--ink-3); transition: color var(--t-fast), transform var(--t-fast); }
 .nav:hover { background: var(--surface); color: var(--ink); }
 .nav:hover .icon { color: var(--ink-2); }
-.nav--active { background: var(--raised); color: var(--ink); font-weight: 600; }
+.nav--active { background: var(--raised); color: var(--ink); font-weight: 600; box-shadow: var(--ring-top); }
+.nav--active::before {
+  content: ""; position: absolute; left: -4px; top: 50%; height: 16px; width: 3px;
+  border-radius: var(--r-pill); background: var(--accent); transform: translateY(-50%);
+  box-shadow: 0 0 8px rgba(47, 212, 198, 0.55);
+}
 .nav--active .icon { color: var(--accent); }
 .nav--active:hover { background: var(--raised); color: var(--ink); }
 .nav-count {
@@ -208,12 +223,15 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
   font-size: 13px; font-weight: 650; cursor: pointer; white-space: nowrap;
   transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
 }
+.btn { transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), transform var(--t-fast), box-shadow var(--t-fast); }
+.btn:active { transform: translateY(1px); }
 .btn .icon { width: 16px; }
 .btn--sm { min-height: 36px; padding: 0 12px; font-size: 12px; }
-.btn--primary { background: var(--accent); color: var(--field); }
-.btn--primary:hover { background: var(--accent-hover); }
+.btn--primary { background: var(--accent); color: var(--field); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset, 0 4px 12px -4px rgba(47, 212, 198, 0.5); }
+.btn--primary:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.14) inset, 0 6px 18px -4px rgba(47, 212, 198, 0.6); }
+.btn--primary:active { transform: translateY(0); }
 .btn--secondary { border-color: var(--rule); background: var(--surface); color: var(--ink); }
-.btn--secondary:hover { background: var(--raised); }
+.btn--secondary:hover { background: var(--raised); border-color: #34425e; }
 .btn--ghost { background: transparent; color: var(--ink-2); }
 .btn--ghost:hover { color: var(--ink); background: var(--surface); }
 .btn--danger { border-color: var(--red); background: transparent; color: var(--red); }
@@ -282,13 +300,16 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
 
 /* KPI strip ---------------------------------------------------------------- */
 
-.kpi-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--rule); border-radius: var(--r-surface); overflow: hidden; margin-bottom: 26px; }
+.kpi-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--rule); border-radius: var(--r-surface); overflow: hidden; margin-bottom: 26px; background: var(--field-2); box-shadow: var(--elev-1); }
 .kpi-strip--tight { grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 22px 0; }
-.kpi { min-width: 0; padding: 16px 18px; background: var(--field-2); }
+.kpi { position: relative; min-width: 0; padding: 17px 19px 18px; background: transparent; transition: background var(--t-fast); }
+.kpi::after { content: ""; position: absolute; left: 0; top: 0; width: 100%; height: 2px; background: transparent; transition: background var(--t-fast); }
+.kpi:hover { background: var(--surface); }
+.kpi:hover::after { background: var(--accent-line); }
 .kpi + .kpi { border-left: 1px solid var(--rule); }
-.kpi-label { display: block; margin-bottom: 7px; color: var(--ink-2); font-size: 11px; font-weight: 600; }
-.kpi-value { display: block; font-size: 1.35rem; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-.kpi-hint { display: block; margin-top: 6px; color: var(--ink-3); font-size: 10px; }
+.kpi-label { display: block; margin-bottom: 9px; color: var(--ink-2); font-size: 11px; font-weight: 600; }
+.kpi-value { display: block; font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.018em; line-height: 1.05; }
+.kpi-hint { display: block; margin-top: 7px; color: var(--ink-3); font-size: 10.5px; }
 
 /* Sections + lists --------------------------------------------------------- */
 
@@ -298,8 +319,8 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
 .section-count { color: var(--ink-3); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .section-head-actions { display: flex; gap: 8px; }
 
-.stack-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--rule); border-radius: var(--r-surface); overflow: hidden; }
-.stack-list li { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+.stack-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--rule); border-radius: var(--r-surface); overflow: hidden; background: var(--field-2); box-shadow: var(--elev-1); }
+.stack-list li { display: flex; align-items: center; gap: 12px; padding: 12px 14px; transition: background var(--t-fast); }
 .stack-list li + li { border-top: 1px solid var(--rule); }
 .stack-list li:hover { background: var(--surface); }
 .row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 11px; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
@@ -316,7 +337,7 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
 /* Tables ------------------------------------------------------------------- */
 
 .table-wrap { width: 100%; overflow-x: auto; }
-.card-edge { border: 1px solid var(--rule); border-radius: var(--r-surface); }
+.card-edge { border: 1px solid var(--rule); border-radius: var(--r-surface); background: var(--field-2); box-shadow: var(--elev-1); }
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
 thead { background: var(--field-2); }
 th, td { height: 60px; padding: 0 14px; border-bottom: 1px solid var(--rule-soft); text-align: left; vertical-align: middle; }
@@ -497,7 +518,9 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .insight-stack { display: flex; flex-direction: column; gap: 14px; }
 .insight {
   padding: 16px; border: 1px solid var(--rule); border-radius: var(--r-surface); background: var(--surface);
+  box-shadow: var(--elev-1); transition: transform var(--t-fast), border-color var(--t-fast), box-shadow var(--t-fast);
 }
+.insight:hover { transform: translateY(-2px); border-color: #34425e; box-shadow: var(--elev-2); }
 .insight--risk { border-color: rgba(255, 200, 87, 0.35); }
 .insight--resolved { opacity: 0.72; }
 .insight-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -541,12 +564,14 @@ tbody tr:hover .row-open { color: var(--ink-2); }
    -------------------------------------------------------------------------- */
 
 .stage-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 26px; }
-.stage-cell { display: grid; gap: 4px; padding: 14px; border: 1px solid var(--rule); border-radius: var(--r-surface); background: var(--field-2); }
+.stage-cell { display: grid; gap: 4px; padding: 14px; border: 1px solid var(--rule); border-radius: var(--r-surface); background: var(--field-2); box-shadow: var(--elev-1); transition: transform var(--t-fast), border-color var(--t-fast), box-shadow var(--t-fast); }
+.stage-cell:hover { transform: translateY(-2px); border-color: #34425e; box-shadow: var(--elev-2); }
+.stage-cell:hover .stage-cell-bar i { filter: brightness(1.12); }
 .stage-cell-label { color: var(--ink-2); font-size: 10.5px; font-weight: 600; }
 .stage-cell-count { font-size: 1.4rem; font-weight: 650; }
 .stage-cell small { color: var(--ink-3); }
 .stage-cell-bar { height: 4px; margin-top: 6px; border-radius: var(--r-pill); background: var(--raised); overflow: hidden; }
-.stage-cell-bar i { display: block; height: 100%; background: var(--accent); }
+.stage-cell-bar i { display: block; height: 100%; background: var(--accent); transition: filter var(--t-fast); }
 
 /* --------------------------------------------------------------------------
    Phasing bars (device vs service)
@@ -593,7 +618,7 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .record-body { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 30px; padding: 26px 0; align-items: start; }
 .record-col { display: flex; flex-direction: column; gap: 30px; min-width: 0; }
 .record-side { display: flex; flex-direction: column; gap: 26px; min-width: 0; }
-.panel { padding: 18px; border: 1px solid var(--rule); border-radius: var(--r-surface); background: var(--field-2); }
+.panel { padding: 18px; border: 1px solid var(--rule); border-radius: var(--r-surface); background: var(--field-2); box-shadow: var(--elev-1); }
 .panel-note { margin: -4px 0 14px; color: var(--ink-3); font-size: 11px; }
 
 .kv { display: grid; gap: 0; }
@@ -807,7 +832,7 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .board-wrap { overflow-x: auto; padding-bottom: 8px; }
 .board { min-width: 940px; display: grid; grid-template-columns: repeat(5, minmax(186px, 1fr)); gap: 12px; }
 .board--five { min-width: 1000px; grid-template-columns: repeat(5, minmax(184px, 1fr)); }
-.board-col { display: flex; flex-direction: column; min-height: 560px; border: 1px solid var(--rule); border-radius: var(--r-surface); background: var(--field-2); transition: border-color var(--t-fast), background var(--t-fast); }
+.board-col { display: flex; flex-direction: column; min-height: 560px; border: 1px solid var(--rule); border-radius: var(--r-surface); background: var(--field-2); box-shadow: var(--elev-1); transition: border-color var(--t-fast), background var(--t-fast); }
 .board-col--over { border-color: var(--accent); background: var(--accent-soft); }
 .board-col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 11px 12px; border-bottom: 1px solid var(--rule); }
 .board-col-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -825,8 +850,8 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .board-col-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--rule); color: var(--ink-3); font-size: 10.5px; }
 .board-col-foot strong { color: var(--ink); font-size: 12px; font-weight: 650; }
 
-.deal-card { display: grid; gap: 10px; padding: 11px 12px; border: 1px solid var(--rule); border-radius: var(--r-control); background: var(--surface); cursor: grab; transition: border-color var(--t-fast), background var(--t-fast), box-shadow var(--t-fast), opacity var(--t-fast); }
-.deal-card:hover { border-color: #34425e; background: var(--raised); }
+.deal-card { display: grid; gap: 10px; padding: 11px 12px; border: 1px solid var(--rule); border-radius: var(--r-control); background: var(--surface); cursor: grab; box-shadow: var(--elev-1); transition: transform var(--t-fast), border-color var(--t-fast), background var(--t-fast), box-shadow var(--t-fast), opacity var(--t-fast); }
+.deal-card:hover { transform: translateY(-2px); border-color: #34425e; background: var(--raised); box-shadow: var(--elev-2); }
 .deal-card:active { cursor: grabbing; }
 .deal-card--drag { opacity: 0.5; border-color: var(--accent); box-shadow: var(--shadow-float); }
 .deal-card-top { display: flex; align-items: flex-start; gap: 6px; }
@@ -1146,3 +1171,38 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .modal-field select option { background: var(--raised); }
 .modal-field-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+/* ===========================================================================
+   Entrance motion — restrained. A quick fade-up that settles content into
+   place. Staggered only WITHIN a single list (legitimate), never a whole-page
+   cascade. CSS-only, so it always runs on render; the global
+   prefers-reduced-motion guard above neutralises it for those who opt out.
+   =========================================================================== */
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(7px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Motion is scoped to items arriving WITHIN their own list/strip — never a
+   blanket identical fade on every section, which reads as a canned page load.
+   Each group staggers on its own clock so the entrance feels like the data
+   settling in, then gets out of the way. */
+.kpi-strip .kpi,
+.stage-strip .stage-cell,
+.stack-list li,
+.card-edge tbody tr,
+.insight-stack .insight,
+.board .board-col {
+  animation: rise 380ms var(--ease-out) both;
+}
+.kpi-strip .kpi:nth-child(1), .stage-strip .stage-cell:nth-child(1), .stack-list li:nth-child(1), .card-edge tbody tr:nth-child(1), .insight-stack .insight:nth-child(1), .board .board-col:nth-child(1) { animation-delay: 20ms; }
+.kpi-strip .kpi:nth-child(2), .stage-strip .stage-cell:nth-child(2), .stack-list li:nth-child(2), .card-edge tbody tr:nth-child(2), .insight-stack .insight:nth-child(2), .board .board-col:nth-child(2) { animation-delay: 55ms; }
+.kpi-strip .kpi:nth-child(3), .stage-strip .stage-cell:nth-child(3), .stack-list li:nth-child(3), .card-edge tbody tr:nth-child(3), .insight-stack .insight:nth-child(3), .board .board-col:nth-child(3) { animation-delay: 90ms; }
+.kpi-strip .kpi:nth-child(4), .stage-strip .stage-cell:nth-child(4), .stack-list li:nth-child(4), .card-edge tbody tr:nth-child(4), .insight-stack .insight:nth-child(4), .board .board-col:nth-child(4) { animation-delay: 125ms; }
+.kpi-strip .kpi:nth-child(5), .stage-strip .stage-cell:nth-child(5), .stack-list li:nth-child(5), .card-edge tbody tr:nth-child(5), .board .board-col:nth-child(5) { animation-delay: 160ms; }
+.stack-list li:nth-child(n + 6), .card-edge tbody tr:nth-child(n + 6), .insight-stack .insight:nth-child(n + 5) { animation-delay: 195ms; }
+
+/* Row affordance: the open-arrow slides in on hover instead of just tinting. */
+.stack-list li .row-side { transition: transform var(--t-fast); }
+.stack-list li:hover .row-side { transform: translateX(-1px); }
