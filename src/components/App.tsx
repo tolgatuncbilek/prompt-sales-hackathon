@@ -1117,16 +1117,51 @@ function ApprovalCard({ offer, role, ctx }: { offer: Offer; role: "sales_manager
 
 function AccountsView({ ctx }: { ctx: AppCtx }) {
   const [q, setQ] = useState("");
+  const [newAccountOpen, setNewAccountOpen] = useState(false);
+  const [naName, setNaName] = useState("");
+  const [naIndustry, setNaIndustry] = useState("");
+  const [naDomain, setNaDomain] = useState("");
   const [modal, setModal] = useState(false);
   const query = q.trim().toLowerCase();
   const rows = accounts
     .map((a) => ctx.eff("account", a))
     .filter((a) => !query || [a.name, a.region, a.industry, userName(a.ownerId)].some((v) => v.toLowerCase().includes(query)));
 
+  const submitNewAccount = () => {
+    if (!naName.trim()) return;
+    const id = crypto.randomUUID();
+    const today = new Date().toISOString().slice(0, 10);
+    const account: Account = {
+      id,
+      name: naName.trim(),
+      industry: naIndustry.trim() || "Unknown",
+      region: "Unknown",
+      domain: naDomain.trim() || "",
+      ownerId: ctx.user.id,
+      lifecycle: "prospect",
+      vatId: "",
+      since: today,
+      sites: 1,
+      summary: "",
+      address: "",
+    };
+    ctx.addAccount(account);
+    fetch("/api/accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: account.name, industry: account.industry, region: account.region, domain: account.domain }),
+    }).catch(console.error);
+    setNaName("");
+    setNaIndustry("");
+    setNaDomain("");
+    setNewAccountOpen(false);
+    ctx.notify(`Account "${account.name}" created.`);
+  };
+
   return (
     <>
       <PageHead title="Accounts" crumb="Customers" actions={
-        <button className="btn btn--primary" onClick={() => setModal(true)} type="button"><Icon name="plus" />New account</button>
+        <button className="btn btn--primary" onClick={() => setNewAccountOpen(true)} type="button"><Icon name="plus" />New account</button>
       } />
       <div className="toolbar">
         <label className="search">
@@ -1167,6 +1202,49 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
         </table>
       </div>
 
+      {newAccountOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="New account"
+          onKeyDown={(e) => { if (e.key === "Escape") setNewAccountOpen(false); }}>
+          <div className="modal">
+            <div className="modal-head">
+              <h2>New account</h2>
+              <button className="icon-btn" onClick={() => setNewAccountOpen(false)} aria-label="Close" type="button"><Icon name="close" /></button>
+            </div>
+            <div className="modal-body">
+              <div className="modal-field">
+                <label htmlFor="na-name">Account name</label>
+                <input id="na-name" type="text" value={naName} onChange={(e) => setNaName(e.target.value)}
+                  placeholder="e.g. Acme Corp" autoFocus
+                  onKeyDown={(e) => { if (e.key === "Enter") submitNewAccount(); }} />
+              </div>
+              <div className="modal-field">
+                <label htmlFor="na-industry">Industry</label>
+                <select id="na-industry" value={naIndustry} onChange={(e) => setNaIndustry(e.target.value)}>
+                  <option value="">Select industry</option>
+                  <option value="Field logistics">Field logistics</option>
+                  <option value="Transport & haulage">Transport &amp; haulage</option>
+                  <option value="Public safety">Public safety</option>
+                  <option value="Energy & utilities">Energy &amp; utilities</option>
+                  <option value="Facilities management">Facilities management</option>
+                  <option value="Healthcare">Healthcare</option>
+                  <option value="Retail">Retail</option>
+                  <option value="Manufacturing">Manufacturing</option>
+                  <option value="Construction">Construction</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div className="modal-field">
+                <label htmlFor="na-domain">Domain</label>
+                <input id="na-domain" type="text" value={naDomain} onChange={(e) => setNaDomain(e.target.value)} placeholder="e.g. acme.com" />
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn--ghost btn--sm" onClick={() => setNewAccountOpen(false)} type="button">Cancel</button>
+              <button className="btn btn--primary btn--sm" onClick={submitNewAccount} disabled={!naName.trim()} type="button">Create account</button>
+            </div>
+          </div>
+        </div>
+      )}
       {modal && <NewAccountModal ctx={ctx} onClose={() => setModal(false)} />}
     </>
   );
