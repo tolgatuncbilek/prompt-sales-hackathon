@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-13T11:51:01+03:00",
+  "title": "Design System: HMD Secure AI-Native CRM",
+  "extensions": {
+    "colorMeta": {
+      "field-black": {
+        "role": "neutral",
+        "displayName": "Field Black",
+        "canonical": "#0A0A0B",
+        "tonalRamp": ["#0A0A0B", "#151517", "#242426", "#303033"]
+      },
+      "dirty-white": {
+        "role": "neutral",
+        "displayName": "Dirty White",
+        "canonical": "#FAFAFA",
+        "tonalRamp": ["#B6B6B8", "#DADADC", "#FAFAFA"]
+      },
+      "signal-lime": {
+        "role": "primary",
+        "displayName": "Signal Lime",
+        "canonical": "#E4FF00",
+        "tonalRamp": ["#819100", "#B7CC00", "#E4FF00", "#ECFF52"]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page and primary record headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Dense operational content and readable prose."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Controls, metadata, table headers, and statuses."
+      }
+    },
+    "shadows": [
+      {
+        "name": "floating-ui",
+        "value": "0 8px 24px rgba(0, 0, 0, 0.32)",
+        "purpose": "Menus and tooltips only."
+      },
+      {
+        "name": "drawer-edge",
+        "value": "0 0 24px rgba(0, 0, 0, 0.24)",
+        "purpose": "Separate an open drawer from the workspace."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-fast",
+        "value": "160ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Hover, focus, and compact state transitions."
+      },
+      {
+        "name": "state-standard",
+        "value": "220ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Drawers, disclosures, and larger state changes."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact",
+        "value": "720px"
+      },
+      {
+        "name": "wide",
+        "value": "1200px"
+      }
+    ],
+    "narrative": {
+      "northStar": "The Operational Fieldbook",
+      "overview": "HMD Secure supplies the industrial identity and direct operational tone. Attio supplies the reference for records, lists, saved views, inline editing, and context-preserving navigation. Clay supplies the reference for structured AI execution, row-level state, batch controls, provenance, and reviewable outputs.",
+      "rules": [
+        "HMD Secure remains the visual and verbal identity.",
+        "Table and kanban are views over the same records.",
+        "Generated values remain distinct from confirmed CRM values.",
+        "Consequential AI output requires explicit review."
+      ],
+      "donts": [
+        "Do not copy Attio or Clay branding, layouts, assets, icons, copy, or ornamental details.",
+        "Do not make chat the primary interface when an action belongs in structured data."
+      ]
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The highest-priority action in the current working context.",
+      "html": "<button class=\"ds-button-primary\">Create deal</button>",
+      "css": ".ds-button-primary { min-height: 44px; padding: 12px 16px; border: 0; border-radius: 4px; background: #E4FF00; color: #0A0A0B; font: 650 0.8125rem/1.25 Archivo, sans-serif; transition: background 160ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-button-primary:hover { background: #ECFF52; } .ds-button-primary:focus-visible { outline: 2px solid #E4FF00; outline-offset: 3px; }"
+    },
+    {
+      "name": "Working Panel",
+      "kind": "card",
+      "refersTo": "panel-default",
+      "description": "A grouped operational region, used only when containment improves comprehension.",
+      "html": "<section class=\"ds-panel\"><h2>Deals needing attention</h2></section>",
+      "css": ".ds-panel { padding: 24px; border: 1px solid #3A3A3D; border-radius: 8px; background: #242426; color: #FAFAFA; }"
+    }
+  ]
+}
