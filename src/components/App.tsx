@@ -1,5 +1,6 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useId, useReducer, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   ROLE_LABEL,
   STAGE_META,
@@ -550,6 +551,284 @@ function liveDeal(ctx: AppCtx, deal: Deal): Deal {
 
 type Opt = { value: string; label: string };
 
+type CustomSelectProps = {
+  value: string;
+  options: Opt[];
+  onChange: (value: string) => void;
+  className?: string;
+  id?: string;
+  required?: boolean;
+  disabled?: boolean;
+  placeholder?: string;
+  compact?: boolean;
+};
+
+function CustomSelect({
+  value,
+  options,
+  onChange,
+  className,
+  id,
+  required,
+  disabled,
+  placeholder,
+  compact = false,
+}: CustomSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  
+  const selectedOption = options.find((o) => o.value === value);
+  const displayLabel = selectedOption ? selectedOption.label : (placeholder || "Select...");
+
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0, placement: "bottom" });
+
+  const updateCoords = () => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const dropdownHeight = 220;
+    const viewportHeight = window.innerHeight;
+    const spaceBelow = viewportHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    
+    let placement = "bottom";
+    let top = rect.bottom + window.scrollY;
+    
+    if (spaceBelow < dropdownHeight && spaceAbove > spaceBelow) {
+      placement = "top";
+      top = rect.top - 8 + window.scrollY;
+    } else {
+      top = rect.bottom + 4 + window.scrollY;
+    }
+    
+    setCoords({
+      top,
+      left: rect.left + window.scrollX,
+      width: rect.width,
+      placement,
+    });
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      updateCoords();
+      window.addEventListener("scroll", updateCoords, { passive: true });
+      window.addEventListener("resize", updateCoords);
+    }
+    return () => {
+      window.removeEventListener("scroll", updateCoords);
+      window.removeEventListener("resize", updateCoords);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (
+        triggerRef.current?.contains(e.target as Node) ||
+        dropdownRef.current?.contains(e.target as Node)
+      ) {
+        return;
+      }
+      setIsOpen(false);
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, [isOpen]);
+
+  const toggleDropdown = () => {
+    if (disabled) return;
+    const nextState = !isOpen;
+    setIsOpen(nextState);
+    if (nextState) {
+      const idx = options.findIndex((o) => o.value === value);
+      setActiveIndex(idx >= 0 ? idx : 0);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (disabled) return;
+    
+    switch (e.key) {
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        if (isOpen) {
+          if (activeIndex >= 0 && activeIndex < options.length) {
+            onChange(options[activeIndex]!.value);
+          }
+          setIsOpen(false);
+        } else {
+          setIsOpen(true);
+          const idx = options.findIndex((o) => o.value === value);
+          setActiveIndex(idx >= 0 ? idx : 0);
+        }
+        break;
+        
+      case "ArrowDown":
+        e.preventDefault();
+        if (!isOpen) {
+          setIsOpen(true);
+          const idx = options.findIndex((o) => o.value === value);
+          setActiveIndex(idx >= 0 ? idx : 0);
+        } else {
+          setActiveIndex((prev) => (prev + 1) % options.length);
+        }
+        break;
+        
+      case "ArrowUp":
+        e.preventDefault();
+        if (!isOpen) {
+          setIsOpen(true);
+          const idx = options.findIndex((o) => o.value === value);
+          setActiveIndex(idx >= 0 ? idx : 0);
+        } else {
+          setActiveIndex((prev) => (prev - 1 + options.length) % options.length);
+        }
+        break;
+        
+      case "Escape":
+        e.preventDefault();
+        setIsOpen(false);
+        triggerRef.current?.focus();
+        break;
+        
+      case "Tab":
+        setIsOpen(false);
+        break;
+        
+      case "Home":
+        e.preventDefault();
+        if (isOpen) setActiveIndex(0);
+        break;
+        
+      case "End":
+        e.preventDefault();
+        if (isOpen) setActiveIndex(options.length - 1);
+        break;
+        
+      default:
+        if (e.key.length === 1) {
+          const char = e.key.toLowerCase();
+          const matchIdx = options.findIndex((o) =>
+            o.label.toLowerCase().startsWith(char)
+          );
+          if (matchIdx >= 0) {
+            setActiveIndex(matchIdx);
+            if (!isOpen) {
+              onChange(options[matchIdx]!.value);
+            }
+          }
+        }
+        break;
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && activeIndex >= 0 && dropdownRef.current) {
+      const activeEl = dropdownRef.current.querySelector(
+        `[data-index="${activeIndex}"]`
+      );
+      if (activeEl) {
+        activeEl.scrollIntoView({ block: "nearest" });
+      }
+    }
+  }, [activeIndex, isOpen]);
+
+  const listboxId = useId();
+  const triggerId = useId();
+
+  const dropdownStyle: CSSProperties = {
+    position: "absolute",
+    top: coords.top,
+    left: coords.left,
+    width: coords.width,
+    transform: coords.placement === "top" ? "translateY(-100%)" : "none",
+  };
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        id={triggerId}
+        type="button"
+        className={cx("custom-select-trigger", className)}
+        onClick={toggleDropdown}
+        onKeyDown={handleKeyDown}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-controls={isOpen ? listboxId : undefined}
+        aria-activedescendant={
+          isOpen && activeIndex >= 0
+            ? `${listboxId}-option-${activeIndex}`
+            : undefined
+        }
+        disabled={disabled}
+      >
+        <span className="custom-select-value">{displayLabel}</span>
+        {/* Only show the dropdown chevron if it's not a cell select or inline stage where it's overlayed by parents */}
+        {!(className?.includes("cell-select") || className?.includes("inline-stage")) && (
+          <Icon name="chevronDown" className="custom-select-arrow" />
+        )}
+      </button>
+      
+      {isOpen &&
+        createPortal(
+          <div
+            ref={dropdownRef}
+            className={cx(
+              "custom-select-dropdown",
+              compact && "custom-select-dropdown--compact"
+            )}
+            style={dropdownStyle}
+          >
+            <ul
+              id={listboxId}
+              role="listbox"
+              aria-labelledby={triggerId}
+              className="custom-select-listbox"
+              tabIndex={-1}
+            >
+              {options.map((option, idx) => {
+                const isSelected = option.value === value;
+                const isActive = idx === activeIndex;
+                const optionId = `${listboxId}-option-${idx}`;
+                
+                return (
+                  <li
+                    key={option.value}
+                    id={optionId}
+                    role="option"
+                    aria-selected={isSelected}
+                    data-index={idx}
+                    className={cx(
+                      "custom-select-option",
+                      isActive && "custom-select-option--active",
+                      isSelected && "custom-select-option--selected"
+                    )}
+                    onClick={() => {
+                      onChange(option.value);
+                      setIsOpen(false);
+                      triggerRef.current?.focus();
+                    }}
+                    onMouseEnter={() => setActiveIndex(idx)}
+                  >
+                    <span>{option.label}</span>
+                    {isSelected && <Icon name="check" />}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>,
+          document.body
+        )}
+    </>
+  );
+}
+
 function CellText({ value, onCommit, placeholder }: { value: string; onCommit: (v: string) => void; placeholder?: string }) {
   return (
     <input
@@ -613,9 +892,13 @@ function CellDate({ value, onCommit }: { value: string; onCommit: (v: string) =>
 function CellSelect({ value, options, onCommit, className }: { value: string; options: Opt[]; onCommit: (v: string) => void; className?: string }) {
   return (
     <span className="cell-edit" onClick={(e) => e.stopPropagation()}>
-      <select className={cx("cell-select", className)} value={value} onChange={(e) => onCommit(e.target.value)}>
-        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
+      <CustomSelect
+        className={cx("cell-select", className)}
+        value={value}
+        options={options}
+        onChange={onCommit}
+        compact
+      />
       <Icon name="chevronDown" />
     </span>
   );
@@ -638,6 +921,19 @@ const STATUS_OPTIONS: Opt[] = STATUSES.map((s) => ({ value: s, label: STAGE_META
 const RETIRED_OPTIONS: Opt[] = [{ value: "active", label: "Active" }, { value: "retired", label: "Retired" }];
 const SOURCE_OPTIONS: Opt[] = [{ value: "internal", label: "Internal" }, { value: "third", label: "Third party" }];
 const CHANNEL_OPTIONS: Opt[] = [{ value: "direct", label: "Direct" }, { value: "reseller", label: "Reseller" }];
+const INDUSTRY_OPTIONS: Opt[] = [
+  { value: "", label: "Select industry" },
+  { value: "Field logistics", label: "Field logistics" },
+  { value: "Transport & haulage", label: "Transport & haulage" },
+  { value: "Public safety", label: "Public safety" },
+  { value: "Energy & utilities", label: "Energy & utilities" },
+  { value: "Facilities management", label: "Facilities management" },
+  { value: "Healthcare", label: "Healthcare" },
+  { value: "Retail", label: "Retail" },
+  { value: "Manufacturing", label: "Manufacturing" },
+  { value: "Construction", label: "Construction" },
+  { value: "Other", label: "Other" }
+];
 
 function replaceDealRevenue(deal: Deal, deviceValue: number, serviceValue: number) {
   const period = deal.devicePhases[0]?.period ?? "2026-Q2";
@@ -771,12 +1067,14 @@ function NewDealModal({ account, ctx, onClose }: { account?: Account; ctx: AppCt
         </div>
         <form className="modal-body" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
           {!account && (
-            <label className="field">
+            <div className="field">
               <span className="field-label">Account</span>
-              <select value={accountId} onChange={(e) => setAccountId(e.target.value)} required>
-                {accounts.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
-              </select>
-            </label>
+              <CustomSelect
+                value={accountId}
+                options={accounts.map((option) => ({ value: option.id, label: option.name }))}
+                onChange={setAccountId}
+              />
+            </div>
           )}
           <label className="field">
             <span className="field-label">Deal text</span>
@@ -784,12 +1082,14 @@ function NewDealModal({ account, ctx, onClose }: { account?: Account; ctx: AppCt
           </label>
           <p className="muted">New deals start in the <strong>Lead</strong> stage. Validate the lead before moving to Offer.</p>
           <div className="modal-grid">
-            <label className="field">
+            <div className="field">
               <span className="field-label">Channel</span>
-              <select value={channel} onChange={(e) => setChannel(e.target.value as Channel)}>
-                {CHANNEL_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-            </label>
+              <CustomSelect
+                value={channel}
+                options={CHANNEL_OPTIONS}
+                onChange={(v) => setChannel(v as Channel)}
+              />
+            </div>
             <label className="field">
               <span className="field-label">Device</span>
               <input type="number" min="0" step="0.01" inputMode="decimal" value={device} onChange={(e) => updateAmount("device", e.target.value)} required />
@@ -817,185 +1117,7 @@ function NewDealModal({ account, ctx, onClose }: { account?: Account; ctx: AppCt
   );
 }
 
-// ===========================================================================
-// New account — mock AI research populates the brief from a name + website.
-// ===========================================================================
 
-function hashStr(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return h;
-}
-
-const RESEARCH_PROFILES = [
-  { industry: "Field logistics", region: "DACH", hq: "Hamburg, Germany", vat: "DE", lifecycle: "Prospect · New", sites: 5 },
-  { industry: "Public safety", region: "UK & IE", hq: "Leeds, United Kingdom", vat: "GB", lifecycle: "Prospect · New", sites: 8 },
-  { industry: "Energy & utilities", region: "Nordics", hq: "Oslo, Norway", vat: "NO", lifecycle: "Prospect · Early", sites: 4 },
-  { industry: "Facilities management", region: "Benelux", hq: "Rotterdam, Netherlands", vat: "NL", lifecycle: "Prospect · New", sites: 6 },
-  { industry: "Transport & haulage", region: "Nordics", hq: "Gothenburg, Sweden", vat: "SE", lifecycle: "Prospect · Early", sites: 3 },
-];
-
-function toDomain(website: string, name: string): string {
-  const cleaned = website.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
-  return cleaned || `${name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "")}.example`;
-}
-
-function mockResearch(name: string, website: string): Omit<Account, "id" | "ownerId"> {
-  const p = RESEARCH_PROFILES[hashStr(name.trim() || website) % RESEARCH_PROFILES.length]!;
-  const domain = toDomain(website, name);
-  return {
-    name: name.trim(),
-    domain,
-    industry: p.industry,
-    region: p.region,
-    address: p.hq,
-    vatId: `${p.vat} ${String(100 + (hashStr(domain) % 900))} ${String(1000 + (hashStr(name) % 9000))}`,
-    lifecycle: p.lifecycle,
-    sites: p.sites,
-    since: "Jun 2026",
-    summary: `${name.trim()} is a ${p.region}-based ${p.industry.toLowerCase()} operator with a distributed field workforce — a credible fit for HMD Secure's managed device and service model.`,
-  };
-}
-
-function NewAccountModal({ ctx, onClose }: { ctx: AppCtx; onClose: () => void }) {
-  const [name, setName] = useState("");
-  const [website, setWebsite] = useState("");
-  const [phase, setPhase] = useState<"form" | "searching" | "ready">("form");
-  const [step, setStep] = useState(0);
-  const [draft, setDraft] = useState<Omit<Account, "id" | "ownerId"> | null>(null);
-  const nameRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { nameRef.current?.focus(); }, []);
-
-  const steps = [`Searching the web for "${name.trim() || "the company"}"`, `Reading ${toDomain(website, name || "company")}`, "Scanning news, hiring & filings", "Drafting the account brief"];
-
-  useEffect(() => {
-    if (phase !== "searching") return;
-    const timers = steps.map((_, i) => window.setTimeout(() => setStep(i), i * 480));
-    timers.push(window.setTimeout(() => { setDraft(mockResearch(name, website)); setPhase("ready"); }, steps.length * 480 + 360));
-    return () => timers.forEach((t) => window.clearTimeout(t));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
-
-  const runSearch = () => { if (!name.trim()) return; setStep(0); setPhase("searching"); };
-
-  const patchDraft = (field: keyof Omit<Account, "id" | "ownerId">, value: string | number) =>
-    setDraft((d) => (d ? { ...d, [field]: value } : d));
-
-  const create = async () => {
-    if (!draft) return;
-    const ownerId = ctx.user.role === "sales_rep" ? ctx.user.id : (REP_OPTIONS[0]?.value ?? ctx.user.id);
-
-    try {
-      const response = await fetch("/api/accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: draft.name,
-          domain: draft.domain,
-          address: draft.address,
-          vat_id: draft.vatId,
-          industry: draft.industry,
-          owner_user_id: ownerId,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to save account to database");
-      }
-
-      const savedAccount = await response.json();
-
-      // Construct full frontend Account object merging database response and research draft fields
-      const fullAccount: Account = {
-        id: savedAccount.id,
-        name: savedAccount.name,
-        domain: savedAccount.domain || draft.domain || "",
-        address: savedAccount.address || draft.address || "",
-        vatId: savedAccount.vatId || draft.vatId || "",
-        industry: savedAccount.industry || draft.industry || "",
-        region: draft.region || "Global",
-        ownerId: savedAccount.ownerUserId,
-        lifecycle: draft.lifecycle || "Prospect · New",
-        sites: draft.sites || 1,
-        summary: draft.summary || "",
-        since: draft.since || "Jun 2026",
-      };
-
-      ctx.addAccount(fullAccount);
-      onClose();
-      ctx.openAccount(fullAccount.id);
-      ctx.notify(`${fullAccount.name} created.`);
-    } catch (err) {
-      console.error("Account creation error:", err);
-      ctx.notify("Failed to create account on server.");
-    }
-  };
-
-  return (
-    <div className="modal-scrim" role="dialog" aria-modal="true" aria-label="New account" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h2>New account</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose} type="button"><Icon name="close" /></button>
-        </div>
-
-        {phase === "form" && (
-          <form className="modal-body" onSubmit={(e) => { e.preventDefault(); runSearch(); }}>
-            <p className="modal-intro">Enter a company name and website. The research agent scans public sources and drafts the account brief for you to review.</p>
-            <label className="field">
-              <span className="field-label">Company name</span>
-              <input ref={nameRef} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Borealis Freight" required />
-            </label>
-            <label className="field">
-              <span className="field-label">Website <span className="field-opt">optional</span></span>
-              <span className="field-prefix"><Icon name="globe" /><input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="borealisfreight.com" inputMode="url" /></span>
-            </label>
-            <div className="modal-foot">
-              <button className="btn btn--ghost" type="button" onClick={onClose}>Cancel</button>
-              <button className="btn btn--primary" type="submit" disabled={!name.trim()}><Icon name="spark" />Research with AI</button>
-            </div>
-          </form>
-        )}
-
-        {phase === "searching" && (
-          <div className="modal-body modal-research" role="status" aria-live="polite">
-            <div className="research-pulse" aria-hidden="true"><Icon name="spark" /></div>
-            <h3>Researching {name.trim()}…</h3>
-            <ol className="research-steps">
-              {steps.map((label, i) => (
-                <li key={label} className={cx("research-step", i < step && "is-done", i === step && "is-active")}>
-                  <span className="research-mark" aria-hidden="true">{i < step ? <Icon name="check" /> : <span className="research-dot" />}</span>{label}
-                </li>
-              ))}
-            </ol>
-          </div>
-        )}
-
-        {phase === "ready" && draft && (
-          <div className="modal-body">
-            <div className="ai-badge"><Icon name="spark" />AI brief · review and edit before creating</div>
-            <div className="modal-grid">
-              <label className="field"><span className="field-label">Company name</span><input value={draft.name} onChange={(e) => patchDraft("name", e.target.value)} /></label>
-              <label className="field"><span className="field-label">Domain</span><input value={draft.domain} onChange={(e) => patchDraft("domain", e.target.value)} /></label>
-              <label className="field"><span className="field-label">Industry</span><input value={draft.industry} onChange={(e) => patchDraft("industry", e.target.value)} /></label>
-              <label className="field"><span className="field-label">Region</span><input value={draft.region} onChange={(e) => patchDraft("region", e.target.value)} /></label>
-              <label className="field"><span className="field-label">Address</span><input value={draft.address} onChange={(e) => patchDraft("address", e.target.value)} /></label>
-              <label className="field"><span className="field-label">VAT ID</span><input value={draft.vatId} onChange={(e) => patchDraft("vatId", e.target.value)} /></label>
-            </div>
-            <label className="field"><span className="field-label">Summary</span><textarea rows={3} value={draft.summary} onChange={(e) => patchDraft("summary", e.target.value)} /></label>
-            <p className="modal-note">AI-generated from public sources. Nothing is saved until you create the account.</p>
-            <div className="modal-foot">
-              <button className="btn btn--ghost" type="button" onClick={() => setPhase("form")}>Back</button>
-              <button className="btn btn--secondary" type="button" onClick={runSearch}>Re-run</button>
-              <button className="btn btn--primary" type="button" onClick={create}><Icon name="plus" />Create account</button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ===========================================================================
 // Dashboards (per role)
@@ -1254,7 +1376,6 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
   const [naName, setNaName] = useState("");
   const [naIndustry, setNaIndustry] = useState("");
   const [naDomain, setNaDomain] = useState("");
-  const [modal, setModal] = useState(false);
   const query = q.trim().toLowerCase();
   const rows = accounts
     .map((a) => ctx.eff("account", a))
@@ -1303,7 +1424,7 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
       <div className="table-wrap card-edge">
         <table>
           <thead><tr>
-            <th><span className="col-add-wrap">Account<button className="col-add" aria-label="New account" type="button" onClick={() => setModal(true)}><Icon name="plus" /></button></span></th>
+            <th>Account</th>
             <th>Industry</th><th>Owner</th><th className="numeric">Open pipeline</th><th>Open cases</th><th>Signal</th><th aria-label="Open" />
           </tr></thead>
           <tbody>
@@ -1349,20 +1470,13 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
                   onKeyDown={(e) => { if (e.key === "Enter") submitNewAccount(); }} />
               </div>
               <div className="modal-field">
-                <label htmlFor="na-industry">Industry</label>
-                <select id="na-industry" value={naIndustry} onChange={(e) => setNaIndustry(e.target.value)}>
-                  <option value="">Select industry</option>
-                  <option value="Field logistics">Field logistics</option>
-                  <option value="Transport & haulage">Transport &amp; haulage</option>
-                  <option value="Public safety">Public safety</option>
-                  <option value="Energy & utilities">Energy &amp; utilities</option>
-                  <option value="Facilities management">Facilities management</option>
-                  <option value="Healthcare">Healthcare</option>
-                  <option value="Retail">Retail</option>
-                  <option value="Manufacturing">Manufacturing</option>
-                  <option value="Construction">Construction</option>
-                  <option value="Other">Other</option>
-                </select>
+                <span className="modal-field-label">Industry</span>
+                <CustomSelect
+                  id="na-industry"
+                  value={naIndustry}
+                  options={INDUSTRY_OPTIONS}
+                  onChange={setNaIndustry}
+                />
               </div>
               <div className="modal-field">
                 <label htmlFor="na-domain">Domain</label>
@@ -1376,7 +1490,6 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
           </div>
         </div>
       )}
-      {modal && <NewAccountModal ctx={ctx} onClose={() => setModal(false)} />}
     </>
   );
 }
@@ -1698,11 +1811,13 @@ function BuildOfferModal({
         </div>
         <form className="modal-body" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
           {dealOptions.length > 1 && (
-            <label className="field"><span className="field-label">Deal</span>
-              <select value={dealId} onChange={(e) => setDealId(e.target.value)} required>
-                {dealOptions.map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}
-              </select>
-            </label>
+            <div className="field"><span className="field-label">Deal</span>
+              <CustomSelect
+                value={dealId}
+                options={dealOptions.map((d) => ({ value: d.id, label: d.title }))}
+                onChange={setDealId}
+              />
+            </div>
           )}
 
           <div className="offer-builder">
@@ -1711,38 +1826,39 @@ function BuildOfferModal({
             </div>
             {items.map((item) => {
               const line = draftToLine(item);
+              const catalogItems = item.kind === "product"
+                ? products.filter((p) => !p.retired)
+                : services.filter((s) => !s.retired);
               return (
                 <div key={item.key} className="offer-builder-row">
-                  <label className="field">
+                  <div className="field">
                     <span className="field-label sr-only">Type</span>
-                    <select
+                    <CustomSelect
                       value={item.kind}
-                      onChange={(e) => {
-                        const kind = e.target.value as "product" | "service";
+                      options={[
+                        { value: "product", label: "Product" },
+                        { value: "service", label: "Service" }
+                      ]}
+                      onChange={(val) => {
+                        const kind = val as "product" | "service";
                         const catalog = kind === "product"
                           ? products.filter((p) => !p.retired)
                           : services.filter((s) => !s.retired);
                         updateItem(item.key, { kind, catalogId: catalog[0]?.id ?? "" });
                       }}
-                    >
-                      <option value="product">Product</option>
-                      <option value="service">Service</option>
-                    </select>
-                  </label>
-                  <label className="field">
+                    />
+                  </div>
+                  <div className="field">
                     <span className="field-label sr-only">Catalog item</span>
-                    <select
+                    <CustomSelect
                       value={item.catalogId}
-                      onChange={(e) => updateItem(item.key, { catalogId: e.target.value })}
-                      required
-                    >
-                      {(item.kind === "product" ? products.filter((p) => !p.retired) : services.filter((s) => !s.retired)).map((entry) => (
-                        <option key={entry.id} value={entry.id}>
-                          {entry.name}{item.kind === "product" ? ` — ${fmtEurExact((entry as typeof products[0]).listPrice)}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      options={catalogItems.map((entry) => ({
+                        value: entry.id,
+                        label: entry.name + (item.kind === "product" ? ` — ${fmtEurExact((entry as typeof products[0]).listPrice)}` : "")
+                      }))}
+                      onChange={(val) => updateItem(item.key, { catalogId: val })}
+                    />
+                  </div>
                   <label className="field">
                     <span className="field-label sr-only">Quantity</span>
                     <input type="number" min="1" value={item.quantity} onChange={(e) => updateItem(item.key, { quantity: e.target.value })} required />
@@ -2108,16 +2224,20 @@ function CreateCaseModal({ deal, ctx, onClose }: { deal: Deal; ctx: AppCtx; onCl
         <form className="modal-body" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
           <label className="field"><span className="field-label">Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} required autoFocus /></label>
           <div className="modal-grid">
-            <label className="field"><span className="field-label">Priority</span>
-              <select value={priority} onChange={(e) => setPriority(e.target.value as CasePriority)}>
-                {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </label>
-            <label className="field"><span className="field-label">Service</span>
-              <select value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
-                {SERVICE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </label>
+            <div className="field"><span className="field-label">Priority</span>
+              <CustomSelect
+                value={priority}
+                options={PRIORITY_OPTIONS}
+                onChange={(v) => setPriority(v as CasePriority)}
+              />
+            </div>
+            <div className="field"><span className="field-label">Service</span>
+              <CustomSelect
+                value={serviceId}
+                options={SERVICE_OPTIONS}
+                onChange={setServiceId}
+              />
+            </div>
           </div>
           <label className="field"><span className="field-label">Description</span>
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="What does the customer need during testing?" />
@@ -2361,16 +2481,20 @@ function DealsView({ ctx }: { ctx: AppCtx }) {
 }
 
 function InlineStage({ deal, ctx }: { deal: Deal; ctx: AppCtx }) {
-  const options = pipelineStages(deal.channel);
-  const current = options.includes(deal.stage) ? deal.stage : options[0]!;
+  const options = pipelineStages(deal.channel).map((s) => ({ value: s, label: STAGE_META[s].label }));
+  const current = options.find((o) => o.value === deal.stage) ? deal.stage : (options[0]?.value ?? deal.stage);
   return (
-    <label className="inline-edit" onClick={(e) => e.stopPropagation()}>
+    <span className="inline-edit" onClick={(e) => e.stopPropagation()}>
       <span className="sr-only">Stage for {deal.title}</span>
-      <select className="inline-stage" value={current} onChange={(e) => ctx.requestMoveDeal(deal.id, e.target.value as Stage)}>
-        {options.map((s) => <option key={s} value={s}>{STAGE_META[s].label}</option>)}
-      </select>
+      <CustomSelect
+        className="inline-stage"
+        value={current}
+        options={options}
+        onChange={(v) => ctx.requestMoveDeal(deal.id, v as Stage)}
+        compact
+      />
       <Icon name="chevronDown" />
-    </label>
+    </span>
   );
 }
 

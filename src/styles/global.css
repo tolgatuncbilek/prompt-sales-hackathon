@@ -515,14 +515,6 @@ tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
 .cell-select option { background: var(--raised); color: var(--ink); }
 .cell-edit .cell-select { min-width: 110px; }
 
-.col-add-wrap { display: inline-flex; align-items: center; gap: 8px; }
-.col-add {
-  display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--rule);
-  border-radius: var(--r-control); background: var(--surface); color: var(--accent); cursor: pointer;
-  transition: background var(--t-fast), border-color var(--t-fast);
-}
-.col-add:hover { background: var(--accent); border-color: var(--accent); color: var(--field); }
-.col-add .icon { width: 14px; }
 
 .row-open {
   display: inline-grid; place-items: center; width: 30px; height: 30px; border: 1px solid transparent;
@@ -1185,7 +1177,8 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .modal-head h2 { margin: 0; font-size: 15px; font-weight: 700; }
 .modal-body { display: flex; flex-direction: column; gap: 14px; }
 .modal-field { display: flex; flex-direction: column; gap: 5px; }
-.modal-field label { font-size: 11.5px; font-weight: 600; color: var(--ink-2); }
+.modal-field label,
+.modal-field .modal-field-label { font-size: 11.5px; font-weight: 600; color: var(--ink-2); }
 .modal-field input,
 .modal-field select {
   width: 100%;
@@ -1238,3 +1231,179 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 /* Row affordance: the open-arrow slides in on hover instead of just tinting. */
 .stack-list li .row-side { transition: transform var(--t-fast); }
 .stack-list li:hover .row-side { transform: translateX(-1px); }
+
+/* ===========================================================================
+   Custom Select component styling (fits "The Operational Fieldbook" theme)
+   =========================================================================== */
+
+.custom-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  cursor: pointer;
+  background: var(--field);
+  color: var(--ink);
+  font: inherit;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  padding: 10px 12px;
+  width: 100%;
+  height: 44px;
+  min-height: 42px;
+  transition: border-color var(--t-fast), background var(--t-fast);
+  outline: none;
+  user-select: none;
+}
+
+.custom-select-trigger:hover {
+  border-color: var(--ink-3);
+  background: var(--field-2);
+}
+
+.custom-select-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.custom-select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-select-arrow {
+  width: 16px;
+  height: 16px;
+  color: var(--ink-3);
+  flex-shrink: 0;
+  margin-left: 8px;
+  transition: transform var(--t-fast);
+}
+
+.custom-select-trigger[aria-expanded="true"] .custom-select-arrow {
+  transform: rotate(180deg);
+}
+
+/* Dropdown listbox overlay styling */
+.custom-select-dropdown {
+  position: absolute;
+  z-index: 9999;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  box-shadow: var(--shadow-float);
+  overflow-y: auto;
+  max-height: 250px;
+  animation: select-fade-in 120ms var(--ease-out);
+}
+
+@keyframes select-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.custom-select-listbox {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.custom-select-option {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--ink-mid);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  user-select: none;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+.custom-select-option:hover,
+.custom-select-option--active {
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.custom-select-option--selected {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.custom-select-option .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* Modifiers for different select contexts */
+/* 1. Cell Select (inside tables) */
+.cell-edit .custom-select-trigger {
+  min-width: 110px;
+  max-width: 200px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 24px 0 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-mid);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: var(--r-control);
+}
+
+.cell-edit .custom-select-trigger:hover {
+  border-color: var(--rule);
+  background: var(--field);
+}
+
+.cell-edit .custom-select-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+
+/* 2. Inline Stage (deal stages in rows) */
+.inline-edit .custom-select-trigger {
+  min-width: 190px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 26px 0 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-mid);
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--r-pill);
+}
+
+.inline-edit .custom-select-trigger:hover {
+  border-color: var(--rule);
+  background: var(--field);
+}
+
+.inline-edit .custom-select-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+
+/* Compact Dropdown style for compact/cell triggers */
+.custom-select-dropdown--compact {
+  border-radius: 4px;
+  max-height: 200px;
+}
+
+.custom-select-dropdown--compact .custom-select-option {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+/* 3. Modal-field selects */
+.modal-field .custom-select-trigger {
+  padding: 9px 12px;
+  height: auto;
+  min-height: 36px;
+}
