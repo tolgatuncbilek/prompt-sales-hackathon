@@ -581,11 +581,17 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .kv dd { margin: 0; font-size: 12.5px; font-weight: 600; }
 
 .contact-list { list-style: none; margin: 0; padding: 0; }
-.contact-list li { display: flex; align-items: center; gap: 11px; padding: 11px 0; border-bottom: 1px solid var(--rule-soft); }
+.contact-list li { display: flex; align-items: flex-start; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--rule-soft); }
 .contact-list li:last-child { border-bottom: 0; }
 .contact-main { flex: 1; min-width: 0; }
-.contact-main strong { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; }
-.contact-main small { display: block; margin-top: 3px; color: var(--ink-3); font-size: 10.5px; }
+.contact-name-row { display: flex; align-items: center; gap: 6px; }
+.contact-main strong { font-size: 12.5px; font-weight: 600; }
+.contact-role { display: block; margin-top: 2px; margin-bottom: 5px; color: var(--ink-3); font-size: 10.5px; }
+.contact-link { display: flex; align-items: center; gap: 6px; padding: 3px 6px; margin: 1px -6px; border: 0; border-radius: 4px; background: transparent; color: var(--ink-2); font: inherit; font-size: 11px; text-decoration: none; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background 0.1s, color 0.1s; }
+.contact-link:hover { background: var(--surface-1); color: var(--ink); }
+.contact-link .icon { width: 11px; height: 11px; flex-shrink: 0; color: var(--ink-3); }
+.contact-link:hover .icon { color: var(--accent); }
+.contact-link span { overflow: hidden; text-overflow: ellipsis; }
 
 /* Timeline ---------------------------------------------------------------- */
 

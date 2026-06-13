@@ -138,6 +138,7 @@ const ICONS: Record<string, ReactNode> = {
   swap: <path d="M7 7h11l-3-3m3 3-3 3M17 17H6l3-3m-3 3 3 3" />,
   settings: (<><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></>),
   userPlus: (<><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="16" y1="11" x2="22" y2="11" /></>),
+  calendar: (<><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>),
 };
 
 function Icon({ name, className }: { name: string; className?: string }) {
@@ -1413,10 +1414,21 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
                 <li key={c.id}>
                   <Avatar name={c.name} />
                   <div className="contact-main">
-                    <strong>{c.name}{c.primary && <span className="mini-tag mini-tag--accent">Primary</span>}</strong>
-                    <small>{CONTACT_ROLE_LABEL[c.roleType]}</small>
+                    <div className="contact-name-row">
+                      <strong>{c.name}</strong>
+                      {c.primary && <span className="mini-tag mini-tag--accent">Primary</span>}
+                    </div>
+                    <small className="contact-role">{CONTACT_ROLE_LABEL[c.roleType]}</small>
+                    <a className="contact-link" href={`mailto:${c.email}`}>
+                      <Icon name="mail" /><span>{c.email}</span>
+                    </a>
+                    <a className="contact-link" href={`tel:${c.phone}`}>
+                      <Icon name="phone" /><span>{c.phone}</span>
+                    </a>
+                    <a className="contact-link" href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(`Meeting with ${c.name}`)}&add=${encodeURIComponent(c.email)}`} target="_blank" rel="noreferrer">
+                      <Icon name="calendar" /><span>Meet with {c.name.split(" ")[0]}</span>
+                    </a>
                   </div>
-                  <a className="icon-btn" href={`mailto:${c.email}`} aria-label={`Email ${c.name}`}><Icon name="mail" /></a>
                 </li>
               ))}
             </ul>
