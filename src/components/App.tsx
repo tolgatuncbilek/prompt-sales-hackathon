@@ -1456,18 +1456,12 @@ function PageHead({ title, crumb, actions }: { title: string; crumb: string; act
 // App shell
 // ===========================================================================
 
-const PERSONAL_NAV: { screen: Screen; label: string; icon: string }[] = [
+const NAV: { screen: Screen; label: string; icon: string }[] = [
   { screen: "home", label: "Home", icon: "home" },
-];
-
-const CRM_NAV: { screen: Screen; label: string; icon: string }[] = [
   { screen: "accounts", label: "Accounts", icon: "accounts" },
   { screen: "deals", label: "Deals", icon: "deals" },
   { screen: "cases", label: "Cases", icon: "cases" },
   { screen: "offers", label: "Offers", icon: "offers" },
-];
-
-const FORECAST_NAV: { screen: Screen; label: string; icon: string }[] = [
   { screen: "forecast", label: "Forecast", icon: "forecast" },
   { screen: "catalog", label: "Catalog", icon: "catalog" },
 ];
@@ -1589,59 +1583,17 @@ function MainApp() {
         </div>
 
         <nav aria-label="Primary" className="sidebar-nav">
-          <div className="nav-group">
-            {PERSONAL_NAV.map((item) => {
-              const count = item.screen === "cases" ? seedCases.filter((c) => (c.status !== "resolved" && c.status !== "closed") && (user.role !== "tam" || c.ownerId === user.id)).length
-                : item.screen === "offers" ? seedOffers.map((o) => offerState[o.id] ?? o).filter((o) => (user.role === "sales_manager" && o.status === "pending_manager") || (user.role === "finance" && o.status === "pending_finance")).length
-                : 0;
-              return (
-                <button key={item.screen} className={cx("nav", activeNav === item.screen && "nav--active")} onClick={() => ctx.go(item.screen)} type="button">
-                  <Icon name={item.icon} /><span>{item.label}</span>
-                  {count > 0 && <span className={cx("nav-count", (item.screen === "offers") && "nav-count--alert")}>{count}</span>}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="nav-group">
-            <button className="nav-group-header" onClick={() => notify("Workspace sections are static.")} type="button">
-              <span>Workspace</span>
-              <Icon name="chevronDown" className="chevron-icon" />
-            </button>
-            <div className="nav-group-items">
-              {CRM_NAV.map((item) => {
-                const count = item.screen === "cases" ? seedCases.filter((c) => (c.status !== "resolved" && c.status !== "closed") && (user.role !== "tam" || c.ownerId === user.id)).length
-                  : item.screen === "offers" ? seedOffers.map((o) => offerState[o.id] ?? o).filter((o) => (user.role === "sales_manager" && o.status === "pending_manager") || (user.role === "finance" && o.status === "pending_finance")).length
-                  : 0;
-                return (
-                  <button key={item.screen} className={cx("nav", activeNav === item.screen && "nav--active")} onClick={() => ctx.go(item.screen)} type="button">
-                    <Icon name={item.icon} /><span>{item.label}</span>
-                    {count > 0 && <span className={cx("nav-count", (item.screen === "offers") && "nav-count--alert")}>{count}</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="nav-group">
-            <button className="nav-group-header" onClick={() => notify("Workspace sections are static.")} type="button">
-              <span>Forecast & Products</span>
-              <Icon name="chevronDown" className="chevron-icon" />
-            </button>
-            <div className="nav-group-items">
-              {FORECAST_NAV.map((item) => {
-                const count = item.screen === "cases" ? seedCases.filter((c) => (c.status !== "resolved" && c.status !== "closed") && (user.role !== "tam" || c.ownerId === user.id)).length
-                  : item.screen === "offers" ? seedOffers.map((o) => offerState[o.id] ?? o).filter((o) => (user.role === "sales_manager" && o.status === "pending_manager") || (user.role === "finance" && o.status === "pending_finance")).length
-                  : 0;
-                return (
-                  <button key={item.screen} className={cx("nav", activeNav === item.screen && "nav--active")} onClick={() => ctx.go(item.screen)} type="button">
-                    <Icon name={item.icon} /><span>{item.label}</span>
-                    {count > 0 && <span className={cx("nav-count", (item.screen === "offers") && "nav-count--alert")}>{count}</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          {NAV.map((item) => {
+            const count = item.screen === "cases" ? seedCases.filter((c) => (c.status !== "resolved" && c.status !== "closed") && (user.role !== "tam" || c.ownerId === user.id)).length
+              : item.screen === "offers" ? seedOffers.map((o) => offerState[o.id] ?? o).filter((o) => (user.role === "sales_manager" && o.status === "pending_manager") || (user.role === "finance" && o.status === "pending_finance")).length
+              : 0;
+            return (
+              <button key={item.screen} className={cx("nav", activeNav === item.screen && "nav--active")} onClick={() => ctx.go(item.screen)} type="button">
+                <Icon name={item.icon} /><span>{item.label}</span>
+                {count > 0 && <span className={cx("nav-count", (item.screen === "offers") && "nav-count--alert")}>{count}</span>}
+              </button>
+            );
+          })}
         </nav>
 
         <div className="sidebar-foot">

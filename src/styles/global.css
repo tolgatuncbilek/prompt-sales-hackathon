@@ -116,18 +116,7 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
 }
 .role-name { font-size: 13px; font-weight: 600; color: var(--ink); }
 
-.sidebar-nav { display: flex; flex-direction: column; gap: 14px; }
-.nav-group { display: flex; flex-direction: column; gap: 2px; }
-.nav-group-header {
-  display: flex; align-items: center; justify-content: space-between; width: 100%;
-  padding: 6px 8px 4px; border: 0; background: transparent; text-align: left;
-  font-size: 11px; font-weight: 600; color: var(--ink-3); cursor: pointer;
-  transition: color var(--t-fast);
-}
-.nav-group-header:hover { color: var(--ink-2); }
-.nav-group-header .chevron-icon { width: 10px; height: 10px; color: var(--ink-3); opacity: 0.6; transition: opacity var(--t-fast); }
-.nav-group-header:hover .chevron-icon { opacity: 0.9; }
-.nav-group-items { display: flex; flex-direction: column; gap: 2px; }
+.sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
 
 .nav {
   min-height: 32px; display: flex; align-items: center; gap: 9px; padding: 0 8px;
