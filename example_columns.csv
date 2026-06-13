@@ -1,0 +1,17 @@
+﻿,,,,,#REF!,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Company,Responsible,Product,Volume,Unit Price,GM,Sales Target Time,Negotiation (Opportunity),Offer in (Pipeline),LOI signed (Committed),Contract signed (Confirmed),Closed,2026 Volume,,,,,2026 Net Sales,,,2026 GM,,,,2027 Volume,,,,2027 Net Sales,,,,2027 GM,,,,2028 opportunity,,,2029 Opportunity,,
+,,,,,,,,,,,(Lost/cancelled),Opportunity,Pipeline,Committed,Confirmed,Opportunity,Pipeline,Committed,Confirmed,Opportunity,Pipeline,Committed,Confirmed,Opportunity,Pipeline,Committed,Confirmed,Opportunity,Pipeline,Committed,Confirmed,Opportunity,Pipeline,Committed,Confirmed,Volume,Net Sales,GM,Volume,Net Sales,Net Sales
+XYZ,Janne L,XR-21,3000, $466 , $211 ,2025,TRUE,TRUE,TRUE,TRUE,FALSE,0,0,0,3000, $-   , $-   , $-   ," $1,398,000 ", $-   , $-   , $-   ," $633,000 ",0,0,0,0, $-   , $-   , $-   , $-   , $-   , $-   , $-   , $-   ,0, $-   , $-   ,0, $-   , $-   
+,,,,,,,FALSE,FALSE,FALSE,FALSE,FALSE,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,FALSE,FALSE,FALSE,FALSE,FALSE,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,FALSE,FALSE,FALSE,FALSE,FALSE,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,FALSE,FALSE,FALSE,FALSE,FALSE,0,0,0,0, $-   , $-   , $-   , $-   , $-   , $-   , $-   , $-   ,0,0,0,0, $-   , $-   , $-   , $-   , $-   , $-   , $-   , $-   ,0, $-   , $-   ,0, $-   , $-   
+,,,,,,,,,,,,0,0,0,3000, $-   , $-   , $-   ," $1,398,000 ", $-   , $-   , $-   ," $633,000 ",0,0,0,0, $-   , $-   , $-   , $-   , $-   , $-   , $-   , $-   ,0, $-   , $-   ,0, $-   , $-   
+#REF!,,,,,Finland,8321290,0.214359665,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+#REF!,,,,,Germany,6607000,0.170198888,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+#REF!,,,,,UK,5960000,0.153531917,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+#REF!,,,,,Denmark,3617000,0.093175326,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+#REF!,,,,,Other,0,0.111130317,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+#REF!,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+#REF!,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
