@@ -255,6 +255,83 @@ export function pipelineStages(channel: Channel): Stage[] {
   return channel === "reseller" ? open.filter((s) => s !== "contract_negotiation") : open;
 }
 
+// ---------------------------------------------------------------------------
+// Commitment tiers — HMD's own forecast vocabulary (example_columns.csv).
+// The Excel sheet categorises forecast value into a cumulative confidence
+// ladder rather than a continuous probability. We derive the tier from the
+// pipeline stage so the two lenses (pipeline stage / finance commitment) stay
+// in sync, and use each tier's weight as the forecast weighting.
+// ---------------------------------------------------------------------------
+
+export type Tier = "opportunity" | "pipeline" | "committed" | "confirmed" | "lost";
+
+export const TIERS: Tier[] = ["opportunity", "pipeline", "committed", "confirmed"];
+
+export const TIER_META: Record<Tier, { label: string; csv: string; weight: number; order: number }> = {
+  opportunity: { label: "Opportunity", csv: "Negotiation", weight: 0.25, order: 0 },
+  pipeline: { label: "Pipeline", csv: "Offer in", weight: 0.5, order: 1 },
+  committed: { label: "Committed", csv: "LOI signed", weight: 0.8, order: 2 },
+  confirmed: { label: "Confirmed", csv: "Contract signed", weight: 1, order: 3 },
+  lost: { label: "Lost / cancelled", csv: "Lost / cancelled", weight: 0, order: 4 },
+};
+
+export function dealTier(stage: Stage): Tier {
+  switch (stage) {
+    case "interest_shown":
+    case "rfi_answered":
+      return "opportunity";
+    case "rfp_given":
+    case "customer_test":
+      return "pipeline";
+    case "contract_negotiation":
+      return "committed";
+    case "won":
+      return "confirmed";
+    case "lost":
+      return "lost";
+  }
+}
+
+/** Lost/cancelled deals drop out of the forecast; everything else (incl.
+ *  contract-signed/Confirmed with future-phased delivery) stays in. */
+export function inForecast(deal: Deal): boolean {
+  return dealTier(deal.stage) !== "lost";
+}
+
+export type Measure = "net_sales" | "volume" | "gm";
+
+export const MEASURE_LABEL: Record<Measure, string> = {
+  net_sales: "Net sales",
+  volume: "Volume (units)",
+  gm: "Gross margin",
+};
+
+/** Gross margin per device unit. Seeded to the example sheet's ratio
+ *  (XR-21: €466 list, €211 GM ≈ 45%). */
+const GM_PER_UNIT: Record<number, number> = { 466: 211, 612: 268, 312: 138 };
+export function deviceGmPerUnit(deal: Deal): number {
+  return GM_PER_UNIT[deal.deviceUnitPrice] ?? Math.round(deal.deviceUnitPrice * 0.45);
+}
+
+/** Service gross-margin rate. Internal services carry higher margin than
+ *  third-party pass-through services. */
+const SERVICE_GM: Record<string, number> = { s_mdm: 0.65, s_lifecycle: 0.6, s_warranty: 0.55, s_repair: 0.45, s_sim: 0.4 };
+export function serviceGmRate(serviceId: string): number {
+  return SERVICE_GM[serviceId] ?? 0.5;
+}
+
+/** Country rollup for the regional forecast (mirrors the CSV's region table). */
+const COUNTRY: Record<string, string> = {
+  a_nordcom: "Germany",
+  a_vektor: "Sweden",
+  a_lumen: "United Kingdom",
+  a_arctic: "Sweden",
+  a_halcyon: "Belgium",
+};
+export function accountCountry(accountId: string): string {
+  return COUNTRY[accountId] ?? "Other";
+}
+
 export const CONTACT_ROLE_LABEL: Record<ContactRole, string> = {
   financial_decision_maker: "Financial decision maker",
   budget_holder: "Budget holder",
@@ -509,6 +586,25 @@ export const deals: Deal[] = [
     ],
   },
   {
+    id: "d_lumen_bodyworn",
+    accountId: "a_lumen",
+    parentDealId: null,
+    ownerId: "u_aino",
+    title: "Body-worn device program (contract signed)",
+    stage: "won",
+    channel: "direct",
+    isPilot: false,
+    expectedClose: "2026-06-01",
+    updatedAt: "2026-05-20",
+    createdAt: "2025-12-10",
+    deviceUnitPrice: 466,
+    devicePhases: [
+      { period: "2026-Q3", units: 300 },
+      { period: "2026-Q4", units: 300 },
+      { period: "2027-Q2", units: 240 },
+    ],
+  },
+  {
     id: "d_arctic",
     accountId: "a_arctic",
     parentDealId: null,
@@ -599,6 +695,21 @@ export const serviceContracts: ServiceContract[] = [
       { period: "2027-Q1", value: 60000 },
       { period: "2027-Q4", value: 64000 },
       { period: "2028-Q2", value: 42000 },
+    ],
+  },
+  {
+    id: "sc_lumen_bw_mdm",
+    dealId: "d_lumen_bodyworn",
+    serviceId: "s_mdm",
+    invoiceModel: "monthly_recurring",
+    startDate: "2026-08-01",
+    endDate: null,
+    fixedValue: null,
+    monthlyRate: 14,
+    expectedDevices: 840,
+    phases: [
+      { period: "2026-Q4", value: 12000 },
+      { period: "2027-Q2", value: 30000 },
     ],
   },
   {
@@ -1067,7 +1178,7 @@ export type ForecastRow = {
 };
 
 export function forecastByPeriod(dealList: Deal[]): ForecastRow[] {
-  const open = dealList.filter(isOpen);
+  const open = dealList.filter(inForecast);
   return PERIODS.map((period) => {
     let device = 0, service = 0, wDevice = 0, wService = 0;
     for (const deal of open) {
@@ -1110,4 +1221,103 @@ export function sumRows(rows: ForecastRow[]): ForecastRow {
     }),
     { period: "", device: 0, service: 0, weightedDevice: 0, weightedService: 0 },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Measure-aware forecast (mirrors example_columns.csv: Volume / Net Sales / GM,
+// categorised by commitment tier, stream, or region, over the time horizon).
+// ---------------------------------------------------------------------------
+
+export function deviceMeasureInPeriod(deal: Deal, period: string, m: Measure): number {
+  const units = deal.devicePhases.filter((p) => p.period === period).reduce((s, p) => s + p.units, 0);
+  if (m === "volume") return units;
+  if (m === "gm") return units * deviceGmPerUnit(deal);
+  return units * deal.deviceUnitPrice;
+}
+
+export function serviceMeasureInPeriod(dealId: string, period: string, m: Measure): number {
+  if (m === "volume") return 0; // services have no device-unit volume
+  return serviceContractsForDeal(dealId).reduce(
+    (s, sc) => s + sc.phases.filter((p) => p.period === period).reduce((t, p) => t + (m === "gm" ? p.value * serviceGmRate(sc.serviceId) : p.value), 0),
+    0,
+  );
+}
+
+export function dealMeasureInPeriod(deal: Deal, period: string, m: Measure): number {
+  return deviceMeasureInPeriod(deal, period, m) + serviceMeasureInPeriod(deal.id, period, m);
+}
+
+export function dealMeasureTotal(deal: Deal, m: Measure): number {
+  return PERIODS.reduce((s, p) => s + dealMeasureInPeriod(deal, p, m), 0);
+}
+
+/** Period buckets for a granularity, as index lists into PERIODS. */
+export function periodBuckets(g: Granularity): { label: string; idx: number[] }[] {
+  if (g === "quarter") return PERIODS.map((p, i) => ({ label: periodLabel(p), idx: [i] }));
+  const map = new Map<string, number[]>();
+  PERIODS.forEach((p, i) => {
+    const year = periodYear(p);
+    const q = Number(p.split("-Q")[1] ?? 1);
+    const key = g === "year" ? year : `${year} ${q <= 2 ? "H1" : "H2"}`;
+    const arr = map.get(key) ?? [];
+    arr.push(i);
+    map.set(key, arr);
+  });
+  return [...map.entries()].map(([label, idx]) => ({ label, idx }));
+}
+
+export function bucketSum(values: number[], idx: number[]): number {
+  return idx.reduce((s, i) => s + (values[i] ?? 0), 0);
+}
+
+export type Series = { key: string; label: string; values: number[]; total: number };
+
+export function tierSeries(dealList: Deal[], m: Measure): Series[] {
+  const inc = dealList.filter(inForecast);
+  return TIERS.map((tier) => {
+    const ds = inc.filter((d) => dealTier(d.stage) === tier);
+    const values = PERIODS.map((p) => ds.reduce((s, d) => s + dealMeasureInPeriod(d, p, m), 0));
+    return { key: tier, label: TIER_META[tier].label, values, total: values.reduce((a, b) => a + b, 0) };
+  });
+}
+
+export function streamSeries(dealList: Deal[], m: Measure): Series[] {
+  const inc = dealList.filter(inForecast);
+  const device = PERIODS.map((p) => inc.reduce((s, d) => s + deviceMeasureInPeriod(d, p, m), 0));
+  const service = PERIODS.map((p) => inc.reduce((s, d) => s + serviceMeasureInPeriod(d.id, p, m), 0));
+  return [
+    { key: "device", label: "Device", values: device, total: device.reduce((a, b) => a + b, 0) },
+    { key: "service", label: "Service", values: service, total: service.reduce((a, b) => a + b, 0) },
+  ];
+}
+
+export type RegionSeries = Series & { gmPct: number; netSales: number };
+
+export function regionSeries(dealList: Deal[], m: Measure): RegionSeries[] {
+  const inc = dealList.filter(inForecast);
+  const countries = [...new Set(inc.map((d) => accountCountry(d.accountId)))].sort();
+  return countries.map((country) => {
+    const ds = inc.filter((d) => accountCountry(d.accountId) === country);
+    const values = PERIODS.map((p) => ds.reduce((s, d) => s + dealMeasureInPeriod(d, p, m), 0));
+    const netSales = ds.reduce((s, d) => s + dealMeasureTotal(d, "net_sales"), 0);
+    const gm = ds.reduce((s, d) => s + dealMeasureTotal(d, "gm"), 0);
+    return { key: country, label: country, values, total: values.reduce((a, b) => a + b, 0), netSales, gmPct: netSales ? gm / netSales : 0 };
+  });
+}
+
+export function forecastTotal(dealList: Deal[], m: Measure): number {
+  return dealList.filter(inForecast).reduce((s, d) => s + dealMeasureTotal(d, m), 0);
+}
+
+/** Tier-weighted forecast — HMD's commitment ladder as the weighting scheme. */
+export function weightedForecast(dealList: Deal[], m: Measure): number {
+  return dealList.filter(inForecast).reduce((s, d) => s + TIER_META[dealTier(d.stage)].weight * dealMeasureTotal(d, m), 0);
+}
+
+/** Value secured at Committed + Confirmed tiers (LOI signed and beyond). */
+export function securedForecast(dealList: Deal[], m: Measure): number {
+  return dealList
+    .filter(inForecast)
+    .filter((d) => dealTier(d.stage) === "committed" || dealTier(d.stage) === "confirmed")
+    .reduce((s, d) => s + dealMeasureTotal(d, m), 0);
 }

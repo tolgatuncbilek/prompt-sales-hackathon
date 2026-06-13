@@ -379,6 +379,29 @@ tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
 .locked-flag { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 11px; font-weight: 600; }
 .locked-flag .icon { width: 14px; }
 
+/* Commitment tier tag (HMD forecast ladder) */
+.tier { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; color: var(--ink-2); }
+.tier-dots { display: inline-flex; gap: 2px; }
+.tier-dots i { width: 5px; height: 9px; border-radius: 1px; background: var(--raised); }
+.tier-dots i.on { background: var(--accent); }
+.tier--opportunity .tier-dots i.on { background: rgba(47, 212, 198, 0.45); }
+.tier--pipeline .tier-dots i.on { background: rgba(47, 212, 198, 0.62); }
+.tier--committed .tier-dots i.on { background: rgba(47, 212, 198, 0.8); }
+.tier--confirmed { color: var(--accent); }
+
+/* Inline cell editing (spreadsheet-speed) */
+.cell-edit { padding: 0; }
+.inline-edit { position: relative; display: inline-flex; align-items: center; }
+.inline-edit .icon { position: absolute; right: 8px; width: 13px; color: var(--ink-3); pointer-events: none; }
+.inline-stage {
+  appearance: none; -webkit-appearance: none; min-width: 150px; height: 30px; padding: 0 26px 0 10px;
+  border: 1px solid transparent; border-radius: var(--r-pill); background: transparent; color: #c3ccd9;
+  font-size: 11px; font-weight: 600; cursor: pointer; transition: border-color var(--t-fast), background var(--t-fast);
+}
+.inline-stage:hover { border-color: var(--rule); background: var(--field); }
+.inline-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.inline-stage option { background: var(--raised); color: var(--ink); }
+
 .avatar { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; border-radius: 50%; background: var(--raised); color: var(--ink); font-size: 11px; font-weight: 650; }
 .avatar--xs { width: 19px; height: 19px; font-size: 8.5px; }
 
@@ -602,6 +625,27 @@ tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
 
 .ro-banner { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; padding: 11px 14px; border: 1px solid var(--rule); border-radius: var(--r-control); background: var(--surface); color: var(--ink-2); font-size: 12px; }
 .ro-banner .icon { width: 16px; color: var(--amber); }
+
+.forecast-caption { margin-bottom: 16px; color: var(--ink-2); font-size: 12px; line-height: 1.5; max-width: 80ch; }
+.forecast-caption strong { color: var(--ink); }
+
+/* Forecast bar/segment colours — teal ramp = rising commitment certainty;
+   amber for service; a restrained categorical set for regions. Always paired
+   with text labels in the legend (never colour alone). */
+.fbar-track .fseg { display: block; width: 100%; }
+.fseg--tier-opportunity, .swatch.fseg--tier-opportunity { background: rgba(47, 212, 198, 0.30); }
+.fseg--tier-pipeline, .swatch.fseg--tier-pipeline { background: rgba(47, 212, 198, 0.52); }
+.fseg--tier-committed, .swatch.fseg--tier-committed { background: rgba(47, 212, 198, 0.76); }
+.fseg--tier-confirmed, .swatch.fseg--tier-confirmed { background: var(--accent); }
+.fseg--device, .swatch.fseg--device { background: var(--accent); }
+.fseg--service, .swatch.fseg--service { background: var(--amber); }
+.fseg--r0, .swatch.fseg--r0 { background: var(--accent); }
+.fseg--r1, .swatch.fseg--r1 { background: var(--amber); }
+.fseg--r2, .swatch.fseg--r2 { background: var(--green); }
+.fseg--r3, .swatch.fseg--r3 { background: #6f86c4; }
+.fseg--r4, .swatch.fseg--r4 { background: #c98bd6; }
+.fseg--r5, .swatch.fseg--r5 { background: var(--ink-3); }
+.forecast-table tbody th .swatch { margin-right: 9px; vertical-align: 0; }
 
 /* --------------------------------------------------------------------------
    Board (kanban)

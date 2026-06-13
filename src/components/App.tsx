@@ -61,6 +61,21 @@ import {
   forecastByPeriod,
   rollUp,
   sumRows,
+  TIERS,
+  TIER_META,
+  MEASURE_LABEL,
+  dealTier,
+  deviceGmPerUnit,
+  accountCountry,
+  periodBuckets,
+  bucketSum,
+  dealMeasureTotal,
+  tierSeries,
+  streamSeries,
+  regionSeries,
+  forecastTotal,
+  weightedForecast,
+  securedForecast,
 } from "../lib/crm.ts";
 import type {
   Account,
@@ -69,9 +84,12 @@ import type {
   CaseNote,
   Deal,
   Granularity,
+  Measure,
   Offer,
   Role,
+  Series,
   Stage,
+  Tier,
   User,
 } from "../lib/crm.ts";
 
@@ -139,6 +157,20 @@ function Avatar({ name, size }: { name: string; size?: "xs" | "sm" }) {
 
 function StageTag({ stage }: { stage: Stage }) {
   return <span className="tag tag--stage">{STAGE_META[stage].label}</span>;
+}
+
+function TierTag({ stage }: { stage: Stage }) {
+  const tier = dealTier(stage);
+  return (
+    <span className={`tier tier--${tier}`} title={`${TIER_META[tier].label} · ${TIER_META[tier].csv} · ${Math.round(TIER_META[tier].weight * 100)}% weight`}>
+      <span className="tier-dots" aria-hidden="true">
+        {(["opportunity", "pipeline", "committed", "confirmed"] as Tier[]).map((t) => (
+          <i key={t} className={TIER_META[t].order <= TIER_META[tier].order ? "on" : ""} />
+        ))}
+      </span>
+      {TIER_META[tier].label}
+    </span>
+  );
 }
 
 function RiskTag({ deal }: { deal: Deal }) {
@@ -507,18 +539,18 @@ function ManagerDashboard({ ctx }: { ctx: AppCtx }) {
 function FinanceDashboard({ ctx }: { ctx: AppCtx }) {
   const live = seedDeals.map((d) => liveStage(ctx, d));
   const rows = forecastByPeriod(live);
-  const thisQ = rows.find((r) => r.period === NEXT_QUARTER);
-  const totalDevice = rows.reduce((s, r) => s + r.weightedDevice, 0);
   const totalService = rows.reduce((s, r) => s + r.weightedService, 0);
+  const gmTotal = forecastTotal(live, "gm");
+  const netTotal = forecastTotal(live, "net_sales");
   const pendingApprovals = seedOffers.map((o) => ctx.offerState[o.id] ?? o).filter((o) => o.status === "pending_finance");
 
   return (
     <>
       <div className="kpi-strip">
-        <Kpi label="Weighted pipeline (3 yr)" value={fmtEur(totalDevice + totalService)} hint="Device + service, weighted" />
-        <Kpi label="Weighted device" value={fmtEur(totalDevice)} hint="Hardware revenue" />
-        <Kpi label="Weighted service" value={fmtEur(totalService)} hint="Recurring + fixed-term" />
-        <Kpi label="Next quarter, weighted" value={fmtEur((thisQ?.weightedDevice ?? 0) + (thisQ?.weightedService ?? 0))} hint={periodLabel(NEXT_QUARTER)} />
+        <Kpi label="Weighted net sales" value={fmtEur(weightedForecast(live, "net_sales"))} hint="Tier-weighted, 3-year" />
+        <Kpi label="Gross margin" value={fmtEur(gmTotal)} hint={`${Math.round((gmTotal / netTotal) * 100)}% blended GM`} />
+        <Kpi label="Secured (LOI+)" value={fmtEur(securedForecast(live, "net_sales"))} tone="good" hint="Committed + Confirmed" />
+        <Kpi label="Weighted service" value={fmtEur(totalService)} hint="Kept separate from device" />
       </div>
 
       <div className="grid-2">
@@ -874,12 +906,29 @@ function DealsView({ ctx }: { ctx: AppCtx }) {
   );
 }
 
+function InlineStage({ deal, ctx }: { deal: Deal; ctx: AppCtx }) {
+  // Spreadsheet-speed inline edit (DESIGN.md / Attio): the stage reads as a tag
+  // but is a live control — changing it moves the deal, re-deriving tier, risk,
+  // and forecast. Reseller→Contract negotiation is rejected in moveDeal.
+  const options = pipelineStages(deal.channel);
+  const current = options.includes(deal.stage) ? deal.stage : options[0]!;
+  return (
+    <label className="inline-edit" onClick={(e) => e.stopPropagation()}>
+      <span className="sr-only">Stage for {deal.title}</span>
+      <select className="inline-stage" value={current} onChange={(e) => ctx.moveDeal(deal.id, e.target.value as Stage)}>
+        {options.map((s) => <option key={s} value={s}>{STAGE_META[s].label}</option>)}
+      </select>
+      <Icon name="chevronDown" />
+    </label>
+  );
+}
+
 function DealTable({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
   if (!deals.length) return <Empty>No deals match this view.</Empty>;
   return (
     <div className="table-wrap card-edge">
       <table>
-        <thead><tr><th>Deal</th><th>Stage</th><th>Owner</th><th>Close</th><th className="numeric">Next qtr</th><th className="numeric">3-yr total</th><th>Signal</th></tr></thead>
+        <thead><tr><th>Deal</th><th>Commitment</th><th>Stage</th><th>Owner</th><th>Close</th><th className="numeric">Next qtr</th><th className="numeric">3-yr total</th><th className="numeric">GM</th><th>Signal</th></tr></thead>
         <tbody>
           {deals.map((d) => {
             const acc = accountById(d.accountId)!;
@@ -889,11 +938,13 @@ function DealTable({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
                   <span className="account-cell"><span className="account-logo sm" aria-hidden="true">{monogram(acc.name)}</span>
                     <span><strong>{d.title}</strong><small>{acc.name} · {d.channel === "direct" ? "Direct" : "Reseller"}{d.isPilot ? " · Pilot" : ""}</small></span></span>
                 </th>
-                <td><StageTag stage={d.stage} /></td>
+                <td><TierTag stage={d.stage} /></td>
+                <td className="cell-edit"><InlineStage deal={d} ctx={ctx} /></td>
                 <td>{userName(d.ownerId)}</td>
                 <td className={isOverdue(d) ? "t-danger" : ""}>{new Date(d.expectedClose).toLocaleDateString("en-IE", { day: "2-digit", month: "short", year: "numeric" })}</td>
                 <td className="numeric">{fmtEur(nextQuarterValue(d))}</td>
                 <td className="numeric numeric--strong">{fmtEur(dealTotal(d))}</td>
+                <td className="numeric">{fmtEur(dealMeasureTotal(d, "gm"))}</td>
                 <td><RiskTag deal={d} /></td>
               </tr>
             );
@@ -1198,31 +1249,38 @@ function OffersView({ ctx, focus }: { ctx: AppCtx; focus?: string }) {
 // Forecast (Finance) — weighted, time-phased, device vs service, export
 // ===========================================================================
 
-function ForecastView({ ctx }: { ctx: AppCtx }) {
-  const [gran, setGran] = useState<Granularity>("quarter");
-  const [weighted, setWeighted] = useState(true);
-  const live = seedDeals.map((d) => liveStage(ctx, d));
-  const rows = forecastByPeriod(live);
-  const buckets = rollUp(rows, gran);
+function fmtMeasure(n: number, m: Measure): string {
+  if (m === "volume") return Math.round(n).toLocaleString("en-IE");
+  return fmtEur(n);
+}
 
-  const cellDevice = (b: { rows: typeof rows }) => sumRows(b.rows)[weighted ? "weightedDevice" : "device"];
-  const cellService = (b: { rows: typeof rows }) => sumRows(b.rows)[weighted ? "weightedService" : "service"];
-  const totalDevice = rows.reduce((s, r) => s + (weighted ? r.weightedDevice : r.device), 0);
-  const totalService = rows.reduce((s, r) => s + (weighted ? r.weightedService : r.service), 0);
-  const grandMax = Math.max(1, ...buckets.map((b) => cellDevice(b) + cellService(b)));
+function ForecastView({ ctx }: { ctx: AppCtx }) {
+  const [lens, setLens] = useState<"commitment" | "streams" | "region">("commitment");
+  const [measure, setMeasure] = useState<Measure>("net_sales");
+  const [gran, setGran] = useState<Granularity>("year");
+  const live = seedDeals.map((d) => liveStage(ctx, d));
+  const buckets = periodBuckets(gran);
+
+  const regionRows = lens === "region" ? regionSeries(live, measure) : null;
+  const series: Series[] = lens === "commitment" ? tierSeries(live, measure) : lens === "streams" ? streamSeries(live, measure) : regionRows!;
+
+  const colorClass = (key: string, i: number) =>
+    lens === "commitment" ? `fseg fseg--tier-${key}` : lens === "streams" ? `fseg fseg--${key}` : `fseg fseg--r${i % 6}`;
+  const swatchClass = (key: string, i: number) => colorClass(key, i).replace("fseg ", "");
+
+  const grand = forecastTotal(live, measure);
+  const colMax = Math.max(1, ...buckets.map((b) => series.reduce((s, se) => s + bucketSum(se.values, b.idx), 0)));
+  const netTotal = forecastTotal(live, "net_sales");
+  const gmTotal = forecastTotal(live, "gm");
 
   const exportCsv = () => {
-    const header = ["Period", weighted ? "Weighted device EUR" : "Device EUR", weighted ? "Weighted service EUR" : "Service EUR", "Total EUR"];
-    const lines = buckets.map((b) => {
-      const dev = Math.round(cellDevice(b)); const svc = Math.round(cellService(b));
-      return [b.label, dev, svc, dev + svc].join(",");
-    });
-    lines.push(["Total", Math.round(totalDevice), Math.round(totalService), Math.round(totalDevice + totalService)].join(","));
-    const csv = [header.join(","), ...lines].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
+    const header = ["Category", ...buckets.map((b) => b.label), "Total"];
+    const rows = series.map((se) => [se.label, ...buckets.map((b) => Math.round(bucketSum(se.values, b.idx))), Math.round(se.total)].join(","));
+    rows.push(["Total", ...buckets.map((b) => Math.round(series.reduce((s, se) => s + bucketSum(se.values, b.idx), 0))), Math.round(grand)].join(","));
+    const csv = [header.join(","), ...rows].join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
-    a.href = url; a.download = `hmd-forecast-${gran}-${weighted ? "weighted" : "gross"}.csv`;
+    a.href = url; a.download = `hmd-forecast-${lens}-${measure}-${gran}.csv`;
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     ctx.notify("Forecast exported to CSV.");
   };
@@ -1234,64 +1292,77 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
       } />
 
       <div className="kpi-strip kpi-strip--tight">
-        <Kpi label={weighted ? "Weighted 3-year" : "Gross 3-year"} value={fmtEur(totalDevice + totalService)} />
-        <Kpi label="Device revenue" value={fmtEur(totalDevice)} hint="Hardware, time-phased" />
-        <Kpi label="Service revenue" value={fmtEur(totalService)} hint="Kept separate from device" />
-        <Kpi label="Open deals" value={`${live.filter(isOpen).length}`} hint="Contributing to forecast" />
+        <Kpi label="Weighted net sales" value={fmtEur(weightedForecast(live, "net_sales"))} hint="Tier-weighted, 3-year" />
+        <Kpi label="Gross pipeline" value={fmtEur(netTotal)} hint="All tiers, unweighted" />
+        <Kpi label="Gross margin" value={fmtEur(gmTotal)} hint={`${Math.round((gmTotal / netTotal) * 100)}% blended GM`} />
+        <Kpi label="Secured (LOI+)" value={fmtEur(securedForecast(live, "net_sales"))} tone="good" hint="Committed + Confirmed" />
       </div>
 
       <div className="toolbar">
-        <div className="seg seg--wide" role="group" aria-label="Granularity">
-          {(["quarter", "half", "year"] as const).map((g) => (
-            <button key={g} aria-pressed={gran === g} onClick={() => setGran(g)} type="button">{g === "quarter" ? "Quarterly" : g === "half" ? "Half-year" : "Full year"}</button>
+        <div className="saved-views" role="tablist" aria-label="Forecast lens">
+          {([["commitment", "Commitment"], ["streams", "Device vs service"], ["region", "By region"]] as const).map(([k, label]) => (
+            <button key={k} className="saved-view" role="tab" aria-selected={lens === k} onClick={() => setLens(k)} type="button">{label}</button>
           ))}
         </div>
-        <label className="check check--toolbar"><input type="checkbox" checked={weighted} onChange={(e) => setWeighted(e.target.checked)} />Weighted by stage probability</label>
+        <div className="toolbar-right">
+          <div className="seg seg--wide" role="group" aria-label="Measure">
+            {(["net_sales", "volume", "gm"] as Measure[]).map((m) => (
+              <button key={m} aria-pressed={measure === m} onClick={() => setMeasure(m)} type="button">{m === "net_sales" ? "Net sales" : m === "volume" ? "Volume" : "Gross margin"}</button>
+            ))}
+          </div>
+          <div className="seg seg--wide" role="group" aria-label="Granularity">
+            {(["quarter", "half", "year"] as Granularity[]).map((g) => (
+              <button key={g} aria-pressed={gran === g} onClick={() => setGran(g)} type="button">{g === "quarter" ? "Qtr" : g === "half" ? "Half" : "Year"}</button>
+            ))}
+          </div>
+        </div>
       </div>
+
+      <p className="forecast-caption">
+        {lens === "commitment" ? "Net value by HMD commitment tier — Opportunity → Pipeline → Committed → Confirmed (Lost excluded)."
+          : lens === "streams" ? "Device and service revenue kept separate, never flattened into one number."
+          : "Regional split with gross-margin percentage, the way the forecast sheet reads."}
+        {" Showing "}<strong>{MEASURE_LABEL[measure]}</strong>.
+      </p>
 
       <div className="forecast-sheet">
         <table className="forecast-table">
           <thead>
-            <tr><th>Revenue stream</th>{buckets.map((b) => <th key={b.label} className="numeric">{b.label}</th>)}<th className="numeric">Total</th></tr>
+            <tr><th>{lens === "commitment" ? "Commitment tier" : lens === "streams" ? "Revenue stream" : "Country"}</th>{buckets.map((b) => <th key={b.label} className="numeric">{b.label}</th>)}<th className="numeric">Total</th>{lens === "region" && <th className="numeric">GM %</th>}</tr>
           </thead>
           <tbody>
-            <tr>
-              <th scope="row"><span className="swatch swatch--device" />Device</th>
-              {buckets.map((b) => <td key={b.label} className="numeric">{fmtEur(cellDevice(b))}</td>)}
-              <td className="numeric numeric--strong">{fmtEur(totalDevice)}</td>
-            </tr>
-            <tr>
-              <th scope="row"><span className="swatch swatch--service" />Service</th>
-              {buckets.map((b) => <td key={b.label} className="numeric">{fmtEur(cellService(b))}</td>)}
-              <td className="numeric numeric--strong">{fmtEur(totalService)}</td>
-            </tr>
+            {series.map((se, i) => (
+              <tr key={se.key}>
+                <th scope="row"><span className={`swatch ${swatchClass(se.key, i)}`} />{se.label}{lens === "commitment" && <span className="mini-tag">{TIER_META[se.key as Tier].csv}</span>}</th>
+                {buckets.map((b) => <td key={b.label} className="numeric">{fmtMeasure(bucketSum(se.values, b.idx), measure)}</td>)}
+                <td className="numeric numeric--strong">{fmtMeasure(se.total, measure)}</td>
+                {lens === "region" && regionRows && <td className="numeric">{Math.round((regionRows[i]?.gmPct ?? 0) * 100)}%</td>}
+              </tr>
+            ))}
           </tbody>
           <tfoot>
-            <tr><th scope="row">Total</th>{buckets.map((b) => <td key={b.label} className="numeric numeric--strong">{fmtEur(cellDevice(b) + cellService(b))}</td>)}<td className="numeric numeric--strong">{fmtEur(totalDevice + totalService)}</td></tr>
+            <tr><th scope="row">Total</th>{buckets.map((b) => <td key={b.label} className="numeric numeric--strong">{fmtMeasure(series.reduce((s, se) => s + bucketSum(se.values, b.idx), 0), measure)}</td>)}<td className="numeric numeric--strong">{fmtMeasure(grand, measure)}</td>{lens === "region" && <td className="numeric">{Math.round((gmTotal / netTotal) * 100)}%</td>}</tr>
           </tfoot>
         </table>
       </div>
 
       <SectionHead title="Phasing" />
       <div className="forecast-bars">
-        {buckets.map((b) => {
-          const dev = cellDevice(b); const svc = cellService(b);
-          return (
-            <div className="fbar" key={b.label}>
-              <span className="fbar-track" aria-hidden="true">
-                <span className="phasing-service" style={{ height: `${(svc / grandMax) * 100}%` }} />
-                <span className="phasing-device" style={{ height: `${(dev / grandMax) * 100}%` }} />
-              </span>
-              <strong>{fmtEur(dev + svc)}</strong>
-              <small>{b.label}</small>
-            </div>
-          );
-        })}
+        {buckets.map((b) => (
+          <div className="fbar" key={b.label}>
+            <span className="fbar-track" aria-hidden="true">
+              {series.map((se, i) => {
+                const v = bucketSum(se.values, b.idx);
+                return v > 0 ? <span key={se.key} className={colorClass(se.key, i)} style={{ height: `${(v / colMax) * 100}%` }} /> : null;
+              })}
+            </span>
+            <strong>{fmtMeasure(series.reduce((s, se) => s + bucketSum(se.values, b.idx), 0), measure)}</strong>
+            <small>{b.label}</small>
+          </div>
+        ))}
       </div>
       <div className="phasing-legend phasing-legend--center">
-        <span><i className="swatch swatch--device" />Device</span>
-        <span><i className="swatch swatch--service" />Service</span>
-        <span className="muted">{weighted ? "Weighted by stage win probability" : "Gross pipeline value"}</span>
+        {series.map((se, i) => <span key={se.key}><i className={`swatch ${swatchClass(se.key, i)}`} />{se.label}</span>)}
       </div>
     </>
   );
