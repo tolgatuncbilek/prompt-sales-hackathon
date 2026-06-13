@@ -195,6 +195,12 @@ These are inspiration rather than fixed requirements:
 - Demo data: seed realistic records; deals may be entered manually with AI assistance.
 - Architecture, framework, languages, and tooling are otherwise open.
 
+## Engineering Conventions
+
+- Use Bun as the JavaScript and TypeScript runtime and package manager.
+- Prefer Bun-native APIs over Node.js APIs when Bun provides the required capability.
+- Use Node-compatible APIs only when Astro, a dependency, or the target platform requires them.
+
 ## Demo Scenario
 
 A new user with no training should complete this flow without getting stuck:
