@@ -1,0 +1,182 @@
+:root[data-theme="light"] {
+  color-scheme: light;
+  --field: #f7f7f5;
+  --field-2: #ffffff;
+  --surface: #ffffff;
+  --raised: #f0f0ed;
+  --ink: #191918;
+  --ink-2: #4e4e49;
+  --ink-mid: #30302d;
+  --ink-3: #666660;
+  --rule: #d8d8d3;
+  --rule-soft: #e7e7e3;
+  --accent: #1668dc;
+  --accent-hover: #0f56bb;
+  --accent-soft: rgba(22, 104, 220, 0.1);
+  --accent-line: rgba(22, 104, 220, 0.45);
+  --amber: #9a5b00;
+  --amber-soft: #fff2d4;
+  --red: #c62836;
+  --red-soft: #fde8ea;
+  --green: #157347;
+  --green-soft: #e1f4e9;
+  --paper: #fff;
+  --paper-ink: #191918;
+  --paper-rule: #d8d8d3;
+  --shadow-float: 0 8px 24px rgba(20, 20, 18, 0.14);
+  --shadow-drawer: 0 0 24px rgba(20, 20, 18, 0.12);
+  --ring-top: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --elev-1: 0 1px 2px rgba(20, 20, 18, 0.06);
+  --elev-2: 0 4px 12px rgba(20, 20, 18, 0.09);
+}
+
+@scope (:root[data-theme="light"]) {
+  html,
+  body {
+    background: var(--field);
+  }
+
+  body {
+    background-image: none;
+    color: var(--ink);
+  }
+
+  .sidebar {
+    border-right-color: var(--rule);
+    background: #f1f1ee;
+  }
+
+  .role-btn:hover,
+  .role-btn[aria-expanded="true"],
+  .nav:hover,
+  .notif-row:hover {
+    background: #e7e7e2;
+  }
+
+  .nav--active,
+  .nav--active:hover {
+    background: #deded8;
+    color: #111;
+  }
+
+  .nav--active .icon {
+    color: var(--accent);
+  }
+
+  .workspace {
+    background: var(--field);
+  }
+
+  .page-head {
+    border-bottom-color: var(--rule);
+  }
+
+  .btn--primary {
+    color: #fff;
+    box-shadow: none;
+  }
+
+  .btn--primary:hover {
+    color: #fff;
+    box-shadow: none;
+  }
+
+  .btn--secondary,
+  .icon-btn,
+  .seg button {
+    background: #fff;
+  }
+
+  .btn--secondary:hover,
+  .icon-btn:hover,
+  .seg button:hover {
+    border-color: #b8b8b2;
+    background: #eeeeea;
+  }
+
+  .search,
+  .custom-select-trigger,
+  .modal-field input,
+  .modal-field select,
+  .field input,
+  .field textarea {
+    background: #fff;
+  }
+
+  .kpi-strip,
+  .stack-list,
+  .card-edge,
+  .panel,
+  .insight,
+  .board-col,
+  .record-side {
+    background: #fff;
+    box-shadow: var(--elev-1);
+  }
+
+  table {
+    background: #fff;
+  }
+
+  thead,
+  thead th {
+    background: #f2f2ef;
+  }
+
+  tbody tr:hover {
+    background: #f4f7fb;
+  }
+
+  .record-head {
+    background: #fff;
+  }
+
+  .record-head,
+  .record-head .record-sub,
+  .record-head .record-meta {
+    color: var(--ink);
+  }
+
+  .modal,
+  .notif-panel,
+  .role-menu,
+  .custom-select-dropdown,
+  .drawer,
+  .crm-assistant {
+    background: #fff;
+  }
+
+  .modal-overlay,
+  .drawer-scrim,
+  .scrim {
+    background: rgba(25, 25, 24, 0.42);
+  }
+
+  .crm-assistant-head {
+    background: #f1f1ee;
+  }
+
+  .crm-message--assistant {
+    background: #f0f0ed;
+  }
+
+  .crm-message--user {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .offer-sheet,
+  .forecast-sheet {
+    box-shadow: var(--elev-1);
+  }
+
+  .toast {
+    background: #191918;
+    color: #fff;
+  }
+
+  .mobilebar {
+    background: #fff;
+    color: var(--ink);
+  }
+}

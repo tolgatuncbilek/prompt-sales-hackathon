@@ -3341,6 +3341,24 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
 export default function App() {
   const [ready, setReady] = useState(false);
   const [initialUserId, setInitialUserId] = useState<string | null>(null);
+  const [theme, setTheme] = useState<"original" | "metro" | "light">("original");
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (themeColor) themeColor.content = theme === "light" ? "#f7f7f5" : theme === "metro" ? "#000000" : "#070a10";
+  }, [theme]);
+
+  useEffect(() => {
+    const themes = ["original", "metro", "light"] as const;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey || event.key.toLowerCase() !== "y") return;
+      event.preventDefault();
+      setTheme((current) => themes[(themes.indexOf(current) + 1) % themes.length]);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   useEffect(() => {
     void initCrmFromApi().then(({ userId }) => {
