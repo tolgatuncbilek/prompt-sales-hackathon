@@ -10,7 +10,9 @@
     "db:start": "docker compose up -d db",
     "db:migrate": "bun src/db/migrate.ts",
     "db:seed": "bun src/db/seed.ts",
-    "db:setup": "bun run db:start && sleep 3 && bun run db:migrate && bun run db:seed"
+    "db:setup": "bun run db:start && sleep 3 && bun run db:migrate && bun run db:seed",
+    "mcp": "bun run scripts/mcp-server.ts",
+    "mcp:build": "bun build ./scripts/mcp-server.ts --compile --outfile ./dist/mcp-server"
   },
   "devDependencies": {
     "@types/bun": "latest",
