@@ -791,3 +791,51 @@ tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
+
+/* Modal ----------------------------------------------------------------------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 10, 16, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+}
+.modal {
+  width: 480px;
+  max-width: calc(100vw - 32px);
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-surface);
+  padding: 24px;
+  box-shadow: var(--shadow-float);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.modal-head h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.modal-body { display: flex; flex-direction: column; gap: 14px; }
+.modal-field { display: flex; flex-direction: column; gap: 5px; }
+.modal-field label { font-size: 11.5px; font-weight: 600; color: var(--ink-2); }
+.modal-field input,
+.modal-field select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  background: var(--field);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+.modal-field input::placeholder { color: var(--ink-3); }
+.modal-field input:focus-visible,
+.modal-field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.modal-field select option { background: var(--raised); }
+.modal-field-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }

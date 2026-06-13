@@ -84,6 +84,7 @@ import type {
   AiInsight,
   CaseRecord,
   CaseNote,
+  Channel,
   Deal,
   Granularity,
   Measure,
@@ -338,6 +339,10 @@ type AppCtx = {
   setInsight: (id: string, status: AiInsight["status"]) => void;
   caseNotes: Record<string, CaseNote[]>;
   addNote: (caseId: string, note: CaseNote) => void;
+  extraDeals: Deal[];
+  addDeal: (deal: Deal) => void;
+  extraAccounts: Account[];
+  addAccount: (account: Account) => void;
 };
 
 function liveStage(ctx: AppCtx, deal: Deal): Deal {
@@ -623,13 +628,48 @@ function ApprovalCard({ offer, role, ctx }: { offer: Offer; role: "sales_manager
 
 function AccountsView({ ctx }: { ctx: AppCtx }) {
   const [q, setQ] = useState("");
+  const [newAccountOpen, setNewAccountOpen] = useState(false);
+  const [naName, setNaName] = useState("");
+  const [naIndustry, setNaIndustry] = useState("");
+  const [naDomain, setNaDomain] = useState("");
+
   const query = q.trim().toLowerCase();
-  const rows = accounts.filter((a) => !query || [a.name, a.region, a.industry, userName(a.ownerId)].some((v) => v.toLowerCase().includes(query)));
+  const allAccounts = [...accounts, ...ctx.extraAccounts];
+  const rows = allAccounts.filter((a) => !query || [a.name, a.region, a.industry, userName(a.ownerId)].some((v) => v.toLowerCase().includes(query)));
+
+  const submitNewAccount = () => {
+    if (!naName.trim()) return;
+    const id = crypto.randomUUID();
+    const today = new Date().toISOString().slice(0, 10);
+    const account: Account = {
+      id,
+      name: naName.trim(),
+      industry: naIndustry.trim() || "Unknown",
+      region: "Unknown",
+      domain: naDomain.trim() || "",
+      ownerId: ctx.user.id,
+      lifecycle: "prospect",
+      vatId: "",
+      since: today,
+      sites: 1,
+      summary: "",
+      address: "",
+    };
+    ctx.addAccount(account);
+    fetch("/api/accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: account.name, industry: account.industry, region: account.region, domain: account.domain }),
+    }).catch(console.error);
+    setNaName(""); setNaIndustry(""); setNaDomain("");
+    setNewAccountOpen(false);
+    ctx.notify(`Account "${account.name}" created.`);
+  };
 
   return (
     <>
       <PageHead title="Accounts" crumb="Customers" actions={
-        <button className="btn btn--primary" onClick={() => ctx.notify("New account workflow — AI research drafts the brief before you save.")} type="button"><Icon name="plus" />New account</button>
+        <button className="btn btn--primary" onClick={() => setNewAccountOpen(true)} type="button"><Icon name="plus" />New account</button>
       } />
       <div className="toolbar">
         <label className="search">
@@ -662,6 +702,50 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
           </tbody>
         </table>
       </div>
+
+      {newAccountOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="New account"
+          onKeyDown={(e) => { if (e.key === "Escape") setNewAccountOpen(false); }}>
+          <div className="modal">
+            <div className="modal-head">
+              <h2>New account</h2>
+              <button className="icon-btn" onClick={() => setNewAccountOpen(false)} aria-label="Close" type="button"><Icon name="close" /></button>
+            </div>
+            <div className="modal-body">
+              <div className="modal-field">
+                <label htmlFor="na-name">Account name</label>
+                <input id="na-name" type="text" value={naName} onChange={(e) => setNaName(e.target.value)}
+                  placeholder="e.g. Acme Corp" autoFocus
+                  onKeyDown={(e) => { if (e.key === "Enter") submitNewAccount(); }} />
+              </div>
+              <div className="modal-field">
+                <label htmlFor="na-industry">Industry</label>
+                <select id="na-industry" value={naIndustry} onChange={(e) => setNaIndustry(e.target.value)}>
+                  <option value="">Select industry</option>
+                  <option value="Field logistics">Field logistics</option>
+                  <option value="Transport & haulage">Transport &amp; haulage</option>
+                  <option value="Public safety">Public safety</option>
+                  <option value="Energy & utilities">Energy &amp; utilities</option>
+                  <option value="Facilities management">Facilities management</option>
+                  <option value="Healthcare">Healthcare</option>
+                  <option value="Retail">Retail</option>
+                  <option value="Manufacturing">Manufacturing</option>
+                  <option value="Construction">Construction</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div className="modal-field">
+                <label htmlFor="na-domain">Domain</label>
+                <input id="na-domain" type="text" value={naDomain} onChange={(e) => setNaDomain(e.target.value)} placeholder="e.g. acme.com" />
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn--ghost btn--sm" onClick={() => setNewAccountOpen(false)} type="button">Cancel</button>
+              <button className="btn btn--primary btn--sm" onClick={submitNewAccount} disabled={!naName.trim()} type="button">Create account</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -672,7 +756,7 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
 
 function AccountRecord({ account, ctx }: { account: Account; ctx: AppCtx }) {
   const owner = userById(account.ownerId);
-  const accDeals = dealsForAccount(account.id).map((d) => liveStage(ctx, d));
+  const accDeals = [...dealsForAccount(account.id), ...ctx.extraDeals.filter((d) => d.accountId === account.id)].map((d) => liveStage(ctx, d));
   const openDeals = accDeals.filter(isOpen);
   const accCases = casesForAccount(account.id);
   const openCases = accCases.filter((c) => c.status !== "resolved" && c.status !== "closed");
@@ -699,6 +783,62 @@ function AccountRecord({ account, ctx }: { account: Account; ctx: AppCtx }) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [draftKind, setDraftKind] = useState<"note" | "meeting" | "call" | "email">("note");
   const [draft, setDraft] = useState("");
+
+  const [newDealOpen, setNewDealOpen] = useState(false);
+  const [ndTitle, setNdTitle] = useState("");
+  const [ndStage, setNdStage] = useState<Stage>("opportunity");
+  const [ndChannel, setNdChannel] = useState<Channel>("direct");
+  const [ndDevice, setNdDevice] = useState("");
+  const [ndService, setNdService] = useState("");
+
+  const ndDeviceNum = parseFloat(ndDevice) || 0;
+  const ndServiceNum = parseFloat(ndService) || 0;
+  const ndTotal = ndDeviceNum + ndServiceNum;
+
+  const submitNewDeal = () => {
+    if (!ndTitle.trim()) return;
+    const id = crypto.randomUUID();
+    const today = new Date().toISOString().slice(0, 10);
+    const close = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const deal: Deal = {
+      id,
+      accountId: account.id,
+      parentDealId: null,
+      ownerId: ctx.user.id,
+      title: ndTitle.trim(),
+      stage: ndStage,
+      channel: ndChannel,
+      isPilot: false,
+      expectedClose: close,
+      updatedAt: today,
+      createdAt: today,
+      deviceUnitPrice: ndDeviceNum,
+      devicePhases: ndDeviceNum > 0 ? [{ period: "2026-Q3", units: 1 }] : [],
+    };
+    if (ndServiceNum > 0) {
+      serviceContracts.push({
+        id: `sc-${id}`,
+        dealId: id,
+        serviceId: "",
+        invoiceModel: "one_off",
+        startDate: today,
+        endDate: null,
+        fixedValue: ndServiceNum,
+        monthlyRate: null,
+        expectedDevices: null,
+        phases: [{ period: "2026-Q3", value: ndServiceNum }],
+      });
+    }
+    ctx.addDeal(deal);
+    fetch("/api/deals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account_id: account.id, title: deal.title, stage: ndStage, channel: ndChannel }),
+    }).catch(console.error);
+    setNdTitle(""); setNdStage("opportunity"); setNdChannel("direct"); setNdDevice(""); setNdService("");
+    setNewDealOpen(false);
+    ctx.notify(`Deal "${deal.title}" created.`);
+  };
 
   const submitLog = () => {
     if (!draft.trim()) return;
@@ -727,7 +867,7 @@ function AccountRecord({ account, ctx }: { account: Account; ctx: AppCtx }) {
         </div>
         <div className="record-actions">
           <button className="btn btn--secondary" onClick={() => setComposerOpen((v) => !v)} aria-expanded={composerOpen} type="button">Log activity</button>
-          <button className="btn btn--primary" onClick={() => ctx.notify("New deal workflow opened for this account.")} type="button"><Icon name="plus" />New deal</button>
+          <button className="btn btn--primary" onClick={() => setNewDealOpen(true)} type="button"><Icon name="plus" />New deal</button>
         </div>
       </header>
 
@@ -847,6 +987,61 @@ function AccountRecord({ account, ctx }: { account: Account; ctx: AppCtx }) {
           </section>
         </aside>
       </div>
+
+      {newDealOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="New deal"
+          onKeyDown={(e) => { if (e.key === "Escape") setNewDealOpen(false); }}>
+          <div className="modal">
+            <div className="modal-head">
+              <h2>New deal — {account.name}</h2>
+              <button className="icon-btn" onClick={() => setNewDealOpen(false)} aria-label="Close" type="button"><Icon name="close" /></button>
+            </div>
+            <div className="modal-body">
+              <div className="modal-field">
+                <label htmlFor="nd-title">Deal title</label>
+                <input id="nd-title" type="text" value={ndTitle} onChange={(e) => setNdTitle(e.target.value)}
+                  placeholder="e.g. Q3 device rollout — 500 units" autoFocus
+                  onKeyDown={(e) => { if (e.key === "Enter") submitNewDeal(); }} />
+              </div>
+              <div className="modal-field-row">
+                <div className="modal-field">
+                  <label htmlFor="nd-stage">Stage</label>
+                  <select id="nd-stage" value={ndStage} onChange={(e) => setNdStage(e.target.value as Stage)}>
+                    {STATUSES.map((s) => <option key={s} value={s}>{STAGE_META[s].short}</option>)}
+                  </select>
+                </div>
+                <div className="modal-field">
+                  <label htmlFor="nd-channel">Channel</label>
+                  <select id="nd-channel" value={ndChannel} onChange={(e) => setNdChannel(e.target.value as Channel)}>
+                    <option value="direct">Direct</option>
+                    <option value="reseller">Reseller</option>
+                  </select>
+                </div>
+              </div>
+              <div className="modal-field-row">
+                <div className="modal-field">
+                  <label htmlFor="nd-device">Device (€)</label>
+                  <input id="nd-device" type="number" min="0" step="1" value={ndDevice}
+                    onChange={(e) => setNdDevice(e.target.value)} placeholder="0" />
+                </div>
+                <div className="modal-field">
+                  <label htmlFor="nd-service">Service (€)</label>
+                  <input id="nd-service" type="number" min="0" step="1" value={ndService}
+                    onChange={(e) => setNdService(e.target.value)} placeholder="0" />
+                </div>
+                <div className="modal-field">
+                  <label>Total (€)</label>
+                  <input type="number" value={ndTotal || ""} readOnly tabIndex={-1} placeholder="0" />
+                </div>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn--ghost btn--sm" onClick={() => setNewDealOpen(false)} type="button">Cancel</button>
+              <button className="btn btn--primary btn--sm" onClick={submitNewDeal} disabled={!ndTitle.trim()} type="button">Create deal</button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -1501,6 +1696,8 @@ function MainApp() {
   const [insightStatus, setInsightStatus] = useState<Record<string, AiInsight["status"]>>({});
   const [caseNotes, setCaseNotes] = useState<Record<string, CaseNote[]>>({});
   const [readNotifs, setReadNotifs] = useState<Set<string>>(new Set(seedNotifications.filter((n) => n.read).map((n) => n.id)));
+  const [extraDeals, setExtraDeals] = useState<Deal[]>([]);
+  const [extraAccounts, setExtraAccounts] = useState<Account[]>([]);
 
   const notify = (msg: string) => {
     const id = ++toastSeq.current;
@@ -1548,6 +1745,8 @@ function MainApp() {
     offerState, decideOffer,
     insightStatus, setInsight: (id, s) => setInsightStatus((m) => ({ ...m, [id]: s })),
     caseNotes, addNote: (cid, n) => setCaseNotes((m) => ({ ...m, [cid]: [n, ...(m[cid] ?? [])] })),
+    extraDeals, addDeal: (deal) => setExtraDeals((prev) => [...prev, deal]),
+    extraAccounts, addAccount: (account) => setExtraAccounts((prev: Account[]) => [...prev, account]),
   };
 
   const myNotifs = seedNotifications.filter((n) => n.userId === userId);
