@@ -121,6 +121,7 @@ import type {
   Stage,
   User,
 } from "../lib/crm.ts";
+import type { Screen, Toast, PendingStageChange, EditKind, AppCtx } from "./types.ts";
 
 // ===========================================================================
 // Icons
@@ -474,13 +475,8 @@ function InsightCard({
 }
 
 // ===========================================================================
-// Shared types for app state
+// Shared helper functions
 // ===========================================================================
-
-type Screen = "home" | "accounts" | "account" | "deals" | "deal" | "cases" | "offers" | "forecast" | "catalog";
-type Toast = { id: number; msg: string } | null;
-
-type PendingStageChange = { dealId: string; fromStage: Stage; targetStage: Stage; validateLead: boolean } | null;
 
 function stageChangeModalCopy(deal: Deal, from: Stage, to: Stage, validateLead: boolean): { title: string; body: string; confirmLabel: string } {
   if (validateLead) {
@@ -496,42 +492,6 @@ function stageChangeModalCopy(deal: Deal, from: Stage, to: Stage, validateLead: 
     confirmLabel: `Move to ${STAGE_META[to].label}`,
   };
 }
-
-type AppCtx = {
-  user: User;
-  go: (screen: Screen) => void;
-  openAccount: (id: string) => void;
-  openDeal: (id: string) => void;
-  openOffers: (id?: string) => void;
-  openCase: (id: string) => void;
-  notify: (msg: string) => void;
-  logActivity: (input: { accountId: string; dealId?: string | null; kind: ActivityKind; summary: string }) => void;
-  // mutable state
-  dealStage: Record<string, Stage>;
-  dealLeadValidated: Record<string, boolean>;
-  requestMoveDeal: (id: string, stage: Stage) => void;
-  validateLead: (id: string) => void;
-  moveDeal: (id: string, stage: Stage) => void;
-  offerState: Record<string, Offer>;
-  decideOffer: (offerId: string, decision: "approved" | "rejected", note?: string) => void;
-  submitOfferForApproval: (offerId: string) => void;
-  approveOfferMade: (offerId: string) => void;
-  addOffer: (offer: Offer) => void;
-  updateOffer: (offerId: string, updater: (offer: Offer) => Offer) => void;
-  addCase: (caseRec: CaseRecord) => void;
-  insightStatus: Record<string, AiInsight["status"]>;
-  setInsight: (id: string, status: AiInsight["status"]) => void;
-  caseNotes: Record<string, CaseNote[]>;
-  addNote: (caseId: string, note: CaseNote) => void;
-  // inline editing: per-entity field overrides applied at render
-  patch: (kind: EditKind, id: string, field: string, value: unknown) => void;
-  eff: <T extends { id: string }>(kind: EditKind, base: T) => T;
-  addAccount: (account: Account) => void;
-  addDeal: (deal: Deal, serviceValue: number, serviceContractId?: string | null, serviceId?: string | null) => void;
-  updateDeal: (deal: Deal, updates: Partial<Pick<Deal, "title" | "stage" | "apiStage" | "channel" | "leadValidated">> & { device?: number; service?: number; total?: number }) => Promise<void>;
-};
-
-type EditKind = "account" | "deal" | "case" | "product" | "service";
 
 function liveStage(ctx: AppCtx, deal: Deal): Deal {
   const s = ctx.dealStage[deal.id];
