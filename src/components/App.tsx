@@ -1160,14 +1160,12 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
 
   return (
     <>
-      <PageHead title="Accounts" crumb="Customers" actions={
-        <button className="btn btn--primary" onClick={() => setNewAccountOpen(true)} type="button"><Icon name="plus" />New account</button>
-      } />
       <div className="toolbar">
         <label className="search">
           <Icon name="search" /><span className="sr-only">Search accounts</span>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search accounts" type="search" />
         </label>
+        <button className="btn btn--primary" onClick={() => setNewAccountOpen(true)} type="button"><Icon name="plus" />New account</button>
       </div>
       <div className="table-wrap card-edge">
         <table>
@@ -1466,7 +1464,7 @@ function DealsView({ ctx }: { ctx: AppCtx }) {
 
   return (
     <>
-      <PageHead title="Pipeline" crumb="Commercial" actions={
+      <PageHead title="Deals" actions={
         <button className="btn btn--primary" onClick={() => setDealModal(true)} type="button"><Icon name="plus" />New deal</button>
       } />
 
@@ -1650,7 +1648,7 @@ function CasesView({ ctx }: { ctx: AppCtx }) {
 
   return (
     <>
-      <PageHead title="Cases" crumb="Service" actions={
+      <PageHead title="Cases" actions={
         <button className="btn btn--primary" onClick={() => ctx.notify("New case workflow — link it to an account and a service.")} type="button"><Icon name="plus" />New case</button>
       } />
       <div className="toolbar">
@@ -1763,7 +1761,7 @@ function OffersView({ ctx, focus }: { ctx: AppCtx; focus?: string }) {
 
   return (
     <>
-      <PageHead title="Offers" crumb="Commercial" actions={
+      <PageHead title="Offers" actions={
         <button className="btn btn--primary" onClick={() => ctx.notify("Offer builder opened — start from the catalog.")} type="button"><Icon name="plus" />Build offer</button>
       } />
       <div className="offers-layout">
@@ -1891,7 +1889,7 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
 
   return (
     <>
-      <PageHead title="Forecast" crumb="Finance" actions={
+      <PageHead title="Forecast" actions={
         <button className="btn btn--secondary" onClick={exportCsv} type="button"><Icon name="download" />Export CSV</button>
       } />
 
@@ -1982,7 +1980,7 @@ function CatalogView({ ctx }: { ctx: AppCtx }) {
 
   return (
     <>
-      <PageHead title="Catalog" crumb="Finance" actions={
+      <PageHead title="Catalog" actions={
         canEdit ? <button className="btn btn--primary" onClick={() => ctx.notify(`Add a new ${tab === "products" ? "product" : "service"} — no developer needed.`)} type="button"><Icon name="plus" />New {tab === "products" ? "product" : "service"}</button> : undefined
       } />
       {!canEdit && <p className="ro-banner"><Icon name="lock" />Read-only. Only Finance can add, update, or retire catalog entries.</p>}
@@ -2046,13 +2044,10 @@ function CatalogView({ ctx }: { ctx: AppCtx }) {
 // Page header
 // ===========================================================================
 
-function PageHead({ title, crumb, actions }: { title: string; crumb: string; actions?: ReactNode }) {
+function PageHead({ title, actions }: { title: string; actions?: ReactNode }) {
   return (
     <div className="page-head">
-      <div>
-        <div className="crumb"><span>{crumb}</span><span aria-hidden="true">/</span><span>{title}</span></div>
-        <h1>{title}</h1>
-      </div>
+      <h1>{title}</h1>
       {actions && <div className="page-head-actions">{actions}</div>}
     </div>
   );
@@ -2272,7 +2267,7 @@ function MainApp() {
   };
 
   let content: ReactNode;
-  if (screen === "home") content = <><PageHead title={`Good morning, ${user.name.split(" ")[0]}`} crumb={ROLE_LABEL[user.role]} />{dashboards[user.role]}</>;
+  if (screen === "home") content = <><PageHead title={`Good morning, ${user.name.split(" ")[0]}`} />{dashboards[user.role]}</>;
   else if (screen === "accounts") content = <AccountsView ctx={ctx} />;
   else if (screen === "account") content = <AccountRecord account={accountById(accountId)!} ctx={ctx} />;
   else if (screen === "deals") content = <DealsView ctx={ctx} />;
