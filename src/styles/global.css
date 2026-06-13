@@ -682,11 +682,14 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .offer-table tfoot td { height: 38px; color: #44505f; border-bottom: 0; }
 .offer-table tfoot .offer-net td { font-size: 14px; color: var(--paper-ink); border-top: 2px solid var(--paper-rule); }
 .offer-sheet .cell-input {
-  width: 100%; min-width: 0; border: 1px solid transparent; border-radius: 4px;
-  background: transparent; color: var(--paper-ink); font-size: inherit; padding: 4px 6px;
+  width: 100%; min-width: 0; border: 1px solid var(--paper-rule); border-radius: 4px;
+  background: rgba(255, 255, 255, 0.72); color: var(--paper-ink); font-size: inherit; padding: 4px 8px;
+  cursor: text; transition: border-color var(--t-fast), background var(--t-fast), box-shadow var(--t-fast);
 }
-.offer-sheet .cell-input:hover { border-color: var(--paper-rule); background: rgba(255, 255, 255, 0.6); }
-.offer-sheet .cell-input:focus { outline: none; border-color: #5a6678; background: #fff; }
+.offer-sheet .cell-input:hover { border-color: #9aa8b8; background: #fff; }
+.offer-sheet .cell-input:focus { outline: none; border-color: #5a6678; background: #fff; box-shadow: 0 0 0 2px rgba(90, 102, 120, 0.15); }
+.offer-sheet td .cell-input { font-weight: 500; }
+.offer-sheet tfoot .cell-input { max-width: 88px; margin-left: auto; }
 .offer-sheet .cell-num { display: inline-flex; align-items: center; justify-content: flex-end; width: 100%; gap: 2px; }
 .offer-sheet .cell-num-prefix { color: #5a6678; }
 .offer-just-input {

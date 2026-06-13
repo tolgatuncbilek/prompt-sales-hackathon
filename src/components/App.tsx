@@ -1742,7 +1742,7 @@ function OfferDetailPanel({
   const account = accountById(deal.accountId)!;
   const canManager = ctx.user.role === "sales_manager" && offer.status === "pending_manager";
   const canFinance = ctx.user.role === "finance" && offer.status === "pending_finance";
-  const canEdit = Boolean(editable) && offer.status === "draft" && !offer.lockedAt;
+  const canEdit = Boolean(editable) && offer.status !== "locked" && offer.status !== "rejected" && !offer.lockedAt;
 
   const listTotal = offerLinesNetTotal(offer);
   const netTotal = offerGrandNet(offer);
@@ -3148,7 +3148,9 @@ function MainApp() {
     const idx = seedOffers.findIndex((o) => o.id === offerId);
     if (idx >= 0) seedOffers[idx] = updated;
     bumpAccounts();
-    if (updated.status === "draft") persistOfferUpdateToApi(updated);
+    if (updated.status === "draft" || updated.status === "pending_manager" || updated.status === "pending_finance") {
+      persistOfferUpdateToApi(updated);
+    }
   };
 
   const addCase = (caseRec: CaseRecord) => {
