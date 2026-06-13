@@ -79,6 +79,9 @@ import {
   weightedForecast,
   securedForecast,
   initCrmFromApi,
+  STAGE_TO_API,
+  offersForDeal,
+  casesForDeal,
 } from "../lib/crm.ts";
 import type {
   Account,
@@ -171,6 +174,32 @@ function StatusTag({ stage }: { stage: Stage }) {
       <span className="status-dot" aria-hidden="true" />
       {STAGE_META[stage].short}
     </span>
+  );
+}
+
+function ValidatedTag() {
+  return <span className="validated-tag"><Icon name="check" />Lead validated</span>;
+}
+
+function ConfirmModal({ title, body, confirmLabel, onConfirm, onCancel }: {
+  title: string; body: string; confirmLabel: string; onConfirm: () => void; onCancel: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+  return (
+    <div className="modal-scrim" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" onClick={onCancel}>
+      <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head"><h2 id="confirm-modal-title">{title}</h2></div>
+        <div className="modal-body"><p>{body}</p></div>
+        <div className="modal-actions">
+          <button className="btn btn--ghost btn--sm" onClick={onCancel} type="button">Cancel</button>
+          <button className="btn btn--primary btn--sm" onClick={onConfirm} type="button">{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -334,21 +363,29 @@ function InsightCard({
 // Shared types for app state
 // ===========================================================================
 
-type Screen = "home" | "accounts" | "account" | "deals" | "cases" | "offers" | "forecast" | "catalog";
+type Screen = "home" | "accounts" | "account" | "deals" | "deal" | "cases" | "offers" | "forecast" | "catalog";
 type Toast = { id: number; msg: string } | null;
+
+type LeadValidationPrompt = { dealId: string; targetStage: Stage } | null;
 
 type AppCtx = {
   user: User;
   go: (screen: Screen) => void;
   openAccount: (id: string) => void;
+  openDeal: (id: string) => void;
   openOffers: (id?: string) => void;
   openCase: (id: string) => void;
   notify: (msg: string) => void;
   // mutable state
   dealStage: Record<string, Stage>;
+  dealLeadValidated: Record<string, boolean>;
+  requestMoveDeal: (id: string, stage: Stage) => void;
+  validateLead: (id: string) => void;
   moveDeal: (id: string, stage: Stage) => void;
   offerState: Record<string, Offer>;
   decideOffer: (offerId: string, decision: "approved" | "rejected", note?: string) => void;
+  addOffer: (offer: Offer) => void;
+  addCase: (caseRec: CaseRecord) => void;
   insightStatus: Record<string, AiInsight["status"]>;
   setInsight: (id: string, status: AiInsight["status"]) => void;
   caseNotes: Record<string, CaseNote[]>;
@@ -358,7 +395,7 @@ type AppCtx = {
   eff: <T extends { id: string }>(kind: EditKind, base: T) => T;
   addAccount: (account: Account) => void;
   addDeal: (deal: Deal, serviceValue: number, serviceContractId?: string | null, serviceId?: string | null) => void;
-  updateDeal: (deal: Deal, updates: Partial<Pick<Deal, "title" | "stage" | "apiStage" | "channel">> & { device?: number; service?: number; total?: number }) => Promise<void>;
+  updateDeal: (deal: Deal, updates: Partial<Pick<Deal, "title" | "stage" | "apiStage" | "channel" | "leadValidated">> & { device?: number; service?: number; total?: number }) => Promise<void>;
 };
 
 type EditKind = "account" | "deal" | "case" | "product" | "service";
@@ -366,6 +403,12 @@ type EditKind = "account" | "deal" | "case" | "product" | "service";
 function liveStage(ctx: AppCtx, deal: Deal): Deal {
   const s = ctx.dealStage[deal.id];
   return s ? { ...deal, stage: s } : deal;
+}
+
+function liveDeal(ctx: AppCtx, deal: Deal): Deal {
+  const staged = liveStage(ctx, deal);
+  const validated = ctx.dealLeadValidated[deal.id] ?? staged.leadValidated ?? false;
+  return { ...staged, leadValidated: validated };
 }
 
 // ===========================================================================
@@ -451,31 +494,6 @@ const STATUS_OPTIONS: Opt[] = STATUSES.map((s) => ({ value: s, label: STAGE_META
 const RETIRED_OPTIONS: Opt[] = [{ value: "active", label: "Active" }, { value: "retired", label: "Retired" }];
 const SOURCE_OPTIONS: Opt[] = [{ value: "internal", label: "Internal" }, { value: "third", label: "Third party" }];
 const CHANNEL_OPTIONS: Opt[] = [{ value: "direct", label: "Direct" }, { value: "reseller", label: "Reseller" }];
-const API_STAGE_OPTIONS: Opt[] = [
-  { value: "interest_shown", label: "Lead Validated" },
-  { value: "rfi_answered", label: "Solution Presented" },
-  { value: "rfp_given", label: "Offer Sent" },
-  { value: "customer_test", label: "Device Trial" },
-  { value: "contract_negotiation", label: "Contract Negotiation" },
-  { value: "won", label: "Won" },
-  { value: "lost", label: "Lost" },
-];
-
-const API_STAGE: Record<Stage, string> = {
-  opportunity: "interest_shown",
-  pipeline: "rfp_given",
-  committed: "contract_negotiation",
-  confirmed: "won",
-  closed: "lost",
-};
-
-function displayStage(apiStage: ApiStage): Stage {
-  if (apiStage === "interest_shown" || apiStage === "rfi_answered") return "opportunity";
-  if (apiStage === "rfp_given" || apiStage === "customer_test") return "pipeline";
-  if (apiStage === "contract_negotiation") return "committed";
-  if (apiStage === "won") return "confirmed";
-  return "closed";
-}
 
 function replaceDealRevenue(deal: Deal, deviceValue: number, serviceValue: number) {
   const period = deal.devicePhases[0]?.period ?? "2026-Q2";
@@ -506,7 +524,6 @@ function replaceDealRevenue(deal: Deal, deviceValue: number, serviceValue: numbe
 function NewDealModal({ account, ctx, onClose }: { account?: Account; ctx: AppCtx; onClose: () => void }) {
   const [accountId, setAccountId] = useState(account?.id ?? accounts[0]?.id ?? "");
   const [title, setTitle] = useState("");
-  const [stage, setStage] = useState<Stage>("opportunity");
   const [channel, setChannel] = useState<Channel>("direct");
   const [device, setDevice] = useState("0");
   const [service, setService] = useState("0");
@@ -560,7 +577,7 @@ function NewDealModal({ account, ctx, onClose }: { account?: Account; ctx: AppCt
           account_id: selectedAccount.id,
           owner_user_id: selectedAccount.ownerId,
           title: title.trim(),
-          stage: API_STAGE[stage],
+          stage: STAGE_TO_API.lead,
           channel,
           device: deviceValue,
           service: serviceValue,
@@ -577,8 +594,9 @@ function NewDealModal({ account, ctx, onClose }: { account?: Account; ctx: AppCt
         parentDealId: null,
         ownerId: saved.ownerUserId ?? selectedAccount.ownerId,
         title: title.trim(),
-        stage,
-        apiStage: API_STAGE[stage] as ApiStage,
+        stage: "lead",
+        leadValidated: false,
+        apiStage: STAGE_TO_API.lead,
         channel,
         isPilot: false,
         expectedClose: saved.expectedClose ?? "",
@@ -620,13 +638,8 @@ function NewDealModal({ account, ctx, onClose }: { account?: Account; ctx: AppCt
             <span className="field-label">Deal text</span>
             <input ref={titleRef} value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={500} />
           </label>
+          <p className="muted">New deals start in the <strong>Lead</strong> stage. Validate the lead before moving to Offer.</p>
           <div className="modal-grid">
-            <label className="field">
-              <span className="field-label">Stage</span>
-              <select value={stage} onChange={(e) => setStage(e.target.value as Stage)}>
-                {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-            </label>
             <label className="field">
               <span className="field-label">Channel</span>
               <select value={channel} onChange={(e) => setChannel(e.target.value as Channel)}>
@@ -1037,7 +1050,7 @@ function FinanceDashboard({ ctx }: { ctx: AppCtx }) {
       <div className="kpi-strip">
         <Kpi label="Weighted net sales" value={fmtEur(weightedForecast(live, "net_sales"))} hint="Tier-weighted, 3-year" />
         <Kpi label="Gross margin" value={fmtEur(gmTotal)} hint={`${Math.round((gmTotal / netTotal) * 100)}% blended GM`} />
-        <Kpi label="Secured (LOI+)" value={fmtEur(securedForecast(live, "net_sales"))} tone="good" hint="Committed + Confirmed" />
+        <Kpi label="Secured (final negotiation)" value={fmtEur(securedForecast(live, "net_sales"))} tone="good" hint="Deals in final negotiation" />
         <Kpi label="Weighted service" value={fmtEur(totalService)} hint="Kept separate from device" />
       </div>
 
@@ -1257,7 +1270,7 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
   const account = ctx.eff("account", accountInput);
   const [dealModal, setDealModal] = useState(false);
   const owner = userById(account.ownerId);
-  const accDeals = dealsForAccount(account.id).map((d) => liveStage(ctx, d));
+  const accDeals = dealsForAccount(account.id).map((d) => liveDeal(ctx, d));
   const openDeals = accDeals.filter(isOpen);
   const accCases = casesForAccount(account.id);
   const openCases = accCases.filter((c) => c.status !== "resolved" && c.status !== "closed");
@@ -1333,11 +1346,11 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
                 <thead><tr><th>Deal</th><th>Status</th><th>Channel</th><th className="numeric">Device</th><th className="numeric">Service</th><th className="numeric">Total</th></tr></thead>
                 <tbody>
                   {accDeals.map((base) => {
-                    const d = ctx.eff("deal", base);
+                    const d = liveDeal(ctx, ctx.eff("deal", base));
                     return (
-                    <tr key={d.id}>
-                      <th scope="row"><CellText value={d.title} onCommit={(v) => void ctx.updateDeal(d, { title: v })} />{d.parentDealId && <small className="muted"><Icon name="link" />follow-on</small>}{d.isPilot && <span className="mini-tag">Pilot</span>}</th>
-                      <td><CellSelect value={d.apiStage ?? API_STAGE[d.stage]} options={API_STAGE_OPTIONS} onCommit={(v) => void ctx.updateDeal(d, { apiStage: v as ApiStage })} /></td>
+                    <tr key={d.id} className="row-click" onClick={() => ctx.openDeal(d.id)}>
+                      <th scope="row"><CellText value={d.title} onCommit={(v) => void ctx.updateDeal(d, { title: v })} />{d.parentDealId && <small className="muted"><Icon name="link" />follow-on</small>}{d.isPilot && <span className="mini-tag">Pilot</span>}{d.leadValidated && <ValidatedTag />}</th>
+                      <td><InlineStage deal={d} ctx={ctx} /></td>
                       <td><CellSelect value={d.channel} options={CHANNEL_OPTIONS} onCommit={(v) => void ctx.updateDeal(d, { channel: v as Channel })} /></td>
                       <td className="numeric"><CellNumber value={deviceTotal(d)} prefix="€" onCommit={(v) => void ctx.updateDeal(d, { device: v })} /></td>
                       <td className="numeric"><CellNumber value={serviceTotal(d.id)} prefix="€" onCommit={(v) => void ctx.updateDeal(d, { service: v })} /></td>
@@ -1361,7 +1374,7 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
               <ul className="stack-list">
                 {accOffers.map((o) => (
                   <li key={o.id}>
-                    <button className="row-main" onClick={() => ctx.openOffers(o.id)} type="button">
+                    <button className="row-main" onClick={() => ctx.openDeal(o.dealId)} type="button">
                       <span><strong>{o.ref} · {dealById(o.dealId)!.title}</strong><small>v{o.version} · {o.discountPct > 0 ? `${o.discountPct}% discount` : "list price"}{o.lockedAt ? " · locked" : ""}</small></span>
                     </button>
                     <span className="row-side"><strong className="numeric">{fmtEur(offerNet(o))}</strong><OfferPill status={o.status} /></span>
@@ -1452,6 +1465,266 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
 }
 
 // ===========================================================================
+// Deal detail — pipeline hub for validation, offers, and cases
+// ===========================================================================
+
+function CreateOfferModal({ deal, ctx, onClose }: { deal: Deal; ctx: AppCtx; onClose: () => void }) {
+  const [productId, setProductId] = useState(products.find((p) => !p.retired)?.id ?? "");
+  const [quantity, setQuantity] = useState("100");
+  const [discount, setDiscount] = useState("0");
+  const [justification, setJustification] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const product = products.find((p) => p.id === productId);
+
+  const submit = async () => {
+    if (!product) return;
+    setSubmitting(true);
+    const qty = Math.max(1, Number(quantity) || 1);
+    const disc = Math.min(100, Math.max(0, Number(discount) || 0));
+    const id = crypto.randomUUID();
+    const ref = `OFF-${Date.now().toString().slice(-4)}`;
+    const offer: Offer = {
+      id,
+      ref,
+      dealId: deal.id,
+      createdById: ctx.user.id,
+      version: 1,
+      status: disc > 0 ? "pending_manager" : "draft",
+      discountPct: disc,
+      justification: justification.trim() || null,
+      lockedAt: null,
+      createdAt: new Date().toISOString().slice(0, 10),
+      lines: [{ productId: product.id, serviceId: null, label: product.name, unitPrice: product.listPrice, quantity: qty, discountPct: disc }],
+      approvals: disc > 0
+        ? [
+            { stepOrder: 1, roleRequired: "sales_manager", decidedById: null, decision: null, note: null, decidedAt: null },
+            { stepOrder: 2, roleRequired: "finance", decidedById: null, decision: null, note: null, decidedAt: null },
+          ]
+        : [],
+    };
+    ctx.addOffer(offer);
+    fetch(`/api/offers/deals/${deal.id}/offers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ discount_pct: disc, justification: justification.trim() || null }),
+    }).catch(console.error);
+    ctx.notify(`${ref} created for ${deal.title}.`);
+    onClose();
+  };
+
+  return (
+    <div className="modal-scrim" role="dialog" aria-modal="true" aria-labelledby="create-offer-title" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <div><h2 id="create-offer-title">Create offer</h2><p className="modal-context">{deal.title}</p></div>
+          <button className="icon-btn" aria-label="Close" onClick={onClose} type="button"><Icon name="close" /></button>
+        </div>
+        <form className="modal-body" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+          <label className="field"><span className="field-label">Product</span>
+            <select value={productId} onChange={(e) => setProductId(e.target.value)}>
+              {products.filter((p) => !p.retired).map((p) => <option key={p.id} value={p.id}>{p.name} — {fmtEurExact(p.listPrice)}</option>)}
+            </select>
+          </label>
+          <div className="modal-grid">
+            <label className="field"><span className="field-label">Quantity</span><input type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} required /></label>
+            <label className="field"><span className="field-label">Discount %</span><input type="number" min="0" max="100" value={discount} onChange={(e) => setDiscount(e.target.value)} /></label>
+          </div>
+          <label className="field"><span className="field-label">Justification</span>
+            <textarea value={justification} onChange={(e) => setJustification(e.target.value)} rows={2} placeholder="Required when discount is applied" />
+          </label>
+          <div className="modal-foot">
+            <button className="btn btn--ghost" type="button" onClick={onClose}>Cancel</button>
+            <button className="btn btn--primary" type="submit" disabled={submitting || !product}>Create offer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function CreateCaseModal({ deal, ctx, onClose }: { deal: Deal; ctx: AppCtx; onClose: () => void }) {
+  const account = accountById(deal.accountId)!;
+  const [title, setTitle] = useState("");
+  const [priority, setPriority] = useState<CasePriority>("medium");
+  const [serviceId, setServiceId] = useState(services.find((s) => !s.retired)?.id ?? "");
+  const [description, setDescription] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    if (!title.trim()) return;
+    setSubmitting(true);
+    const id = crypto.randomUUID();
+    const ref = `CASE-${Date.now().toString().slice(-4)}`;
+    const today = new Date().toISOString().slice(0, 10);
+    const caseRec: CaseRecord = {
+      id,
+      ref,
+      accountId: deal.accountId,
+      dealId: deal.id,
+      serviceId: serviceId || null,
+      ownerId: ctx.user.role === "tam" ? ctx.user.id : users.find((u) => u.role === "tam")?.id ?? ctx.user.id,
+      contactId: contactsForAccount(deal.accountId).find((c) => c.primary)?.id ?? null,
+      title: title.trim(),
+      status: "open",
+      priority,
+      escalated: false,
+      thirdPartyRef: null,
+      slaDeadline: null,
+      createdAt: today,
+      updatedAt: today,
+      notes: description.trim() ? [{ author: ctx.user.name, body: description.trim(), when: "Just now", internal: false }] : [],
+    };
+    ctx.addCase(caseRec);
+    fetch("/api/cases", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account_id: deal.accountId, service_id: serviceId || null, priority, title: title.trim() }),
+    }).catch(console.error);
+    ctx.notify(`${ref} opened for ${deal.title}.`);
+    onClose();
+  };
+
+  return (
+    <div className="modal-scrim" role="dialog" aria-modal="true" aria-labelledby="create-case-title" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <div><h2 id="create-case-title">Create case</h2><p className="modal-context">{deal.title} · {account.name}</p></div>
+          <button className="icon-btn" aria-label="Close" onClick={onClose} type="button"><Icon name="close" /></button>
+        </div>
+        <form className="modal-body" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+          <label className="field"><span className="field-label">Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} required autoFocus /></label>
+          <div className="modal-grid">
+            <label className="field"><span className="field-label">Priority</span>
+              <select value={priority} onChange={(e) => setPriority(e.target.value as CasePriority)}>
+                {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </label>
+            <label className="field"><span className="field-label">Service</span>
+              <select value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
+                {SERVICE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </label>
+          </div>
+          <label className="field"><span className="field-label">Description</span>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="What does the customer need during testing?" />
+          </label>
+          <div className="modal-foot">
+            <button className="btn btn--ghost" type="button" onClick={onClose}>Cancel</button>
+            <button className="btn btn--primary" type="submit" disabled={submitting || !title.trim()}>Create case</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCtx; embedded?: boolean }) {
+  const deal = liveDeal(ctx, ctx.eff("deal", dealInput));
+  const account = accountById(deal.accountId)!;
+  const [offerModal, setOfferModal] = useState(false);
+  const [caseModal, setCaseModal] = useState(false);
+  const dealOffers = offersForDeal(deal.id).map((o) => ctx.offerState[o.id] ?? o);
+  const dealCases = casesForDeal(deal.id);
+
+  return (
+    <section className="record">
+      {!embedded && <button className="back" onClick={() => ctx.go("deals")} type="button"><Icon name="back" />Deals</button>}
+
+      <header className="record-head">
+        <div className="record-head-main">
+          <div className="record-title-row">
+            <h1>{deal.title}</h1>
+            <StatusTag stage={deal.stage} />
+            {deal.leadValidated && <ValidatedTag />}
+          </div>
+          <p className="record-sub">
+            <button className="ghost-link" onClick={() => ctx.openAccount(deal.accountId)} type="button">{account.name}</button>
+            {" · "}{deal.channel === "direct" ? "Direct" : "Reseller"}{deal.isPilot ? " · Pilot" : ""}
+            {" · Owner "}<strong>{userName(deal.ownerId)}</strong>
+          </p>
+        </div>
+        <div className="record-actions">
+          {deal.stage === "lead" && !deal.leadValidated && (
+            <button className="btn btn--secondary" onClick={() => ctx.validateLead(deal.id)} type="button"><Icon name="check" />Validate lead</button>
+          )}
+          {deal.stage === "offer" && (
+            <button className="btn btn--primary" onClick={() => setOfferModal(true)} type="button"><Icon name="plus" />Create offer</button>
+          )}
+          {deal.stage === "customer_testing" && (
+            <button className="btn btn--primary" onClick={() => setCaseModal(true)} type="button"><Icon name="plus" />Create case</button>
+          )}
+        </div>
+      </header>
+
+      <div className="kpi-strip kpi-strip--tight">
+        <Kpi label="Total value" value={fmtEur(dealTotal(deal))} />
+        <Kpi label="Next quarter" value={fmtEur(nextQuarterValue(deal))} />
+        <Kpi label="Weighted" value={fmtEur(weightedTotal(deal))} />
+        <Kpi label="Expected close" value={new Date(deal.expectedClose).toLocaleDateString("en-IE", { day: "2-digit", month: "short", year: "numeric" })} tone={isOverdue(deal) ? "warn" : undefined} />
+      </div>
+
+      <div className="record-body">
+        <div className="record-col">
+          <section>
+            <SectionHead title="Pipeline status" />
+            <div className="deal-status-row">
+              <InlineStage deal={deal} ctx={ctx} />
+              <RiskTag deal={deal} />
+            </div>
+          </section>
+
+          <section>
+            <SectionHead title="Offers" count={dealOffers.length} />
+            {dealOffers.length ? (
+              <ul className="stack-list">
+                {dealOffers.map((o) => (
+                  <li key={o.id}>
+                    <button className="row-main" onClick={() => ctx.openDeal(deal.id)} type="button">
+                      <span><strong>{o.ref}</strong><small>v{o.version} · {o.discountPct > 0 ? `${o.discountPct}% discount` : "list price"}</small></span>
+                    </button>
+                    <span className="row-side"><strong className="numeric">{fmtEur(offerNet(o))}</strong><OfferPill status={o.status} /></span>
+                  </li>
+                ))}
+              </ul>
+            ) : <Empty>{deal.stage === "offer" ? "No offers yet — create one to send to the customer." : "Offers appear here once the deal reaches the Offer stage."}</Empty>}
+          </section>
+
+          <section>
+            <SectionHead title="Cases" count={dealCases.length} />
+            {dealCases.length ? (
+              <ul className="stack-list">
+                {dealCases.map((c) => (
+                  <li key={c.id}>
+                    <button className="row-main" onClick={() => ctx.openDeal(deal.id)} type="button">
+                      <span><strong>{c.title}</strong><small>{c.ref} · {CASE_STATUS_LABEL[c.status]}</small></span>
+                    </button>
+                    <span className="row-side"><PriorityTag priority={c.priority} /></span>
+                  </li>
+                ))}
+              </ul>
+            ) : <Empty>{deal.stage === "customer_testing" ? "No cases yet — create one for customer testing support." : "Cases appear here once the deal reaches Customer testing."}</Empty>}
+          </section>
+        </div>
+
+        <aside className="record-side">
+          <section className="panel">
+            <SectionHead title="Deal economics" />
+            <dl className="meta-dl">
+              <div><dt>Device</dt><dd className="numeric">{fmtEur(deviceTotal(deal))}</dd></div>
+              <div><dt>Service</dt><dd className="numeric">{fmtEur(serviceTotal(deal.id))}</dd></div>
+              <div><dt>Gross margin</dt><dd className="numeric">{fmtEur(dealMeasureTotal(deal, "gm"))}</dd></div>
+            </dl>
+          </section>
+        </aside>
+      </div>
+
+      {offerModal && <CreateOfferModal deal={deal} ctx={ctx} onClose={() => setOfferModal(false)} />}
+      {caseModal && <CreateCaseModal deal={deal} ctx={ctx} onClose={() => setCaseModal(false)} />}
+    </section>
+  );
+}
+
+// ===========================================================================
 // Deals (table + kanban)
 // ===========================================================================
 
@@ -1463,7 +1736,7 @@ function DealsView({ ctx }: { ctx: AppCtx }) {
   const [channel, setChannel] = useState<"all" | "direct" | "reseller">("all");
 
   const query = q.trim().toLowerCase();
-  const filtered = seedDeals.map((d) => liveStage(ctx, d)).filter((d) => {
+  const filtered = seedDeals.map((d) => liveDeal(ctx, d)).filter((d) => {
     const acc = accountById(d.accountId)!;
     const matchesQ = !query || [d.title, acc.name, acc.region, userName(d.ownerId), STAGE_META[d.stage].label].some((v) => v.toLowerCase().includes(query));
     const matchesRisk = !onlyRisk || isStale(d) || isOverdue(d);
@@ -1506,15 +1779,12 @@ function DealsView({ ctx }: { ctx: AppCtx }) {
 }
 
 function InlineStage({ deal, ctx }: { deal: Deal; ctx: AppCtx }) {
-  // Spreadsheet-speed inline edit (DESIGN.md / Attio): the stage reads as a tag
-  // but is a live control — changing it moves the deal, re-deriving tier, risk,
-  // and forecast. Reseller→Contract negotiation is rejected in moveDeal.
   const options = pipelineStages(deal.channel);
   const current = options.includes(deal.stage) ? deal.stage : options[0]!;
   return (
     <label className="inline-edit" onClick={(e) => e.stopPropagation()}>
       <span className="sr-only">Stage for {deal.title}</span>
-      <select className="inline-stage" value={current} onChange={(e) => ctx.moveDeal(deal.id, e.target.value as Stage)}>
+      <select className="inline-stage" value={current} onChange={(e) => ctx.requestMoveDeal(deal.id, e.target.value as Stage)}>
         {options.map((s) => <option key={s} value={s}>{STAGE_META[s].label}</option>)}
       </select>
       <Icon name="chevronDown" />
@@ -1530,13 +1800,13 @@ function DealTable({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
         <thead><tr><th>Deal</th><th>Status</th><th>Signal</th><th>Owner</th><th>Expected close</th><th className="numeric">Next qtr</th><th className="numeric">3-yr total</th><th className="numeric">GM</th><th aria-label="Open" /></tr></thead>
         <tbody>
           {deals.map((base) => {
-            const d = ctx.eff("deal", base);
+            const d = liveDeal(ctx, ctx.eff("deal", base));
             const acc = accountById(d.accountId)!;
             return (
-              <tr key={d.id} className="row-click" onClick={() => ctx.openAccount(d.accountId)}>
+              <tr key={d.id} className="row-click" onClick={() => ctx.openDeal(d.id)}>
                 <th scope="row">
                   <span className="account-cell"><span className="account-logo sm" aria-hidden="true">{monogram(acc.name)}</span>
-                    <span><CellText value={d.title} onCommit={(v) => ctx.patch("deal", d.id, "title", v)} /><small>{acc.name} · {d.channel === "direct" ? "Direct" : "Reseller"}{d.isPilot ? " · Pilot" : ""}</small></span></span>
+                    <span><CellText value={d.title} onCommit={(v) => ctx.patch("deal", d.id, "title", v)} /><small>{acc.name} · {d.channel === "direct" ? "Direct" : "Reseller"}{d.isPilot ? " · Pilot" : ""}{d.leadValidated ? " · Validated" : ""}</small></span></span>
                 </th>
                 <td className="cell-edit"><InlineStage deal={d} ctx={ctx} /></td>
                 <td><span className="signal-cell"><RiskTag deal={d} /><small className="activity-hint">{activityHint(d)}</small></span></td>
@@ -1545,7 +1815,7 @@ function DealTable({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
                 <td className="numeric">{fmtEur(nextQuarterValue(d))}</td>
                 <td className="numeric numeric--strong">{fmtEur(dealTotal(d))}</td>
                 <td className="numeric">{fmtEur(dealMeasureTotal(d, "gm"))}</td>
-                <td><OpenButton label={`Open ${acc.name}`} onClick={() => ctx.openAccount(d.accountId)} /></td>
+                <td><OpenButton label={`Open ${d.title}`} onClick={() => ctx.openDeal(d.id)} /></td>
               </tr>
             );
           })}
@@ -1568,7 +1838,7 @@ function DealCard({ deal, ctx, dragId, setDragId, setOver, draggable }: {
     >
       <div className="deal-card-top">
         {draggable && <span className="grip" aria-hidden="true"><Icon name="grip" /></span>}
-        <button className="deal-card-open" onClick={() => ctx.openAccount(deal.accountId)} type="button"><strong>{deal.title}</strong><small>{acc.name} · {deal.channel === "direct" ? "Direct" : "Reseller"}</small></button>
+        <button className="deal-card-open" onClick={() => ctx.openDeal(deal.id)} type="button"><strong>{deal.title}</strong><small>{acc.name} · {deal.channel === "direct" ? "Direct" : "Reseller"}{deal.leadValidated ? " · Validated" : ""}</small></button>
       </div>
       <div className="deal-card-figs"><span className="numeric numeric--strong">{fmtEur(dealTotal(deal))}</span><RiskTag deal={deal} /></div>
       <div className="deal-card-foot">
@@ -1595,7 +1865,7 @@ function DealBoard({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
               className={cx("board-col", `board-col--${status}`, over === status && "board-col--over")}
               onDragOver={(e) => { if (!dragId) return; e.preventDefault(); setOver(status); }}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(null); }}
-              onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); ctx.moveDeal(id, status); setDragId(null); setOver(null); }}
+              onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); ctx.requestMoveDeal(id, status); setDragId(null); setOver(null); }}
             >
               <header className="board-col-head">
                 <span className="board-col-title"><strong>{STAGE_META[status].short}</strong><small>{STAGE_META[status].csv}</small></span>
@@ -1781,7 +2051,7 @@ function OffersView({ ctx, focus }: { ctx: AppCtx; focus?: string }) {
             const d = dealById(o.dealId)!;
             return (
               <li key={o.id}>
-                <button className={cx("offers-list-item", o.id === selected && "is-active")} onClick={() => setSelected(o.id)} type="button">
+                <button className={cx("offers-list-item", o.id === selected && "is-active")} onClick={() => ctx.openDeal(d.id)} type="button">
                   <div><strong>{o.ref}</strong><small>{accountById(d.accountId)!.name}</small></div>
                   <div className="offers-list-side"><span className="numeric">{fmtEur(offerNet(o))}</span><OfferPill status={o.status} /></div>
                 </button>
@@ -1908,7 +2178,7 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
         <Kpi label="Weighted net sales" value={fmtEur(weightedForecast(live, "net_sales"))} hint="Tier-weighted, 3-year" />
         <Kpi label="Gross pipeline" value={fmtEur(netTotal)} hint="All tiers, unweighted" />
         <Kpi label="Gross margin" value={fmtEur(gmTotal)} hint={`${Math.round((gmTotal / netTotal) * 100)}% blended GM`} />
-        <Kpi label="Secured (LOI+)" value={fmtEur(securedForecast(live, "net_sales"))} tone="good" hint="Committed + Confirmed" />
+        <Kpi label="Secured (final negotiation)" value={fmtEur(securedForecast(live, "net_sales"))} tone="good" hint="Deals in final negotiation" />
       </div>
 
       <div className="toolbar">
@@ -1932,7 +2202,7 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
       </div>
 
       <p className="forecast-caption">
-        {lens === "commitment" ? "Net value by deal status — Opportunity → Pipeline → Committed → Confirmed (Closed excluded from the forward forecast)."
+        {lens === "commitment" ? "Net value by deal status — Lead → Offer → Customer testing → Final negotiation (Closed excluded from the forward forecast)."
           : lens === "streams" ? "Device and service revenue kept separate, never flattened into one number."
           : "Regional split with gross-margin percentage, the way the forecast sheet reads."}
         {" Showing "}<strong>{MEASURE_LABEL[measure]}</strong>.
@@ -2339,8 +2609,10 @@ function MainApp() {
   const [screen, setScreen] = useState<Screen>("home");
   const [accountId, setAccountId] = useState<string>(accounts[0]?.id || "");
   const [caseId, setCaseId] = useState<string>(seedCases[0]?.id || "");
+  const [dealId, setDealId] = useState<string>(seedDeals[0]?.id || "");
   const [offerFocus, setOfferFocus] = useState<string | undefined>(undefined);
-  const [drawer, setDrawer] = useState<{ kind: "account" | "case"; id: string } | null>(null);
+  const [drawer, setDrawer] = useState<{ kind: "account" | "case" | "deal"; id: string } | null>(null);
+  const [leadValidationPrompt, setLeadValidationPrompt] = useState<LeadValidationPrompt>(null);
 
   useEffect(() => {
     if (!drawer) return;
@@ -2365,6 +2637,7 @@ function MainApp() {
 
   // mutable domain state
   const [dealStage, setDealStage] = useState<Record<string, Stage>>({});
+  const [dealLeadValidated, setDealLeadValidated] = useState<Record<string, boolean>>({});
   const [offerState, setOfferState] = useState<Record<string, Offer>>({});
   const [insightStatus, setInsightStatus] = useState<Record<string, AiInsight["status"]>>({});
   const [caseNotes, setCaseNotes] = useState<Record<string, CaseNote[]>>({});
@@ -2411,25 +2684,28 @@ function MainApp() {
   };
   const updateDeal = async (
     deal: Deal,
-    updates: Partial<Pick<Deal, "title" | "stage" | "apiStage" | "channel">> & { device?: number; service?: number; total?: number },
+    updates: Partial<Pick<Deal, "title" | "stage" | "apiStage" | "channel" | "leadValidated">> & { device?: number; service?: number; total?: number },
   ) => {
     const previous = {
       title: deal.title,
       stage: deal.stage,
       apiStage: deal.apiStage,
       channel: deal.channel,
+      leadValidated: deal.leadValidated,
       device: deviceTotal(deal),
       service: serviceTotal(deal.id),
     };
     const device = updates.device ?? (updates.total !== undefined ? Math.max(0, updates.total - previous.service) : previous.device);
     const service = updates.service ?? (updates.total !== undefined ? Math.min(previous.service, updates.total) : previous.service);
     const total = updates.total ?? device + service;
+    const nextStage = updates.stage ?? deal.stage;
 
     Object.assign(deal, {
       title: updates.title ?? deal.title,
-      stage: updates.apiStage ? displayStage(updates.apiStage) : updates.stage ?? deal.stage,
-      apiStage: updates.apiStage ?? (updates.stage ? API_STAGE[updates.stage] as ApiStage : deal.apiStage),
+      stage: nextStage,
+      apiStage: updates.stage ? STAGE_TO_API[updates.stage] as ApiStage : deal.apiStage,
       channel: updates.channel ?? deal.channel,
+      leadValidated: updates.leadValidated ?? deal.leadValidated,
     });
     replaceDealRevenue(deal, device, service);
     bumpAccounts();
@@ -2440,7 +2716,7 @@ function MainApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: updates.title,
-          stage: updates.apiStage ?? (updates.stage ? API_STAGE[updates.stage] : undefined),
+          stage: updates.stage ? STAGE_TO_API[updates.stage] : undefined,
           channel: updates.channel,
           device,
           service,
@@ -2451,7 +2727,7 @@ function MainApp() {
       if (!response.ok) throw new Error(result.error || "Failed to save deal");
       notify(`${deal.title} updated.`);
     } catch (error) {
-      Object.assign(deal, { title: previous.title, stage: previous.stage, apiStage: previous.apiStage, channel: previous.channel });
+      Object.assign(deal, { title: previous.title, stage: previous.stage, apiStage: previous.apiStage, channel: previous.channel, leadValidated: previous.leadValidated });
       replaceDealRevenue(deal, previous.device, previous.service);
       bumpAccounts();
       notify(error instanceof Error ? error.message : "Failed to save deal.");
@@ -2467,10 +2743,47 @@ function MainApp() {
   const moveDeal = (id: string, stage: Stage) => {
     const deal = dealById(id);
     if (!deal) return;
-    if ((dealStage[id] ?? deal.stage) === stage) return;
+    const current = dealStage[id] ?? deal.stage;
+    if (current === stage) return;
+    if (deal.channel === "reseller" && stage === "final_negotiation") {
+      notify("Reseller deals cannot move to Final negotiation.");
+      return;
+    }
     setDealStage((m) => ({ ...m, [id]: stage }));
-    fetch(`/api/deals/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage }) }).catch(console.error);
+    Object.assign(deal, { stage, apiStage: STAGE_TO_API[stage] });
+    fetch(`/api/deals/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: STAGE_TO_API[stage] }) }).catch(console.error);
     notify(`Moved ${deal.title} to ${STAGE_META[stage].short}.`);
+  };
+
+  const validateLead = (id: string) => {
+    const deal = dealById(id);
+    if (!deal) return;
+    setDealLeadValidated((m) => ({ ...m, [id]: true }));
+    Object.assign(deal, { leadValidated: true, apiStage: "rfi_answered" });
+    fetch(`/api/deals/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: "rfi_answered" }) }).catch(console.error);
+    notify(`${deal.title} — lead validated.`);
+  };
+
+  const requestMoveDeal = (id: string, stage: Stage) => {
+    const deal = dealById(id);
+    if (!deal) return;
+    const current = dealStage[id] ?? deal.stage;
+    const validated = dealLeadValidated[id] ?? deal.leadValidated ?? false;
+    if (current === "lead" && stage === "offer" && !validated) {
+      setLeadValidationPrompt({ dealId: id, targetStage: stage });
+      return;
+    }
+    moveDeal(id, stage);
+  };
+
+  const addOffer = (offer: Offer) => {
+    seedOffers.unshift(offer);
+    bumpAccounts();
+  };
+
+  const addCase = (caseRec: CaseRecord) => {
+    seedCases.unshift(caseRec);
+    bumpAccounts();
   };
 
   const decideOffer = (offerId: string, decision: "approved" | "rejected", note?: string) => {
@@ -2503,11 +2816,17 @@ function MainApp() {
     user,
     go: (s) => { setScreen(s); setDrawer(null); setMenuOpen(false); },
     openAccount: (id) => { setAccountId(id); setDrawer({ kind: "account", id }); setMenuOpen(false); },
-    openOffers: (id) => { setOfferFocus(id); setScreen("offers"); setDrawer(null); setMenuOpen(false); },
+    openDeal: (id) => { setDealId(id); setScreen("deal"); setDrawer(null); setMenuOpen(false); },
+    openOffers: (id) => {
+      const offer = id ? seedOffers.find((o) => o.id === id) : undefined;
+      if (offer) { setDealId(offer.dealId); setScreen("deal"); }
+      else { setOfferFocus(id); setScreen("offers"); }
+      setDrawer(null); setMenuOpen(false);
+    },
     openCase: (id) => { setCaseId(id); setDrawer({ kind: "case", id }); setMenuOpen(false); },
     notify,
-    dealStage, moveDeal,
-    offerState, decideOffer,
+    dealStage, dealLeadValidated, requestMoveDeal, validateLead, moveDeal,
+    offerState, decideOffer, addOffer, addCase,
     insightStatus, setInsight: (id, s) => setInsightStatus((m) => ({ ...m, [id]: s })),
     caseNotes, addNote: (cid, n) => setCaseNotes((m) => ({ ...m, [cid]: [n, ...(m[cid] ?? [])] })),
     patch, eff, addAccount, addDeal, updateDeal,
@@ -2528,13 +2847,14 @@ function MainApp() {
   else if (screen === "accounts") content = <AccountsView ctx={ctx} />;
   else if (screen === "account") content = <AccountRecord account={accountById(accountId)!} ctx={ctx} />;
   else if (screen === "deals") content = <DealsView ctx={ctx} />;
+  else if (screen === "deal") content = <DealDetail deal={dealById(dealId)!} ctx={ctx} />;
   else if (screen === "cases") content = <CasesView ctx={ctx} />;
   else if ((screen as string) === "case") content = <CaseDetail caseRec={seedCases.find((c) => c.id === caseId)!} ctx={ctx} />;
   else if (screen === "offers") content = <OffersView ctx={ctx} focus={offerFocus} />;
   else if (screen === "forecast") content = <ForecastView ctx={ctx} />;
   else content = <CatalogView ctx={ctx} />;
 
-  const activeNav = screen === "account" ? "accounts" : (screen as string) === "case" ? "cases" : screen;
+  const activeNav = screen === "account" ? "accounts" : screen === "deal" ? "deals" : (screen as string) === "case" ? "cases" : screen;
 
   return (
     <div className="shell">
@@ -2636,6 +2956,19 @@ function MainApp() {
       </footer>
 
       {toast && <div className="toast" role="status">{toast.msg}</div>}
+      {leadValidationPrompt && (
+        <ConfirmModal
+          title="Are you validating this lead?"
+          body="Moving this deal to Offer confirms the lead is qualified. Do you want to validate the lead and advance the deal?"
+          confirmLabel="Yes, validate and move to Offer"
+          onConfirm={() => {
+            validateLead(leadValidationPrompt.dealId);
+            moveDeal(leadValidationPrompt.dealId, leadValidationPrompt.targetStage);
+            setLeadValidationPrompt(null);
+          }}
+          onCancel={() => setLeadValidationPrompt(null)}
+        />
+      )}
       {menuOpen && <button className="scrim" aria-label="Close menu" onClick={() => setMenuOpen(false)} type="button" />}
     </div>
   );

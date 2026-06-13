@@ -201,15 +201,16 @@ app.get('/', async (c) => {
       ownerId: d.ownerUserId,
       title: d.title,
       stage: d.stage === 'interest_shown' || d.stage === 'rfi_answered'
-        ? 'opportunity'
-        : d.stage === 'rfp_given' || d.stage === 'customer_test'
-          ? 'pipeline'
-          : d.stage === 'contract_negotiation'
-            ? 'committed'
-            : d.stage === 'won'
-              ? 'confirmed'
+        ? 'lead'
+        : d.stage === 'rfp_given'
+          ? 'offer'
+          : d.stage === 'customer_test'
+            ? 'customer_testing'
+            : d.stage === 'contract_negotiation'
+              ? 'final_negotiation'
               : 'closed',
       apiStage: d.stage,
+      leadValidated: d.stage !== 'interest_shown',
       channel: d.channel,
       isPilot: d.isPilot,
       expectedClose: d.expectedClose,

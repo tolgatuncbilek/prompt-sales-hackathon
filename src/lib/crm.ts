@@ -8,13 +8,13 @@
 
 export type Role = "sales_rep" | "tam" | "sales_manager" | "finance";
 
-// Deal status — HMD's commitment ladder from example_columns.csv.
+// Deal pipeline — Lead → Offer → Customer testing → Final negotiation → Closed.
 export type Stage =
-  | "opportunity" // Negotiation (Opportunity)
-  | "pipeline" // Offer in (Pipeline)
-  | "committed" // LOI signed (Committed)
-  | "confirmed" // Contract signed (Confirmed)
-  | "closed"; // Closed
+  | "lead"
+  | "offer"
+  | "customer_testing"
+  | "final_negotiation"
+  | "closed";
 
 export type Channel = "direct" | "reseller";
 export type ApiStage =
@@ -98,6 +98,8 @@ export type Deal = {
   title: string;
   stage: Stage;
   apiStage?: ApiStage;
+  /** True once the rep has confirmed the lead is qualified. */
+  leadValidated?: boolean;
   channel: Channel;
   isPilot: boolean;
   expectedClose: string; // ISO date
@@ -147,6 +149,7 @@ export type CaseRecord = {
   id: string;
   ref: string;
   accountId: string;
+  dealId?: string | null;
   serviceId: string | null;
   ownerId: string;
   contactId: string | null;
@@ -248,18 +251,39 @@ export type Notification = {
 export const TODAY = new Date("2026-06-13T09:00:00Z");
 
 export const STAGE_META: Record<Stage, { label: string; short: string; csv: string; probability: number; order: number }> = {
-  opportunity: { label: "Lead Validated", short: "Lead Validated", csv: "Need confirmed · 25%", probability: 0.25, order: 0 },
-  pipeline: { label: "Offer & Trial", short: "Offer & Trial", csv: "Offer sent · device trial · 50%", probability: 0.5, order: 1 },
-  committed: { label: "Contract Negotiation", short: "Contract Negotiation", csv: "Redlining · legal review · 80%", probability: 0.8, order: 2 },
-  confirmed: { label: "Contract Signed", short: "Contract Signed", csv: "Deal won · 100%", probability: 1, order: 3 },
-  closed: { label: "Closed", short: "Closed", csv: "Delivered", probability: 1, order: 4 },
+  lead: { label: "Lead", short: "Lead", csv: "Discovery · 10%", probability: 0.1, order: 0 },
+  offer: { label: "Offer", short: "Offer", csv: "Offer sent · 30%", probability: 0.3, order: 1 },
+  customer_testing: { label: "Customer testing", short: "Customer testing", csv: "Device trial · 50%", probability: 0.5, order: 2 },
+  final_negotiation: { label: "Final negotiation", short: "Final negotiation", csv: "Contract redlining · 80%", probability: 0.8, order: 3 },
+  closed: { label: "Closed", short: "Closed", csv: "Contract signed", probability: 1, order: 4 },
 };
 
 /** Every selectable deal status, in ladder order. */
-export const STATUSES: Stage[] = ["opportunity", "pipeline", "committed", "confirmed", "closed"];
+export const STATUSES: Stage[] = ["lead", "offer", "customer_testing", "final_negotiation", "closed"];
 
 /** Open statuses (everything before Closed) — the forecast-bearing tiers. */
-export const OPEN_STATUSES: Stage[] = ["opportunity", "pipeline", "committed", "confirmed"];
+export const OPEN_STATUSES: Stage[] = ["lead", "offer", "customer_testing", "final_negotiation"];
+
+/** Map UI stages to the DB/API enum values. */
+export const STAGE_TO_API: Record<Stage, ApiStage> = {
+  lead: "interest_shown",
+  offer: "rfp_given",
+  customer_testing: "customer_test",
+  final_negotiation: "contract_negotiation",
+  closed: "won",
+};
+
+export function stageFromApi(apiStage: ApiStage): Stage {
+  if (apiStage === "interest_shown" || apiStage === "rfi_answered") return "lead";
+  if (apiStage === "rfp_given") return "offer";
+  if (apiStage === "customer_test") return "customer_testing";
+  if (apiStage === "contract_negotiation") return "final_negotiation";
+  return "closed";
+}
+
+export function leadValidatedFromApi(apiStage: ApiStage): boolean {
+  return apiStage !== "interest_shown";
+}
 
 export function pipelineStages(_channel?: Channel): Stage[] {
   return STATUSES;
@@ -496,7 +520,8 @@ export let deals: Deal[] = [
     parentDealId: "d_nordcom_pilot",
     ownerId: "u_aino",
     title: "Field crew rollout — wave 2",
-    stage: "committed",
+    stage: "customer_testing",
+    leadValidated: true,
     channel: "direct",
     isPilot: false,
     expectedClose: "2026-07-18",
@@ -531,7 +556,8 @@ export let deals: Deal[] = [
     parentDealId: null,
     ownerId: "u_elias",
     title: "Driver terminal refresh",
-    stage: "pipeline",
+    stage: "offer",
+    leadValidated: true,
     channel: "reseller",
     isPilot: false,
     expectedClose: "2026-09-04",
@@ -550,7 +576,8 @@ export let deals: Deal[] = [
     parentDealId: null,
     ownerId: "u_aino",
     title: "Frame renewal 2026–2029",
-    stage: "committed",
+    stage: "final_negotiation",
+    leadValidated: true,
     channel: "direct",
     isPilot: false,
     expectedClose: "2026-06-06",
@@ -570,7 +597,8 @@ export let deals: Deal[] = [
     parentDealId: null,
     ownerId: "u_aino",
     title: "Body-worn device program (contract signed)",
-    stage: "confirmed",
+    stage: "closed",
+    leadValidated: true,
     channel: "direct",
     isPilot: false,
     expectedClose: "2026-06-01",
@@ -589,7 +617,8 @@ export let deals: Deal[] = [
     parentDealId: null,
     ownerId: "u_elias",
     title: "Site maintenance pilot",
-    stage: "opportunity",
+    stage: "lead",
+    leadValidated: false,
     channel: "direct",
     isPilot: true,
     expectedClose: "2026-11-20",
@@ -608,7 +637,8 @@ export let deals: Deal[] = [
     parentDealId: null,
     ownerId: "u_elias",
     title: "Antwerp pilot — facilities crews",
-    stage: "committed",
+    stage: "final_negotiation",
+    leadValidated: true,
     channel: "reseller",
     isPilot: true,
     expectedClose: "2026-08-29",
@@ -727,7 +757,7 @@ export let serviceContracts: ServiceContract[] = [
 
 export let cases: CaseRecord[] = [
   {
-    id: "case_3041", ref: "CASE-3041", accountId: "a_nordcom", serviceId: "s_mdm", ownerId: "u_sara", contactId: "c_nordcom_1",
+    id: "case_3041", ref: "CASE-3041", accountId: "a_nordcom", dealId: "d_nordcom", serviceId: "s_mdm", ownerId: "u_sara", contactId: "c_nordcom_1",
     title: "Battery policy clarification for cold-storage crews", status: "in_progress", priority: "high", escalated: false,
     thirdPartyRef: null, slaDeadline: "2026-06-15", createdAt: "2026-06-04", updatedAt: "2026-06-11",
     notes: [
@@ -736,7 +766,7 @@ export let cases: CaseRecord[] = [
     ],
   },
   {
-    id: "case_2987", ref: "CASE-2987", accountId: "a_nordcom", serviceId: "s_mdm", ownerId: "u_oskari", contactId: "c_nordcom_2",
+    id: "case_2987", ref: "CASE-2987", accountId: "a_nordcom", dealId: "d_nordcom", serviceId: "s_mdm", ownerId: "u_oskari", contactId: "c_nordcom_2",
     title: "MDM enrolment failed on 4 devices", status: "open", priority: "medium", escalated: false,
     thirdPartyRef: null, slaDeadline: "2026-06-18", createdAt: "2026-06-09", updatedAt: "2026-06-09",
     notes: [
@@ -1002,6 +1032,12 @@ export function insightsForAccount(accountId: string): AiInsight[] {
 export function serviceContractsForDeal(dealId: string): ServiceContract[] {
   return serviceContracts.filter((sc) => sc.dealId === dealId);
 }
+export function offersForDeal(dealId: string): Offer[] {
+  return offers.filter((o) => o.dealId === dealId);
+}
+export function casesForDeal(dealId: string): CaseRecord[] {
+  return cases.filter((c) => c.dealId === dealId);
+}
 export function offerForDeal(dealId: string): Offer | undefined {
   return offers.find((o) => o.dealId === dealId);
 }
@@ -1103,8 +1139,8 @@ export function dealRisk(deal: Deal): { level: RiskLevel; label: string; detail:
   if (isStale(deal)) {
     return { level: "stale", label: "Stalled", detail: `No update for ${daysSinceUpdate(deal)}d` };
   }
-  if (deal.stage === "opportunity") {
-    return { level: "early", label: "Early", detail: "Discovery in progress" };
+  if (deal.stage === "lead") {
+    return { level: "early", label: "Early", detail: "Lead in discovery" };
   }
   const toClose = -daysBetween(TODAY, new Date(deal.expectedClose));
   if (toClose <= 30) return { level: "watch", label: "Closing soon", detail: `Closes in ${toClose}d` };
@@ -1294,11 +1330,11 @@ export function weightedForecast(dealList: Deal[], m: Measure): number {
   return dealList.filter(inForecast).reduce((s, d) => s + STAGE_META[d.stage].probability * dealMeasureTotal(d, m), 0);
 }
 
-/** Value secured at Committed + Confirmed tiers (LOI signed and beyond). */
+/** Value secured at Final negotiation and beyond. */
 export function securedForecast(dealList: Deal[], m: Measure): number {
   return dealList
     .filter(inForecast)
-    .filter((d) => d.stage === "committed" || d.stage === "confirmed")
+    .filter((d) => d.stage === "final_negotiation")
     .reduce((s, d) => s + dealMeasureTotal(d, m), 0);
 }
 

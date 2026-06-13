@@ -399,13 +399,34 @@ tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
 /* Deal status tag (HMD commitment ladder from the CSV) */
 .status-tag { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; color: #c3ccd9; white-space: nowrap; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--raised); flex: 0 0 auto; }
-.status-tag--opportunity .status-dot { background: rgba(47, 212, 198, 0.35); }
-.status-tag--pipeline .status-dot { background: rgba(47, 212, 198, 0.58); }
-.status-tag--committed .status-dot { background: rgba(47, 212, 198, 0.8); }
-.status-tag--confirmed { color: var(--accent); }
-.status-tag--confirmed .status-dot { background: var(--accent); }
-.status-tag--closed { color: var(--ink-3); }
-.status-tag--closed .status-dot { background: var(--ink-3); }
+.status-tag--lead .status-dot { background: rgba(47, 212, 198, 0.35); }
+.status-tag--offer .status-dot { background: rgba(47, 212, 198, 0.52); }
+.status-tag--customer_testing .status-dot { background: rgba(47, 212, 198, 0.68); }
+.status-tag--final_negotiation .status-dot { background: rgba(47, 212, 198, 0.85); }
+.status-tag--closed { color: var(--accent); }
+.status-tag--closed .status-dot { background: var(--accent); }
+.deal-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.modal--sm { max-width: 28rem; }
+.validated-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(196, 255, 0, 0.35);
+  border-radius: 2px;
+  background: var(--accent-soft);
+}
 
 /* Inline cell editing (spreadsheet-speed) */
 .cell-edit { padding: 0; position: relative; display: inline-flex; align-items: center; }
@@ -702,10 +723,10 @@ tbody tr:hover .row-open { color: var(--ink-2); }
    amber for service; a restrained categorical set for regions. Always paired
    with text labels in the legend (never colour alone). */
 .fbar-track .fseg { display: block; width: 100%; }
-.fseg--tier-opportunity, .swatch.fseg--tier-opportunity { background: rgba(47, 212, 198, 0.30); }
-.fseg--tier-pipeline, .swatch.fseg--tier-pipeline { background: rgba(47, 212, 198, 0.52); }
-.fseg--tier-committed, .swatch.fseg--tier-committed { background: rgba(47, 212, 198, 0.76); }
-.fseg--tier-confirmed, .swatch.fseg--tier-confirmed { background: var(--accent); }
+.fseg--tier-lead, .swatch.fseg--tier-lead { background: rgba(47, 212, 198, 0.30); }
+.fseg--tier-offer, .swatch.fseg--tier-offer { background: rgba(47, 212, 198, 0.48); }
+.fseg--tier-customer_testing, .swatch.fseg--tier-customer_testing { background: rgba(47, 212, 198, 0.64); }
+.fseg--tier-final_negotiation, .swatch.fseg--tier-final_negotiation { background: rgba(47, 212, 198, 0.82); }
 .fseg--device, .swatch.fseg--device { background: var(--accent); }
 .fseg--service, .swatch.fseg--service { background: var(--amber); }
 .fseg--r0, .swatch.fseg--r0 { background: var(--accent); }
@@ -729,11 +750,11 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .board-col-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .board-col-head strong { font-size: 11px; font-weight: 650; }
 .board-col-title small { color: var(--ink-3); font-size: 9.5px; font-weight: 600; letter-spacing: 0.03em; }
-.board-col--opportunity { box-shadow: inset 0 2px 0 rgba(47, 212, 198, 0.30); }
-.board-col--pipeline { box-shadow: inset 0 2px 0 rgba(47, 212, 198, 0.52); }
-.board-col--committed { box-shadow: inset 0 2px 0 rgba(47, 212, 198, 0.76); }
-.board-col--confirmed { box-shadow: inset 0 2px 0 var(--accent); }
-.board-col--closed { box-shadow: inset 0 2px 0 var(--ink-3); opacity: 0.92; }
+.board-col--lead { box-shadow: inset 0 2px 0 rgba(47, 212, 198, 0.30); }
+.board-col--offer { box-shadow: inset 0 2px 0 rgba(47, 212, 198, 0.48); }
+.board-col--customer_testing { box-shadow: inset 0 2px 0 rgba(47, 212, 198, 0.64); }
+.board-col--final_negotiation { box-shadow: inset 0 2px 0 rgba(47, 212, 198, 0.82); }
+.board-col--closed { box-shadow: inset 0 2px 0 var(--accent); opacity: 0.92; }
 .deal-card--static { cursor: default; }
 .deal-card--static:active { cursor: default; }
 .board-count { min-width: 20px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--raised); color: var(--ink-2); font-size: 10px; font-weight: 650; text-align: center; }
