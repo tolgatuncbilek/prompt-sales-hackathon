@@ -676,17 +676,26 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .offer-sheet { padding: 4px 20px; border-radius: var(--r-surface); background: var(--paper); color: var(--paper-ink); }
 .offer-table { width: 100%; font-size: 12.5px; }
 .offer-table th, .offer-table td { height: 44px; border-bottom: 1px solid var(--paper-rule); }
-.offer-table thead th { color: #5a6678; }
+.offer-table thead { background: transparent; }
+.offer-table thead th { color: var(--paper-ink); opacity: 0.55; }
+.offer-table tbody tr:hover { background: rgba(22, 32, 46, 0.06); }
 .offer-table tbody td { color: var(--paper-ink); }
 .offer-table .mini-tag { background: #e3e9f1; color: #5a6678; }
 .offer-table tfoot td { height: 38px; color: #44505f; border-bottom: 0; }
 .offer-table tfoot .offer-net td { font-size: 14px; color: var(--paper-ink); border-top: 2px solid var(--paper-rule); }
-.offer-sheet .cell-input {
-  width: 100%; min-width: 0; border: 1px solid transparent; border-radius: 4px;
-  background: transparent; color: var(--paper-ink); font-size: inherit; padding: 4px 6px;
+.offer-sheet .cell-input,
+.offer-sheet .offer-cell-input {
+  width: 100%; min-width: 0; border: 1px solid #c5d0dc; border-radius: 4px;
+  background: #fff; color: var(--paper-ink); font-size: inherit; padding: 6px 8px;
+  cursor: text; transition: border-color var(--t-fast), box-shadow var(--t-fast);
 }
-.offer-sheet .cell-input:hover { border-color: var(--paper-rule); background: rgba(255, 255, 255, 0.6); }
-.offer-sheet .cell-input:focus { outline: none; border-color: #5a6678; background: #fff; }
+.offer-sheet .cell-input:hover,
+.offer-sheet .offer-cell-input:hover { border-color: #9aa8b8; }
+.offer-sheet .cell-input:focus,
+.offer-sheet .offer-cell-input:focus { outline: none; border-color: #5a6678; box-shadow: 0 0 0 2px rgba(90, 102, 120, 0.18); }
+.offer-sheet td .offer-cell-input { font-weight: 500; min-height: 32px; }
+.offer-sheet tfoot .offer-cell-input { max-width: 96px; margin-left: auto; }
+.offer-edit-hint { margin: -8px 0 14px; font-size: 11.5px; }
 .offer-sheet .cell-num { display: inline-flex; align-items: center; justify-content: flex-end; width: 100%; gap: 2px; }
 .offer-sheet .cell-num-prefix { color: #5a6678; }
 .offer-just-input {
@@ -752,10 +761,12 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .forecast-sheet { padding: 4px 20px 8px; border-radius: var(--r-surface); background: var(--paper); color: var(--paper-ink); margin-bottom: 28px; overflow-x: auto; }
 .forecast-table { width: 100%; font-size: 12.5px; }
 .forecast-table th, .forecast-table td { height: 48px; border-bottom: 1px solid var(--paper-rule); }
-.forecast-table thead th { color: #5a6678; }
+.forecast-table thead { background: transparent; }
+.forecast-table thead th { color: var(--paper-ink); opacity: 0.55; }
+.forecast-table tbody tr:hover { background: rgba(22, 32, 46, 0.06); }
 .forecast-table tbody th { color: var(--paper-ink); }
 .forecast-table tbody th .swatch { margin-right: 8px; vertical-align: 0; }
-.forecast-table tbody td { color: #2a3543; }
+.forecast-table tbody td { color: var(--paper-ink); }
 .forecast-table tfoot th, .forecast-table tfoot td { height: 44px; color: var(--paper-ink); border-bottom: 0; border-top: 2px solid var(--paper-rule); }
 
 .forecast-bars { display: flex; align-items: flex-end; gap: 14px; height: 200px; padding: 12px 0; }
