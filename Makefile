@@ -1,4 +1,4 @@
-.PHONY: build up down restart logs dev clean
+.PHONY: build up down restart reup logs dev clean
 
 build:
 	docker compose build
@@ -10,6 +10,8 @@ down:
 	docker compose down
 
 restart: down up
+
+reup: build up
 
 logs:
 	docker compose logs -f
