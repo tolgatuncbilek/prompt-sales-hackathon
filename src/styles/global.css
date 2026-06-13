@@ -680,18 +680,22 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .offer-table thead th { color: var(--paper-ink); opacity: 0.55; }
 .offer-table tbody tr:hover { background: rgba(22, 32, 46, 0.06); }
 .offer-table tbody td { color: var(--paper-ink); }
-.offer-table .mini-tag { background: rgba(90, 102, 120, 0.12); color: var(--paper-ink); opacity: 0.7; }
-.offer-table tfoot td { height: 38px; color: var(--paper-ink); opacity: 0.65; border-bottom: 0; }
-.offer-table tfoot .offer-net td { font-size: 14px; color: var(--paper-ink); opacity: 1; border-top: 2px solid var(--paper-rule); }
-.offer-sheet .cell-input {
-  width: 100%; min-width: 0; border: 1px solid var(--paper-rule); border-radius: 4px;
-  background: rgba(255, 255, 255, 0.72); color: var(--paper-ink); font-size: inherit; padding: 4px 8px;
-  cursor: text; transition: border-color var(--t-fast), background var(--t-fast), box-shadow var(--t-fast);
+.offer-table .mini-tag { background: #e3e9f1; color: #5a6678; }
+.offer-table tfoot td { height: 38px; color: #44505f; border-bottom: 0; }
+.offer-table tfoot .offer-net td { font-size: 14px; color: var(--paper-ink); border-top: 2px solid var(--paper-rule); }
+.offer-sheet .cell-input,
+.offer-sheet .offer-cell-input {
+  width: 100%; min-width: 0; border: 1px solid #c5d0dc; border-radius: 4px;
+  background: #fff; color: var(--paper-ink); font-size: inherit; padding: 6px 8px;
+  cursor: text; transition: border-color var(--t-fast), box-shadow var(--t-fast);
 }
-.offer-sheet .cell-input:hover { border-color: #9aa8b8; background: #fff; }
-.offer-sheet .cell-input:focus { outline: none; border-color: #5a6678; background: #fff; box-shadow: 0 0 0 2px rgba(90, 102, 120, 0.15); }
-.offer-sheet td .cell-input { font-weight: 500; }
-.offer-sheet tfoot .cell-input { max-width: 88px; margin-left: auto; }
+.offer-sheet .cell-input:hover,
+.offer-sheet .offer-cell-input:hover { border-color: #9aa8b8; }
+.offer-sheet .cell-input:focus,
+.offer-sheet .offer-cell-input:focus { outline: none; border-color: #5a6678; box-shadow: 0 0 0 2px rgba(90, 102, 120, 0.18); }
+.offer-sheet td .offer-cell-input { font-weight: 500; min-height: 32px; }
+.offer-sheet tfoot .offer-cell-input { max-width: 96px; margin-left: auto; }
+.offer-edit-hint { margin: -8px 0 14px; font-size: 11.5px; }
 .offer-sheet .cell-num { display: inline-flex; align-items: center; justify-content: flex-end; width: 100%; gap: 2px; }
 .offer-sheet .cell-num-prefix { color: #5a6678; }
 .offer-just-input {

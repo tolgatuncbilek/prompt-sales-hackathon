@@ -1446,7 +1446,6 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
                   <OfferDetailPanel
                     offer={selectedOffer}
                     ctx={ctx}
-                    editable
                     onBuildOffer={() => setBuildOfferModal(true)}
                   />
                 )}
@@ -1727,22 +1726,86 @@ function BuildOfferModal({
   );
 }
 
+function OfferEditText({ value, onCommit, placeholder }: { value: string; onCommit: (v: string) => void; placeholder?: string }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => { setDraft(value); }, [value]);
+  return (
+    <input
+      type="text"
+      className="cell-input offer-cell-input"
+      value={draft}
+      placeholder={placeholder}
+      aria-label="Item name"
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        const v = draft.trim();
+        if (v && v !== value) onCommit(v);
+        else setDraft(value);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") { setDraft(value); e.currentTarget.blur(); }
+      }}
+    />
+  );
+}
+
+function OfferEditNumber({
+  value, onCommit, prefix, min, max, integer, ariaLabel,
+}: {
+  value: number; onCommit: (v: number) => void; prefix?: string; min?: number; max?: number; integer?: boolean; ariaLabel?: string;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => { setDraft(String(value)); }, [value]);
+
+  const commit = () => {
+    let v = Number(draft);
+    if (Number.isNaN(v)) { setDraft(String(value)); return; }
+    if (integer) v = Math.round(v);
+    if (min !== undefined) v = Math.max(min, v);
+    if (max !== undefined) v = Math.min(max, v);
+    if (v !== value) onCommit(v);
+    setDraft(String(v !== value ? v : value));
+  };
+
+  return (
+    <span className="cell-num" onClick={(e) => e.stopPropagation()}>
+      {prefix && <span className="cell-num-prefix">{prefix}</span>}
+      <input
+        type="number"
+        className="cell-input cell-input--num offer-cell-input"
+        value={draft}
+        aria-label={ariaLabel}
+        min={min}
+        max={max}
+        step={integer ? 1 : "any"}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") { setDraft(String(value)); e.currentTarget.blur(); }
+        }}
+      />
+    </span>
+  );
+}
+
 function OfferDetailPanel({
   offer,
   ctx,
   onBuildOffer,
-  editable,
 }: {
   offer: Offer;
   ctx: AppCtx;
   onBuildOffer?: () => void;
-  editable?: boolean;
 }) {
   const deal = dealById(offer.dealId)!;
   const account = accountById(deal.accountId)!;
   const canManager = ctx.user.role === "sales_manager" && offer.status === "pending_manager";
   const canFinance = ctx.user.role === "finance" && offer.status === "pending_finance";
-  const canEdit = Boolean(editable) && offer.status !== "locked" && offer.status !== "rejected" && !offer.lockedAt;
+  const canEdit = offer.status !== "rejected";
 
   const listTotal = offerLinesNetTotal(offer);
   const netTotal = offerGrandNet(offer);
@@ -1783,7 +1846,7 @@ function OfferDetailPanel({
               <tr key={i}>
                 <td>
                   {canEdit ? (
-                    <CellText value={l.label} onCommit={(v) => patchLine(i, { label: v })} />
+                    <OfferEditText value={l.label} onCommit={(v) => patchLine(i, { label: v })} />
                   ) : (
                     l.label
                   )}
@@ -1791,25 +1854,26 @@ function OfferDetailPanel({
                 </td>
                 <td className="numeric">
                   {canEdit ? (
-                    <CellNumber value={l.unitPrice} prefix="€" min={0} onCommit={(v) => patchLine(i, { unitPrice: v })} />
+                    <OfferEditNumber value={l.unitPrice} prefix="€" min={0} ariaLabel="Unit price" onCommit={(v) => patchLine(i, { unitPrice: v })} />
                   ) : fmtEurExact(l.unitPrice)}
                 </td>
                 <td className="numeric">
                   {canEdit ? (
-                    <CellNumber value={l.quantity} min={1} integer onCommit={(v) => patchLine(i, { quantity: Math.max(1, Math.round(v)) })} />
+                    <OfferEditNumber value={l.quantity} min={1} integer ariaLabel="Quantity" onCommit={(v) => patchLine(i, { quantity: Math.max(1, Math.round(v)) })} />
                   ) : l.quantity.toLocaleString("en-IE")}
                 </td>
                 <td className="numeric">
                   {canEdit ? (
-                    <CellNumber value={l.discountPct} min={0} max={100} onCommit={(v) => patchLine(i, { discountPct: v })} />
+                    <OfferEditNumber value={l.discountPct} min={0} max={100} ariaLabel="Discount percent" onCommit={(v) => patchLine(i, { discountPct: v })} />
                   ) : l.discountPct > 0 ? `${l.discountPct}%` : "—"}
                 </td>
                 <td className="numeric numeric--strong">
                   {canEdit ? (
-                    <CellNumber
+                    <OfferEditNumber
                       value={Math.round(lineNet(l) * 100) / 100}
                       prefix="€"
                       min={0}
+                      ariaLabel="Net value"
                       onCommit={(v) => patchLine(i, { unitPrice: unitPriceForLineNet(l, v) })}
                     />
                   ) : fmtEurExact(lineNet(l))}
@@ -1823,7 +1887,7 @@ function OfferDetailPanel({
               <td colSpan={4}>Headline discount</td>
               <td className="numeric">
                 {canEdit ? (
-                  <CellNumber value={offer.discountPct} min={0} max={100} onCommit={(v) => patchOffer((o) => ({ ...o, discountPct: v }))} />
+                  <OfferEditNumber value={offer.discountPct} min={0} max={100} ariaLabel="Headline discount percent" onCommit={(v) => patchOffer((o) => ({ ...o, discountPct: v }))} />
                 ) : `${offer.discountPct}%`}
               </td>
             </tr>
@@ -1831,6 +1895,10 @@ function OfferDetailPanel({
           </tfoot>
         </table>
       </div>
+
+      {canEdit && (
+        <p className="offer-edit-hint muted">Click any field to edit. Press Enter or click away to save.</p>
+      )}
 
       {(canEdit || offer.justification) && (
         <div className="approval-just">
@@ -3148,9 +3216,7 @@ function MainApp() {
     const idx = seedOffers.findIndex((o) => o.id === offerId);
     if (idx >= 0) seedOffers[idx] = updated;
     bumpAccounts();
-    if (updated.status === "draft" || updated.status === "pending_manager" || updated.status === "pending_finance") {
-      persistOfferUpdateToApi(updated);
-    }
+    if (updated.status !== "rejected") persistOfferUpdateToApi(updated);
   };
 
   const addCase = (caseRec: CaseRecord) => {
