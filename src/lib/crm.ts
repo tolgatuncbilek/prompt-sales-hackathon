@@ -8,14 +8,13 @@
 
 export type Role = "sales_rep" | "tam" | "sales_manager" | "finance";
 
+// Deal status — HMD's commitment ladder from example_columns.csv.
 export type Stage =
-  | "interest_shown"
-  | "rfi_answered"
-  | "rfp_given"
-  | "customer_test"
-  | "contract_negotiation"
-  | "won"
-  | "lost";
+  | "opportunity" // Negotiation (Opportunity)
+  | "pipeline" // Offer in (Pipeline)
+  | "committed" // LOI signed (Committed)
+  | "confirmed" // Contract signed (Confirmed)
+  | "closed"; // Closed
 
 export type Channel = "direct" | "reseller";
 
@@ -239,63 +238,34 @@ export type Notification = {
 /** App "today". The README demo scenario is dated June 2026. */
 export const TODAY = new Date("2026-06-13T09:00:00Z");
 
-export const STAGE_META: Record<Stage, { label: string; win: string; probability: number; order: number }> = {
-  interest_shown: { label: "Interest shown", win: "Low", probability: 0.1, order: 0 },
-  rfi_answered: { label: "RFI answered", win: "Low–medium", probability: 0.25, order: 1 },
-  rfp_given: { label: "RFP / offer given", win: "Medium", probability: 0.45, order: 2 },
-  customer_test: { label: "Customer test", win: "High", probability: 0.65, order: 3 },
-  contract_negotiation: { label: "Contract negotiation", win: "Very high", probability: 0.85, order: 4 },
-  won: { label: "Won", win: "Final", probability: 1, order: 5 },
-  lost: { label: "Lost", win: "Final", probability: 0, order: 6 },
+export const STAGE_META: Record<Stage, { label: string; short: string; csv: string; probability: number; order: number }> = {
+  opportunity: { label: "Negotiation (Opportunity)", short: "Opportunity", csv: "Negotiation", probability: 0.25, order: 0 },
+  pipeline: { label: "Offer in (Pipeline)", short: "Pipeline", csv: "Offer in", probability: 0.5, order: 1 },
+  committed: { label: "LOI signed (Committed)", short: "Committed", csv: "LOI signed", probability: 0.8, order: 2 },
+  confirmed: { label: "Contract signed (Confirmed)", short: "Confirmed", csv: "Contract signed", probability: 1, order: 3 },
+  closed: { label: "Closed", short: "Closed", csv: "Closed", probability: 1, order: 4 },
 };
 
-/** Reseller deals skip contract_negotiation (crm_schema business rule 1). */
-export function pipelineStages(channel: Channel): Stage[] {
-  const open: Stage[] = ["interest_shown", "rfi_answered", "rfp_given", "customer_test", "contract_negotiation"];
-  return channel === "reseller" ? open.filter((s) => s !== "contract_negotiation") : open;
+/** Every selectable deal status, in ladder order. */
+export const STATUSES: Stage[] = ["opportunity", "pipeline", "committed", "confirmed", "closed"];
+
+/** Open statuses (everything before Closed) — the forecast-bearing tiers. */
+export const OPEN_STATUSES: Stage[] = ["opportunity", "pipeline", "committed", "confirmed"];
+
+export function pipelineStages(_channel?: Channel): Stage[] {
+  return STATUSES;
 }
 
 // ---------------------------------------------------------------------------
-// Commitment tiers — HMD's own forecast vocabulary (example_columns.csv).
-// The Excel sheet categorises forecast value into a cumulative confidence
-// ladder rather than a continuous probability. We derive the tier from the
-// pipeline stage so the two lenses (pipeline stage / finance commitment) stay
-// in sync, and use each tier's weight as the forecast weighting.
+// Forecast commitment — the deal status IS the commitment tier (the CSV ladder).
+// The four open statuses carry forecast value, weighted by STAGE_META; Closed
+// (delivered) drops out of the forward forecast.
 // ---------------------------------------------------------------------------
 
-export type Tier = "opportunity" | "pipeline" | "committed" | "confirmed" | "lost";
+export const TIERS: Stage[] = OPEN_STATUSES;
 
-export const TIERS: Tier[] = ["opportunity", "pipeline", "committed", "confirmed"];
-
-export const TIER_META: Record<Tier, { label: string; csv: string; weight: number; order: number }> = {
-  opportunity: { label: "Opportunity", csv: "Negotiation", weight: 0.25, order: 0 },
-  pipeline: { label: "Pipeline", csv: "Offer in", weight: 0.5, order: 1 },
-  committed: { label: "Committed", csv: "LOI signed", weight: 0.8, order: 2 },
-  confirmed: { label: "Confirmed", csv: "Contract signed", weight: 1, order: 3 },
-  lost: { label: "Lost / cancelled", csv: "Lost / cancelled", weight: 0, order: 4 },
-};
-
-export function dealTier(stage: Stage): Tier {
-  switch (stage) {
-    case "interest_shown":
-    case "rfi_answered":
-      return "opportunity";
-    case "rfp_given":
-      return "pipeline";
-    case "customer_test":
-    case "contract_negotiation":
-      return "committed";
-    case "won":
-      return "confirmed";
-    case "lost":
-      return "lost";
-  }
-}
-
-/** Lost/cancelled deals drop out of the forecast; everything else (incl.
- *  contract-signed/Confirmed with future-phased delivery) stays in. */
 export function inForecast(deal: Deal): boolean {
-  return dealTier(deal.stage) !== "lost";
+  return deal.stage !== "closed";
 }
 
 export type Measure = "net_sales" | "volume" | "gm";
@@ -517,7 +487,7 @@ export const deals: Deal[] = [
     parentDealId: "d_nordcom_pilot",
     ownerId: "u_aino",
     title: "Field crew rollout — wave 2",
-    stage: "customer_test",
+    stage: "committed",
     channel: "direct",
     isPilot: false,
     expectedClose: "2026-07-18",
@@ -537,7 +507,7 @@ export const deals: Deal[] = [
     parentDealId: null,
     ownerId: "u_aino",
     title: "Pilot — wave 1 (50 devices)",
-    stage: "won",
+    stage: "closed",
     channel: "direct",
     isPilot: true,
     expectedClose: "2026-02-12",
@@ -552,7 +522,7 @@ export const deals: Deal[] = [
     parentDealId: null,
     ownerId: "u_elias",
     title: "Driver terminal refresh",
-    stage: "rfp_given",
+    stage: "pipeline",
     channel: "reseller",
     isPilot: false,
     expectedClose: "2026-09-04",
@@ -571,7 +541,7 @@ export const deals: Deal[] = [
     parentDealId: null,
     ownerId: "u_aino",
     title: "Frame renewal 2026–2029",
-    stage: "contract_negotiation",
+    stage: "committed",
     channel: "direct",
     isPilot: false,
     expectedClose: "2026-06-06",
@@ -591,7 +561,7 @@ export const deals: Deal[] = [
     parentDealId: null,
     ownerId: "u_aino",
     title: "Body-worn device program (contract signed)",
-    stage: "won",
+    stage: "confirmed",
     channel: "direct",
     isPilot: false,
     expectedClose: "2026-06-01",
@@ -610,7 +580,7 @@ export const deals: Deal[] = [
     parentDealId: null,
     ownerId: "u_elias",
     title: "Site maintenance pilot",
-    stage: "interest_shown",
+    stage: "opportunity",
     channel: "direct",
     isPilot: true,
     expectedClose: "2026-11-20",
@@ -629,7 +599,7 @@ export const deals: Deal[] = [
     parentDealId: null,
     ownerId: "u_elias",
     title: "Antwerp pilot — facilities crews",
-    stage: "customer_test",
+    stage: "committed",
     channel: "reseller",
     isPilot: true,
     expectedClose: "2026-08-29",
@@ -1031,10 +1001,8 @@ export function offerForDeal(dealId: string): Offer | undefined {
 // Derived metrics
 // ---------------------------------------------------------------------------
 
-const OPEN_STAGES: Stage[] = ["interest_shown", "rfi_answered", "rfp_given", "customer_test", "contract_negotiation"];
-
 export function isOpen(deal: Deal): boolean {
-  return OPEN_STAGES.includes(deal.stage);
+  return OPEN_STATUSES.includes(deal.stage);
 }
 
 export function fmtEur(amount: number): string {
@@ -1116,6 +1084,9 @@ export function isOverdue(deal: Deal): boolean {
 export type RiskLevel = "overdue" | "stale" | "watch" | "on_track" | "early";
 
 export function dealRisk(deal: Deal): { level: RiskLevel; label: string; detail: string } {
+  if (deal.stage === "closed") {
+    return { level: "on_track", label: "Closed", detail: "Delivered / realised" };
+  }
   if (isOverdue(deal)) {
     const d = daysBetween(TODAY, new Date(deal.expectedClose));
     return { level: "overdue", label: "Overdue", detail: `Close date passed ${d}d ago` };
@@ -1123,7 +1094,7 @@ export function dealRisk(deal: Deal): { level: RiskLevel; label: string; detail:
   if (isStale(deal)) {
     return { level: "stale", label: "Stalled", detail: `No update for ${daysSinceUpdate(deal)}d` };
   }
-  if (deal.stage === "interest_shown") {
+  if (deal.stage === "opportunity") {
     return { level: "early", label: "Early", detail: "Discovery in progress" };
   }
   const toClose = -daysBetween(TODAY, new Date(deal.expectedClose));
@@ -1275,9 +1246,9 @@ export type Series = { key: string; label: string; values: number[]; total: numb
 export function tierSeries(dealList: Deal[], m: Measure): Series[] {
   const inc = dealList.filter(inForecast);
   return TIERS.map((tier) => {
-    const ds = inc.filter((d) => dealTier(d.stage) === tier);
+    const ds = inc.filter((d) => d.stage === tier);
     const values = PERIODS.map((p) => ds.reduce((s, d) => s + dealMeasureInPeriod(d, p, m), 0));
-    return { key: tier, label: TIER_META[tier].label, values, total: values.reduce((a, b) => a + b, 0) };
+    return { key: tier, label: STAGE_META[tier].short, values, total: values.reduce((a, b) => a + b, 0) };
   });
 }
 
@@ -1309,15 +1280,15 @@ export function forecastTotal(dealList: Deal[], m: Measure): number {
   return dealList.filter(inForecast).reduce((s, d) => s + dealMeasureTotal(d, m), 0);
 }
 
-/** Tier-weighted forecast — HMD's commitment ladder as the weighting scheme. */
+/** Status-weighted forecast — HMD's commitment ladder as the weighting scheme. */
 export function weightedForecast(dealList: Deal[], m: Measure): number {
-  return dealList.filter(inForecast).reduce((s, d) => s + TIER_META[dealTier(d.stage)].weight * dealMeasureTotal(d, m), 0);
+  return dealList.filter(inForecast).reduce((s, d) => s + STAGE_META[d.stage].probability * dealMeasureTotal(d, m), 0);
 }
 
 /** Value secured at Committed + Confirmed tiers (LOI signed and beyond). */
 export function securedForecast(dealList: Deal[], m: Measure): number {
   return dealList
     .filter(inForecast)
-    .filter((d) => dealTier(d.stage) === "committed" || dealTier(d.stage) === "confirmed")
+    .filter((d) => d.stage === "committed" || d.stage === "confirmed")
     .reduce((s, d) => s + dealMeasureTotal(d, m), 0);
 }

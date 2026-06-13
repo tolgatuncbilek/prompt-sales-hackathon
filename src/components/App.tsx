@@ -63,9 +63,9 @@ import {
   rollUp,
   sumRows,
   TIERS,
-  TIER_META,
+  STATUSES,
+  OPEN_STATUSES,
   MEASURE_LABEL,
-  dealTier,
   deviceGmPerUnit,
   accountCountry,
   periodBuckets,
@@ -90,7 +90,6 @@ import type {
   Role,
   Series,
   Stage,
-  Tier,
   User,
 } from "../lib/crm.ts";
 
@@ -156,20 +155,11 @@ function Avatar({ name, size }: { name: string; size?: "xs" | "sm" }) {
   return <span className={cx("avatar", size === "xs" && "avatar--xs")} aria-hidden="true">{monogram(name)}</span>;
 }
 
-function StageTag({ stage }: { stage: Stage }) {
-  return <span className="tag tag--stage">{STAGE_META[stage].label}</span>;
-}
-
-function TierTag({ stage }: { stage: Stage }) {
-  const tier = dealTier(stage);
+function StatusTag({ stage }: { stage: Stage }) {
   return (
-    <span className={`tier tier--${tier}`} title={`${TIER_META[tier].label} · ${TIER_META[tier].csv} · ${Math.round(TIER_META[tier].weight * 100)}% weight`}>
-      <span className="tier-dots" aria-hidden="true">
-        {(["opportunity", "pipeline", "committed", "confirmed"] as Tier[]).map((t) => (
-          <i key={t} className={TIER_META[t].order <= TIER_META[tier].order ? "on" : ""} />
-        ))}
-      </span>
-      {TIER_META[tier].label}
+    <span className={`status-tag status-tag--${stage}`} title={STAGE_META[stage].label}>
+      <span className="status-dot" aria-hidden="true" />
+      {STAGE_META[stage].short}
     </span>
   );
 }
@@ -467,11 +457,10 @@ function ManagerDashboard({ ctx }: { ctx: AppCtx }) {
   const all = seedDeals.map((d) => liveStage(ctx, d)).filter(isOpen);
   const open = all.reduce((s, d) => s + dealTotal(d), 0);
   const weighted = all.reduce((s, d) => s + weightedTotal(d), 0);
-  const committed = all.filter((d) => d.stage === "contract_negotiation").reduce((s, d) => s + dealTotal(d), 0);
   const atRisk = all.filter((d) => isStale(d) || isOverdue(d));
   const atRiskValue = atRisk.reduce((s, d) => s + dealTotal(d), 0);
   const target = 6_000_000;
-  const stages = pipelineStages("direct");
+  const stages = OPEN_STATUSES;
   const pendingApprovals = seedOffers.map((o) => ctx.offerState[o.id] ?? o).filter((o) => o.status === "pending_manager");
 
   return (
@@ -483,7 +472,7 @@ function ManagerDashboard({ ctx }: { ctx: AppCtx }) {
         <Kpi label="Gap to target" value={fmtEur(Math.max(0, target - weighted))} tone="danger" hint={`Target ${fmtEur(target)}`} />
       </div>
 
-      <SectionHead title="Pipeline by stage">
+      <SectionHead title="Pipeline by status">
         <button className="ghost-link" onClick={() => ctx.go("deals")} type="button">Open board<Icon name="chevron" /></button>
       </SectionHead>
       <div className="stage-strip">
@@ -492,7 +481,7 @@ function ManagerDashboard({ ctx }: { ctx: AppCtx }) {
           const val = ds.reduce((s, d) => s + dealTotal(d), 0);
           return (
             <div className="stage-cell" key={st}>
-              <span className="stage-cell-label">{STAGE_META[st].label}</span>
+              <span className="stage-cell-label">{STAGE_META[st].short}</span>
               <strong className="stage-cell-count">{ds.length}</strong>
               <small className="numeric">{fmtEur(val)}</small>
               <span className="stage-cell-bar" aria-hidden="true"><i style={{ width: `${Math.min(100, (val / open) * 100)}%` }} /></span>
@@ -758,7 +747,7 @@ function AccountRecord({ account, ctx }: { account: Account; ctx: AppCtx }) {
                   {accDeals.map((d) => (
                     <tr key={d.id}>
                       <th scope="row">{d.title}{d.parentDealId && <small className="muted"><Icon name="link" />follow-on</small>}{d.isPilot && <span className="mini-tag">Pilot</span>}</th>
-                      <td>{d.stage === "won" ? <span className="pill pill--resolved">Won</span> : d.stage === "lost" ? <span className="pill pill--closed">Lost</span> : <StageTag stage={d.stage} />}</td>
+                      <td><StatusTag stage={d.stage} /></td>
                       <td><span className="chan">{d.channel === "direct" ? "Direct" : "Reseller"}</span></td>
                       <td className="numeric">{fmtEur(deviceTotal(d))}</td>
                       <td className="numeric">{fmtEur(serviceTotal(d.id))}</td>
@@ -865,7 +854,6 @@ function AccountRecord({ account, ctx }: { account: Account; ctx: AppCtx }) {
 
 function DealsView({ ctx }: { ctx: AppCtx }) {
   const [mode, setMode] = useState<"table" | "board">("table");
-  const [group, setGroup] = useState<"stage" | "commitment">("stage");
   const [q, setQ] = useState("");
   const [onlyRisk, setOnlyRisk] = useState(false);
   const [channel, setChannel] = useState<"all" | "direct" | "reseller">("all");
@@ -878,7 +866,8 @@ function DealsView({ ctx }: { ctx: AppCtx }) {
     const matchesChan = channel === "all" || d.channel === channel;
     return matchesQ && matchesRisk && matchesChan;
   });
-  // Stage columns/table show open deals; the commitment lens adds Confirmed (won).
+  // The table lists open deals (everything before Closed); the board shows all
+  // statuses, including the Closed column.
   const open = filtered.filter(isOpen);
 
   return (
@@ -894,12 +883,6 @@ function DealsView({ ctx }: { ctx: AppCtx }) {
           <button className="saved-view" role="tab" aria-selected={channel === "direct"} onClick={() => setChannel((c) => c === "direct" ? "all" : "direct")} type="button">Direct only</button>
         </div>
         <div className="toolbar-right">
-          {mode === "board" && (
-            <div className="seg seg--wide" role="group" aria-label="Group board by">
-              <button aria-pressed={group === "stage"} onClick={() => setGroup("stage")} type="button">Sales stage</button>
-              <button aria-pressed={group === "commitment"} onClick={() => setGroup("commitment")} type="button">Commitment</button>
-            </div>
-          )}
           <label className="search">
             <Icon name="search" /><span className="sr-only">Search deals</span>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search pipeline" type="search" />
@@ -913,7 +896,7 @@ function DealsView({ ctx }: { ctx: AppCtx }) {
 
       {mode === "table"
         ? <DealTable deals={open} ctx={ctx} />
-        : <DealBoard deals={group === "commitment" ? filtered.filter(inForecast) : open} ctx={ctx} group={group} />}
+        : <DealBoard deals={filtered} ctx={ctx} />}
     </>
   );
 }
@@ -940,7 +923,7 @@ function DealTable({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
   return (
     <div className="table-wrap card-edge">
       <table>
-        <thead><tr><th>Deal</th><th>Commitment</th><th>Stage</th><th>Owner</th><th>Close</th><th className="numeric">Next qtr</th><th className="numeric">3-yr total</th><th className="numeric">GM</th><th>Signal</th></tr></thead>
+        <thead><tr><th>Deal</th><th>Status</th><th>Owner</th><th>Close</th><th className="numeric">Next qtr</th><th className="numeric">3-yr total</th><th className="numeric">GM</th><th>Signal</th></tr></thead>
         <tbody>
           {deals.map((d) => {
             const acc = accountById(d.accountId)!;
@@ -950,7 +933,6 @@ function DealTable({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
                   <span className="account-cell"><span className="account-logo sm" aria-hidden="true">{monogram(acc.name)}</span>
                     <span><strong>{d.title}</strong><small>{acc.name} · {d.channel === "direct" ? "Direct" : "Reseller"}{d.isPilot ? " · Pilot" : ""}</small></span></span>
                 </th>
-                <td><TierTag stage={d.stage} /></td>
                 <td className="cell-edit"><InlineStage deal={d} ctx={ctx} /></td>
                 <td>{userName(d.ownerId)}</td>
                 <td className={isOverdue(d) ? "t-danger" : ""}>{new Date(d.expectedClose).toLocaleDateString("en-IE", { day: "2-digit", month: "short", year: "numeric" })}</td>
@@ -991,62 +973,33 @@ function DealCard({ deal, ctx, dragId, setDragId, setOver, draggable }: {
   );
 }
 
-function DealBoard({ deals, ctx, group }: { deals: Deal[]; ctx: AppCtx; group: "stage" | "commitment" }) {
+function DealBoard({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
-
-  if (group === "commitment") {
-    // Lens over the same records, grouped by the CSV commitment ladder. The
-    // tier is derived from stage, so this is read-only (move stage to change it).
-    return (
-      <div className="board-wrap">
-        <div className="board board--four">
-          {TIERS.map((tier) => {
-            const col = deals.filter((d) => dealTier(d.stage) === tier);
-            const value = col.reduce((s, d) => s + dealTotal(d), 0);
-            return (
-              <section key={tier} className={cx("board-col", `board-col--tier-${tier}`)}>
-                <header className="board-col-head">
-                  <span className="board-col-title"><strong>{TIER_META[tier].label}</strong><small>{TIER_META[tier].csv} · {Math.round(TIER_META[tier].weight * 100)}%</small></span>
-                  <span className="board-count">{col.length}</span>
-                </header>
-                <div className="board-col-body">
-                  {col.map((d) => <DealCard key={d.id} deal={d} ctx={ctx} dragId={dragId} setDragId={setDragId} setOver={setOver} draggable={false} />)}
-                  {!col.length && <p className="board-empty">No deals at this tier</p>}
-                </div>
-                <footer className="board-col-foot"><span>Net value</span><strong className="numeric">{value ? fmtEur(value) : "—"}</strong></footer>
-              </section>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  const stages = pipelineStages("direct");
+  // Columns are the CSV status ladder; drag a card to change a deal's status.
   return (
     <div className="board-wrap">
-      <div className="board">
-        {stages.map((stage) => {
-          const col = deals.filter((d) => d.stage === stage);
+      <div className="board board--five">
+        {STATUSES.map((status) => {
+          const col = deals.filter((d) => d.stage === status);
           const value = col.reduce((s, d) => s + dealTotal(d), 0);
           return (
             <section
-              key={stage}
-              className={cx("board-col", over === stage && "board-col--over")}
-              onDragOver={(e) => { if (!dragId) return; e.preventDefault(); setOver(stage); }}
+              key={status}
+              className={cx("board-col", `board-col--${status}`, over === status && "board-col--over")}
+              onDragOver={(e) => { if (!dragId) return; e.preventDefault(); setOver(status); }}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(null); }}
-              onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); ctx.moveDeal(id, stage); setDragId(null); setOver(null); }}
+              onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); ctx.moveDeal(id, status); setDragId(null); setOver(null); }}
             >
               <header className="board-col-head">
-                <span className="board-col-title"><strong>{STAGE_META[stage].label}</strong><small>{TIER_META[dealTier(stage)].label}</small></span>
+                <span className="board-col-title"><strong>{STAGE_META[status].short}</strong><small>{STAGE_META[status].csv}</small></span>
                 <span className="board-count">{col.length}</span>
               </header>
               <div className="board-col-body">
                 {col.map((d) => <DealCard key={d.id} deal={d} ctx={ctx} dragId={dragId} setDragId={setDragId} setOver={setOver} draggable />)}
                 {!col.length && <p className="board-empty">Drop a deal here</p>}
               </div>
-              <footer className="board-col-foot"><span>Stage value</span><strong className="numeric">{value ? fmtEur(value) : "—"}</strong></footer>
+              <footer className="board-col-foot"><span>{status === "closed" ? "Realised" : "Net value"}</span><strong className="numeric">{value ? fmtEur(value) : "—"}</strong></footer>
             </section>
           );
         })}
@@ -1371,7 +1324,7 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
       </div>
 
       <p className="forecast-caption">
-        {lens === "commitment" ? "Net value by HMD commitment tier — Opportunity → Pipeline → Committed → Confirmed (Lost excluded)."
+        {lens === "commitment" ? "Net value by deal status — Opportunity → Pipeline → Committed → Confirmed (Closed excluded from the forward forecast)."
           : lens === "streams" ? "Device and service revenue kept separate, never flattened into one number."
           : "Regional split with gross-margin percentage, the way the forecast sheet reads."}
         {" Showing "}<strong>{MEASURE_LABEL[measure]}</strong>.
@@ -1385,7 +1338,7 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
           <tbody>
             {series.map((se, i) => (
               <tr key={se.key}>
-                <th scope="row"><span className={`swatch ${swatchClass(se.key, i)}`} />{se.label}{lens === "commitment" && <span className="mini-tag">{TIER_META[se.key as Tier].csv}</span>}</th>
+                <th scope="row"><span className={`swatch ${swatchClass(se.key, i)}`} />{se.label}{lens === "commitment" && <span className="mini-tag">{STAGE_META[se.key as Stage].csv}</span>}</th>
                 {buckets.map((b) => <td key={b.label} className="numeric">{fmtMeasure(bucketSum(se.values, b.idx), measure)}</td>)}
                 <td className="numeric numeric--strong">{fmtMeasure(se.total, measure)}</td>
                 {lens === "region" && regionRows && <td className="numeric">{Math.round((regionRows[i]?.gmPct ?? 0) * 100)}%</td>}
@@ -1539,13 +1492,9 @@ export default function App() {
   const moveDeal = (id: string, stage: Stage) => {
     const deal = dealById(id);
     if (!deal) return;
-    if (deal.channel === "reseller" && stage === "contract_negotiation") {
-      notify("Reseller deals skip Contract negotiation — they move from Customer test straight to Won.");
-      return;
-    }
     if ((dealStage[id] ?? deal.stage) === stage) return;
     setDealStage((m) => ({ ...m, [id]: stage }));
-    notify(`Moved ${deal.title} to ${STAGE_META[stage].label}.`);
+    notify(`Moved ${deal.title} to ${STAGE_META[stage].short}.`);
   };
 
   const decideOffer = (offerId: string, decision: "approved" | "rejected", note?: string) => {

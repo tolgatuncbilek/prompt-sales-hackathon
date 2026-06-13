@@ -379,22 +379,23 @@ tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
 .locked-flag { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 11px; font-weight: 600; }
 .locked-flag .icon { width: 14px; }
 
-/* Commitment tier tag (HMD forecast ladder) */
-.tier { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; color: var(--ink-2); }
-.tier-dots { display: inline-flex; gap: 2px; }
-.tier-dots i { width: 5px; height: 9px; border-radius: 1px; background: var(--raised); }
-.tier-dots i.on { background: var(--accent); }
-.tier--opportunity .tier-dots i.on { background: rgba(47, 212, 198, 0.45); }
-.tier--pipeline .tier-dots i.on { background: rgba(47, 212, 198, 0.62); }
-.tier--committed .tier-dots i.on { background: rgba(47, 212, 198, 0.8); }
-.tier--confirmed { color: var(--accent); }
+/* Deal status tag (HMD commitment ladder from the CSV) */
+.status-tag { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; color: #c3ccd9; white-space: nowrap; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--raised); flex: 0 0 auto; }
+.status-tag--opportunity .status-dot { background: rgba(47, 212, 198, 0.35); }
+.status-tag--pipeline .status-dot { background: rgba(47, 212, 198, 0.58); }
+.status-tag--committed .status-dot { background: rgba(47, 212, 198, 0.8); }
+.status-tag--confirmed { color: var(--accent); }
+.status-tag--confirmed .status-dot { background: var(--accent); }
+.status-tag--closed { color: var(--ink-3); }
+.status-tag--closed .status-dot { background: var(--ink-3); }
 
 /* Inline cell editing (spreadsheet-speed) */
 .cell-edit { padding: 0; }
 .inline-edit { position: relative; display: inline-flex; align-items: center; }
 .inline-edit .icon { position: absolute; right: 8px; width: 13px; color: var(--ink-3); pointer-events: none; }
 .inline-stage {
-  appearance: none; -webkit-appearance: none; min-width: 150px; height: 30px; padding: 0 26px 0 10px;
+  appearance: none; -webkit-appearance: none; min-width: 190px; height: 30px; padding: 0 26px 0 10px;
   border: 1px solid transparent; border-radius: var(--r-pill); background: transparent; color: #c3ccd9;
   font-size: 11px; font-weight: 600; cursor: pointer; transition: border-color var(--t-fast), background var(--t-fast);
 }
@@ -653,17 +654,18 @@ tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
 
 .board-wrap { overflow-x: auto; padding-bottom: 8px; }
 .board { min-width: 940px; display: grid; grid-template-columns: repeat(5, minmax(186px, 1fr)); gap: 12px; }
-.board--four { min-width: 760px; grid-template-columns: repeat(4, minmax(190px, 1fr)); }
+.board--five { min-width: 1000px; grid-template-columns: repeat(5, minmax(184px, 1fr)); }
 .board-col { display: flex; flex-direction: column; min-height: 560px; border: 1px solid var(--rule); border-radius: var(--r-surface); background: var(--field-2); transition: border-color var(--t-fast), background var(--t-fast); }
 .board-col--over { border-color: var(--accent); background: var(--accent-soft); }
 .board-col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 11px 12px; border-bottom: 1px solid var(--rule); }
 .board-col-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .board-col-head strong { font-size: 11px; font-weight: 650; }
 .board-col-title small { color: var(--ink-3); font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
-.board-col--tier-opportunity { box-shadow: inset 0 2px 0 rgba(47, 212, 198, 0.30); }
-.board-col--tier-pipeline { box-shadow: inset 0 2px 0 rgba(47, 212, 198, 0.52); }
-.board-col--tier-committed { box-shadow: inset 0 2px 0 rgba(47, 212, 198, 0.76); }
-.board-col--tier-confirmed { box-shadow: inset 0 2px 0 var(--accent); }
+.board-col--opportunity { box-shadow: inset 0 2px 0 rgba(47, 212, 198, 0.30); }
+.board-col--pipeline { box-shadow: inset 0 2px 0 rgba(47, 212, 198, 0.52); }
+.board-col--committed { box-shadow: inset 0 2px 0 rgba(47, 212, 198, 0.76); }
+.board-col--confirmed { box-shadow: inset 0 2px 0 var(--accent); }
+.board-col--closed { box-shadow: inset 0 2px 0 var(--ink-3); opacity: 0.92; }
 .deal-card--static { cursor: default; }
 .deal-card--static:active { cursor: default; }
 .board-count { min-width: 20px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--raised); color: var(--ink-2); font-size: 10px; font-weight: 650; text-align: center; }
