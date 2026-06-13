@@ -201,6 +201,28 @@ These are inspiration rather than fixed requirements:
 - Prefer Bun-native APIs over Node.js APIs when Bun provides the required capability.
 - Use Node-compatible APIs only when Astro, a dependency, or the target platform requires them.
 
+## Deployment
+
+Prerequisites:
+
+- Authenticate the Azure CLI with `az login`.
+- Keep Docker running locally.
+- Select the intended Azure subscription with `az account set`.
+
+Deploy or update the current working tree:
+
+```sh
+make deploy
+```
+
+Print the current public URL:
+
+```sh
+make deploy-url
+```
+
+The Make variables `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `AZURE_ENVIRONMENT`, `AZURE_REGISTRY`, and `AZURE_APP` can override the default live environment.
+
 ## Demo Scenario
 
 A new user with no training should complete this flow without getting stuck:
@@ -243,3 +265,11 @@ CC:
 Partner contact: promptagents@aaltoes.com
 
 Prompt is an Aaltoes initiative based in Espoo.
+
+## Customer Data Model
+
+Related to basic customer information: would be good to have basics like customer name, domain, address, VAT ID.
+
+### Contacts
+
+Name, role (decision — e.g. financial, budget, tech decision maker or influencer in the company), phone, and email.
