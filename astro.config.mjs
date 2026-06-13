@@ -3,6 +3,9 @@ import node from "@astrojs/node";
 import react from "@astrojs/react";
 
 export default defineConfig({
+  devToolbar: {
+    enabled: false,
+  },
   adapter: node({
     mode: "standalone",
   }),

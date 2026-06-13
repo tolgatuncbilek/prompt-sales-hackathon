@@ -1470,7 +1470,6 @@ function DealsView({ ctx }: { ctx: AppCtx }) {
 
       <div className="toolbar">
         <div className="saved-views" role="tablist" aria-label="Saved views">
-          <button className="saved-view saved-view--active" role="tab" aria-selected="true" type="button">All open</button>
           <button className="saved-view" role="tab" aria-selected={onlyRisk} onClick={() => setOnlyRisk((v) => !v)} type="button">At risk</button>
           <button className="saved-view" role="tab" aria-selected={channel === "direct"} onClick={() => setChannel((c) => c === "direct" ? "all" : "direct")} type="button">Direct only</button>
         </div>
@@ -2067,6 +2066,79 @@ const NAV: { screen: Screen; label: string; icon: string }[] = [
   { screen: "catalog", label: "Catalog", icon: "catalog" },
 ];
 
+function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [draft, setDraft] = useState("");
+  const [question, setQuestion] = useState<string | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (open) window.setTimeout(() => inputRef.current?.focus(), 0);
+  }, [open]);
+
+  const ask = (value: string) => {
+    const next = value.trim();
+    if (!next) return;
+    setQuestion(next);
+    setDraft("");
+  };
+
+  if (!open) return null;
+
+  return (
+    <aside className="crm-assistant" role="dialog" aria-modal="false" aria-labelledby="crm-assistant-title">
+      <header className="crm-assistant-head">
+        <h2 id="crm-assistant-title">Ask about your workspace</h2>
+        <button className="icon-btn" type="button" aria-label="Close CRM assistant" onClick={onClose}>
+          <Icon name="close" />
+        </button>
+      </header>
+
+      <div className="crm-assistant-body">
+        {!question ? (
+          <div className="crm-assistant-empty" aria-hidden="true" />
+        ) : (
+          <div className="crm-conversation" aria-live="polite">
+            <div className="crm-message crm-message--user">{question}</div>
+            <div className="crm-message crm-message--assistant">
+              <span className="ai-badge"><Icon name="spark" />Draft answer</span>
+              <p>Three items stand out: one committed deal has gone quiet, a high-priority case is still open, and one offer is waiting for approval.</p>
+              <div className="crm-evidence">
+                <strong>CRM evidence</strong>
+                <button type="button">Nordic Shield · Deal last updated 16 days ago</button>
+                <button type="button">Asteria Logistics · High-priority case open</button>
+                <button type="button">Offer HMD-2026-014 · Approval pending</button>
+              </div>
+              <small>This is a prototype response. Review the linked records before acting.</small>
+            </div>
+            <button className="ghost-link crm-new-question" type="button" onClick={() => setQuestion(null)}>Ask another question</button>
+          </div>
+        )}
+      </div>
+
+      <form className="crm-composer" onSubmit={(event) => { event.preventDefault(); ask(draft); }}>
+        <label className="sr-only" htmlFor="crm-question">Ask CRM</label>
+        <textarea
+          id="crm-question"
+          ref={inputRef}
+          rows={2}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              ask(draft);
+            }
+          }}
+          placeholder="Ask about accounts, deals, cases, or forecasts"
+        />
+        <button className="crm-send" type="submit" aria-label="Send question" disabled={!draft.trim()}>
+          <Icon name="arrowRight" />
+        </button>
+      </form>
+    </aside>
+  );
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
 
@@ -2103,8 +2175,16 @@ function MainApp() {
   const user = userById(userId)!;
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
   const toastSeq = useRef(0);
+
+  useEffect(() => {
+    if (!assistantOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setAssistantOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [assistantOpen]);
 
   // mutable domain state
   const [dealStage, setDealStage] = useState<Record<string, Stage>>({});
@@ -2364,6 +2444,19 @@ function MainApp() {
           </aside>
         </>
       )}
+
+      <CrmAssistant open={assistantOpen} onClose={() => setAssistantOpen(false)} />
+      <footer className="assistant-footer">
+        <button
+          className={cx("ask-crm-trigger", assistantOpen && "ask-crm-trigger--active")}
+          type="button"
+          aria-expanded={assistantOpen}
+          aria-controls="crm-assistant-title"
+          onClick={() => setAssistantOpen((value) => !value)}
+        >
+          <Icon name="spark" /><span>Ask CRM</span>
+        </button>
+      </footer>
 
       {toast && <div className="toast" role="status">{toast.msg}</div>}
       {menuOpen && <button className="scrim" aria-label="Close menu" onClick={() => setMenuOpen(false)} type="button" />}
