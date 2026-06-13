@@ -14,7 +14,8 @@
   --raised: #1d2839;
   --ink: #f2f6fb;
   --ink-2: #9aabc1;
-  --ink-3: #6f7d92;
+  --ink-mid: #c3ccd9;
+  --ink-3: #7f93ab;
   --rule: #24314a;
   --rule-soft: #1b2536;
   --accent: #2fd4c6;
@@ -337,18 +338,18 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
 /* Tables ------------------------------------------------------------------- */
 
 .table-wrap { width: 100%; overflow-x: auto; }
-.card-edge { border: 1px solid var(--rule); border-radius: var(--r-surface); background: var(--field-2); box-shadow: var(--elev-1); }
-table { width: 100%; border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
+.card-edge { border: 1px solid var(--rule); border-radius: var(--r-surface); background: var(--field-2); box-shadow: var(--elev-1); overflow: hidden; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; white-space: nowrap; background: var(--surface); }
 thead { background: var(--field-2); }
-th, td { height: 60px; padding: 0 14px; border-bottom: 1px solid var(--rule-soft); text-align: left; vertical-align: middle; }
+th, td { height: 60px; padding: 0 16px; border-bottom: 1px solid var(--rule-soft); text-align: left; vertical-align: middle; }
 .card-edge tr:last-child th, .card-edge tr:last-child td { border-bottom: 0; }
-thead th { height: 40px; color: var(--ink-3); font-size: 10.5px; font-weight: 650; letter-spacing: 0.02em; }
+thead th { height: 40px; color: var(--ink-3); font-size: 10.5px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; border-bottom: 1px solid var(--rule); }
 thead th.numeric, td.numeric { text-align: right; }
 tbody th { font-weight: 600; color: var(--ink); }
 tbody th small { display: block; margin-top: 3px; font-weight: 400; }
 tbody tr { transition: background var(--t-fast); }
 tbody tr[onclick], .table-wrap tbody tr { cursor: pointer; }
-tbody tr:hover { background: var(--surface); }
+tbody tr:hover { background: rgba(47, 212, 198, 0.06); }
 table.compact th, table.compact td { height: 46px; font-size: 12px; }
 table.compact thead th { height: 34px; }
 tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
@@ -377,7 +378,7 @@ tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
 /* Tags, pills, risk, priority, sla ---------------------------------------- */
 
 .tag { display: inline-flex; align-items: center; padding: 4px 9px; border: 1px solid var(--rule); border-radius: var(--r-pill); font-size: 10.5px; font-weight: 600; color: var(--ink-2); }
-.tag--stage { color: #c3ccd9; }
+.tag--stage { color: var(--ink-mid); }
 
 .risk { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 650; }
 .risk-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
@@ -417,7 +418,7 @@ tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
 .locked-flag .icon { width: 14px; }
 
 /* Deal status tag (HMD commitment ladder from the CSV) */
-.status-tag { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; color: #c3ccd9; white-space: nowrap; }
+.status-tag { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; color: var(--ink-mid); white-space: nowrap; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--raised); flex: 0 0 auto; }
 .status-tag--lead .status-dot { background: rgba(47, 212, 198, 0.35); }
 .status-tag--offer .status-dot { background: rgba(47, 212, 198, 0.52); }
@@ -456,7 +457,7 @@ tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
 .inline-edit .icon { position: absolute; right: 8px; width: 13px; color: var(--ink-3); pointer-events: none; }
 .inline-stage {
   appearance: none; -webkit-appearance: none; min-width: 190px; height: 30px; padding: 0 26px 0 10px;
-  border: 1px solid transparent; border-radius: var(--r-pill); background: transparent; color: #c3ccd9;
+  border: 1px solid transparent; border-radius: var(--r-pill); background: transparent; color: var(--ink-mid);
   font-size: 11px; font-weight: 600; cursor: pointer; transition: border-color var(--t-fast), background var(--t-fast);
 }
 .inline-stage:hover { border-color: var(--rule); background: var(--field); }
@@ -469,8 +470,10 @@ tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
   border: 1px solid transparent; border-radius: var(--r-control); background: transparent;
   color: var(--ink); font: inherit; font-size: 12.5px; font-weight: 650;
   transition: background var(--t-fast), border-color var(--t-fast);
+  text-decoration: underline; text-decoration-style: dotted; text-decoration-color: var(--rule-soft); text-underline-offset: 3px;
 }
 .account-cell .cell-input { font-weight: 650; }
+.cell-input:hover, .cell-input:focus { text-decoration: none; }
 .cell-input:hover { border-color: var(--rule); background: var(--field); }
 .cell-input:focus { outline: none; border-color: var(--accent); background: var(--field); }
 .cell-input--num { text-align: right; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
@@ -481,7 +484,7 @@ tbody th small .icon { width: 13px; vertical-align: -2px; margin-right: 3px; }
 .cell-select {
   appearance: none; -webkit-appearance: none; min-width: 96px; max-width: 200px; height: 30px;
   padding: 0 24px 0 8px; border: 1px solid transparent; border-radius: var(--r-control);
-  background: transparent; color: #c3ccd9; font: inherit; font-size: 12px; font-weight: 600;
+  background: transparent; color: var(--ink-mid); font: inherit; font-size: 12px; font-weight: 600;
   cursor: pointer; transition: border-color var(--t-fast), background var(--t-fast); text-overflow: ellipsis;
 }
 .cell-select:hover { border-color: var(--rule); background: var(--field); }
@@ -529,10 +532,10 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .insight-state.is-accepted { color: var(--green); }
 .insight-state.is-dismissed { color: var(--ink-3); }
 .insight-headline { margin: 12px 0 8px; font-size: 14px; line-height: 1.4; text-wrap: pretty; }
-.insight-body { color: #c3ccd9; font-size: 12.5px; line-height: 1.55; max-width: 64ch; }
+.insight-body { color: var(--ink-mid); font-size: 12.5px; line-height: 1.55; max-width: 64ch; }
 .insight-evidence { margin-top: 14px; border: 1px solid var(--rule); border-radius: var(--r-control); background: var(--field); padding: 12px; }
 .insight-evidence summary { color: var(--ink-2); font-size: 10.5px; font-weight: 650; letter-spacing: 0.03em; cursor: pointer; }
-.insight-evidence ul { margin: 10px 0 0; padding-left: 16px; display: grid; gap: 7px; color: #c3ccd9; font-size: 11.5px; line-height: 1.45; }
+.insight-evidence ul { margin: 10px 0 0; padding-left: 16px; display: grid; gap: 7px; color: var(--ink-mid); font-size: 11.5px; line-height: 1.45; }
 .insight-sources { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .source-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border: 1px solid var(--rule); border-radius: var(--r-pill); background: var(--surface); color: var(--ink-2); font-size: 10.5px; }
 .source-chip .icon { width: 13px; color: var(--accent); }
@@ -543,15 +546,15 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .confidence-track { width: 64px; height: 5px; border-radius: var(--r-pill); background: var(--raised); overflow: hidden; }
 .confidence-track span { display: block; height: 100%; background: var(--accent); }
 .insight-draft { margin-top: 12px; }
-.draft-email { margin: 10px 0 0; padding: 12px; border: 1px solid var(--rule); border-radius: var(--r-control); background: var(--field); color: #c3ccd9; font-family: inherit; font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; }
+.draft-email { margin: 10px 0 0; padding: 12px; border: 1px solid var(--rule); border-radius: var(--r-control); background: var(--field); color: var(--ink-mid); font-family: inherit; font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; }
 .insight-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 
 .insight--approval .approval-figs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 12px 0; }
 .approval-figs span { display: block; color: var(--ink-3); font-size: 10px; margin-bottom: 4px; }
 .approval-figs strong { font-size: 13px; }
-.approval-just { margin: 12px 0; padding: 12px; border-left: 2px solid var(--accent); background: var(--field); border-radius: 0 var(--r-control) var(--r-control) 0; }
+.approval-just { margin: 12px 0; padding: 12px; border: 1px solid var(--accent-line); background: var(--accent-soft); border-radius: var(--r-control); }
 .approval-just strong { display: block; color: var(--ink-2); font-size: 10.5px; font-weight: 650; letter-spacing: 0.03em; margin-bottom: 6px; }
-.approval-just p { color: #c3ccd9; font-size: 12px; line-height: 1.5; }
+.approval-just p { color: var(--ink-mid); font-size: 12px; line-height: 1.5; }
 .approval-prior { display: flex; align-items: center; gap: 7px; margin: 10px 0; color: var(--green); font-size: 11px; }
 .approval-prior .icon { width: 14px; }
 .approval-note { display: block; margin-top: 12px; }
@@ -609,7 +612,7 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .record-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .record-title-row h1 { font-size: 1.6rem; letter-spacing: -0.02em; }
 .record-sub { margin-top: 9px; color: var(--ink-2); font-size: 12.5px; }
-.record-summary { max-width: 70ch; margin-top: 10px; color: #c3ccd9; font-size: 13px; line-height: 1.55; text-wrap: pretty; }
+.record-summary { max-width: 70ch; margin-top: 10px; color: var(--ink-mid); font-size: 13px; line-height: 1.55; text-wrap: pretty; }
 .record-meta { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 14px; color: var(--ink-2); font-size: 12px; }
 .record-meta strong { color: var(--ink); font-weight: 600; }
 .record-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
@@ -684,7 +687,7 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .offers-list li + li { border-top: 1px solid var(--rule); }
 .offers-list-item { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px; border: 0; background: transparent; cursor: pointer; text-align: left; transition: background var(--t-fast); }
 .offers-list-item:hover { background: var(--surface); }
-.offers-list-item.is-active { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.offers-list-item.is-active { background: var(--accent-soft); }
 .offers-list-item strong { display: block; font-size: 12.5px; font-weight: 650; }
 .offers-list-item small { display: block; margin-top: 3px; color: var(--ink-3); font-size: 10.5px; }
 .offers-list-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
@@ -696,32 +699,32 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .offer-detail-head h2 { margin: 7px 0 5px; }
 .offer-detail-head-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 
-/* Light "document" surface for the offer sheet (DESIGN.md) */
-.offer-sheet { padding: 4px 20px; border-radius: var(--r-surface); background: var(--paper); color: var(--paper-ink); }
+/* Dark surface for the offer sheet — consistent with the rest of the CRM */
+.offer-sheet { padding: 4px 20px; border-radius: var(--r-surface); background: var(--surface); color: var(--ink); }
 .offer-table { width: 100%; font-size: 12.5px; }
-.offer-table th, .offer-table td { height: 44px; border-bottom: 1px solid var(--paper-rule); }
-.offer-table thead { background: transparent; }
-.offer-table thead th { color: var(--paper-ink); opacity: 0.55; }
-.offer-table tbody tr:hover { background: rgba(22, 32, 46, 0.06); }
-.offer-table tbody td { color: var(--paper-ink); }
-.offer-table .mini-tag { background: #e3e9f1; color: #5a6678; }
-.offer-table tfoot td { height: 38px; color: #44505f; border-bottom: 0; }
-.offer-table tfoot .offer-net td { font-size: 14px; color: var(--paper-ink); border-top: 2px solid var(--paper-rule); }
+.offer-table th, .offer-table td { height: 44px; border-bottom: 1px solid var(--rule-soft); }
+.offer-table thead { background: var(--field-2); }
+.offer-table thead th { color: var(--ink-3); font-size: 10.5px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; border-bottom: 1px solid var(--rule); }
+.offer-table tbody tr:hover { background: rgba(47, 212, 198, 0.06); }
+.offer-table tbody td { color: var(--ink); }
+.offer-table .mini-tag { background: var(--raised); color: var(--ink-2); opacity: 0.9; }
+.offer-table tfoot td { height: 38px; color: var(--ink-2); border-bottom: 0; }
+.offer-table tfoot .offer-net td { font-size: 14px; color: var(--ink); opacity: 1; border-top: 2px solid var(--rule); }
 .offer-sheet .cell-input,
 .offer-sheet .offer-cell-input {
-  width: 100%; min-width: 0; border: 1px solid #c5d0dc; border-radius: 4px;
-  background: #fff; color: var(--paper-ink); font-size: inherit; padding: 6px 8px;
-  cursor: text; transition: border-color var(--t-fast), box-shadow var(--t-fast);
+  width: 100%; min-width: 0; border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--field); color: var(--ink); font-size: inherit; padding: 4px 8px;
+  cursor: text; transition: border-color var(--t-fast), background var(--t-fast), box-shadow var(--t-fast);
 }
 .offer-sheet .cell-input:hover,
-.offer-sheet .offer-cell-input:hover { border-color: #9aa8b8; }
+.offer-sheet .offer-cell-input:hover { border-color: var(--ink-3); background: var(--field-2); }
 .offer-sheet .cell-input:focus,
-.offer-sheet .offer-cell-input:focus { outline: none; border-color: #5a6678; box-shadow: 0 0 0 2px rgba(90, 102, 120, 0.18); }
+.offer-sheet .offer-cell-input:focus { outline: none; border-color: var(--accent); background: var(--field); box-shadow: 0 0 0 2px var(--accent-soft); }
 .offer-sheet td .offer-cell-input { font-weight: 500; min-height: 32px; }
-.offer-sheet tfoot .offer-cell-input { max-width: 96px; margin-left: auto; }
+.offer-sheet tfoot .offer-cell-input { max-width: 88px; margin-left: auto; }
 .offer-edit-hint { margin: -8px 0 14px; font-size: 11.5px; }
 .offer-sheet .cell-num { display: inline-flex; align-items: center; justify-content: flex-end; width: 100%; gap: 2px; }
-.offer-sheet .cell-num-prefix { color: #5a6678; }
+.offer-sheet .cell-num-prefix { color: var(--ink-3); }
 .offer-just-input {
   width: 100%; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--rule);
   border-radius: var(--r-surface); background: var(--field); color: var(--ink); font: inherit; font-size: 13px; resize: vertical;
@@ -789,16 +792,16 @@ tbody tr:hover .row-open { color: var(--ink-2); }
    Forecast
    -------------------------------------------------------------------------- */
 
-.forecast-sheet { padding: 4px 20px 8px; border-radius: var(--r-surface); background: var(--paper); color: var(--paper-ink); margin-bottom: 28px; overflow-x: auto; }
+.forecast-sheet { padding: 4px 20px 8px; border-radius: var(--r-surface); background: var(--surface); color: var(--ink); margin-bottom: 28px; overflow-x: auto; }
 .forecast-table { width: 100%; font-size: 12.5px; }
-.forecast-table th, .forecast-table td { height: 48px; border-bottom: 1px solid var(--paper-rule); }
-.forecast-table thead { background: transparent; }
-.forecast-table thead th { color: var(--paper-ink); opacity: 0.55; }
-.forecast-table tbody tr:hover { background: rgba(22, 32, 46, 0.06); }
-.forecast-table tbody th { color: var(--paper-ink); }
+.forecast-table th, .forecast-table td { height: 48px; border-bottom: 1px solid var(--rule-soft); }
+.forecast-table thead { background: var(--field-2); }
+.forecast-table thead th { color: var(--ink-3); font-size: 10.5px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; border-bottom: 1px solid var(--rule); }
+.forecast-table tbody tr:hover { background: rgba(47, 212, 198, 0.06); }
+.forecast-table tbody th { color: var(--ink); }
 .forecast-table tbody th .swatch { margin-right: 8px; vertical-align: 0; }
-.forecast-table tbody td { color: var(--paper-ink); }
-.forecast-table tfoot th, .forecast-table tfoot td { height: 44px; color: var(--paper-ink); border-bottom: 0; border-top: 2px solid var(--paper-rule); }
+.forecast-table tbody td { color: var(--ink); }
+.forecast-table tfoot th, .forecast-table tfoot td { height: 44px; color: var(--ink); border-bottom: 0; border-top: 2px solid var(--rule); }
 
 .forecast-bars { display: flex; align-items: flex-end; gap: 14px; height: 200px; padding: 12px 0; }
 .fbar { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; justify-content: flex-end; }
@@ -1144,7 +1147,7 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .modal {
   width: 480px;
   max-width: calc(100vw - 32px);
-  background: var(--raised);
+  background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--r-surface);
   padding: 24px;
