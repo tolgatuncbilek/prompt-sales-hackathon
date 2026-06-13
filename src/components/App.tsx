@@ -936,9 +936,6 @@ function RepDashboard({ ctx }: { ctx: AppCtx }) {
   const weightedNext = myDeals.reduce((s, d) => s + nextQuarterValue(d) * probability(d.stage), 0);
   const myOffers = seedOffers.map((o) => ctx.offerState[o.id] ?? o).filter((o) => o.createdById === ctx.user.id);
   const pendingOffers = myOffers.filter((o) => o.status === "pending_manager" || o.status === "pending_finance");
-  const myInsights = seedInsights
-    .filter((i) => myAccounts.some((a) => a.id === i.accountId) && i.type !== "enrichment")
-    .filter((i) => (ctx.insightStatus[i.id] ?? i.status) === "pending_review");
 
   return (
     <>
@@ -949,65 +946,44 @@ function RepDashboard({ ctx }: { ctx: AppCtx }) {
         <Kpi label="Offers in approval" value={`${pendingOffers.length}`} hint="Awaiting sign-off" />
       </div>
 
-      <div className="grid-2">
-        <section>
-          <SectionHead title="Deals needing attention" count={attention.length} />
-          {attention.length ? (
-            <ul className="stack-list">
-              {attention.map((d) => {
-                const acc = accountById(d.accountId)!;
-                return (
-                  <li key={d.id}>
-                    <button className="row-main" onClick={() => ctx.openAccount(d.accountId)} type="button">
-                      <span className="account-logo sm" aria-hidden="true">{monogram(acc.name)}</span>
-                      <span>
-                        <strong>{d.title}</strong>
-                        <small>{acc.name} · {STAGE_META[d.stage].label}</small>
-                      </span>
-                    </button>
-                    <span className="row-side"><strong className="numeric">{fmtEur(dealTotal(d))}</strong><RiskTag deal={d} /></span>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : <Empty>Nothing stalled or overdue. Good place to be.</Empty>}
-
-          <div className="spacer" />
-          <SectionHead title="My offers" count={myOffers.length} />
+      <section>
+        <SectionHead title="Deals needing attention" count={attention.length} />
+        {attention.length ? (
           <ul className="stack-list">
-            {myOffers.map((o) => {
-              const deal = dealById(o.dealId)!;
+            {attention.map((d) => {
+              const acc = accountById(d.accountId)!;
               return (
-                <li key={o.id}>
-                  <button className="row-main" onClick={() => ctx.openOffers(o.id)} type="button">
-                    <span><strong>{o.ref} · {deal.title}</strong><small>v{o.version} · {o.discountPct > 0 ? `${o.discountPct}% discount` : "list price"}</small></span>
+                <li key={d.id}>
+                  <button className="row-main" onClick={() => ctx.openAccount(d.accountId)} type="button">
+                    <span className="account-logo sm" aria-hidden="true">{monogram(acc.name)}</span>
+                    <span>
+                      <strong>{d.title}</strong>
+                      <small>{acc.name} · {STAGE_META[d.stage].label}</small>
+                    </span>
                   </button>
-                  <span className="row-side"><strong className="numeric">{fmtEur(offerNet(o))}</strong><OfferPill status={o.status} /></span>
+                  <span className="row-side"><strong className="numeric">{fmtEur(dealTotal(d))}</strong><RiskTag deal={d} /></span>
                 </li>
               );
             })}
           </ul>
-        </section>
+        ) : <Empty>Nothing stalled or overdue. Good place to be.</Empty>}
 
-        <section>
-          <SectionHead title="AI next best actions" count={myInsights.length}>
-            <button className="ghost-link" onClick={() => ctx.notify("AI insights refreshed across your accounts.")} type="button"><Icon name="spark" />Refresh</button>
-          </SectionHead>
-          {myInsights.length ? (
-            <div className="insight-stack">
-              {myInsights.map((i) => (
-                <InsightCard
-                  key={i.id}
-                  insight={i}
-                  status={ctx.insightStatus[i.id] ?? i.status}
-                  onAccept={() => { ctx.setInsight(i.id, "accepted"); ctx.notify("Accepted as a task. No CRM data changed automatically."); }}
-                  onDismiss={() => { ctx.setInsight(i.id, "dismissed"); ctx.notify("Dismissed."); }}
-                />
-              ))}
-            </div>
-          ) : <Empty>All AI suggestions reviewed.</Empty>}
-        </section>
-      </div>
+        <div className="spacer" />
+        <SectionHead title="My offers" count={myOffers.length} />
+        <ul className="stack-list">
+          {myOffers.map((o) => {
+            const deal = dealById(o.dealId)!;
+            return (
+              <li key={o.id}>
+                <button className="row-main" onClick={() => ctx.openOffers(o.id)} type="button">
+                  <span><strong>{o.ref} · {deal.title}</strong><small>v{o.version} · {o.discountPct > 0 ? `${o.discountPct}% discount` : "list price"}</small></span>
+                </button>
+                <span className="row-side"><strong className="numeric">{fmtEur(offerNet(o))}</strong><OfferPill status={o.status} /></span>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
     </>
   );
 }
