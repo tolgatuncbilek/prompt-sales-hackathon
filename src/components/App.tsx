@@ -1490,7 +1490,6 @@ function MainApp() {
 
   const user = userById(userId)!;
   const [menuOpen, setMenuOpen] = useState(false);
-  const [roleMenu, setRoleMenu] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
   const toastSeq = useRef(0);
@@ -1583,31 +1582,10 @@ function MainApp() {
 
       <aside className={cx("sidebar", menuOpen && "sidebar--open")}>
         <div className="role-switch">
-          <button className="role-btn" onClick={() => setRoleMenu((v) => !v)} aria-expanded={roleMenu} type="button">
+          <div className="role-btn">
             <Avatar name={user.name} />
             <span className="role-name">{user.name}</span>
-            <Icon name="chevronDown" className="chevron-icon" />
-          </button>
-          {roleMenu && (
-            <div className="role-menu" role="menu">
-              <div className="role-menu-section-label">Select User / Role</div>
-              <ul className="role-menu-list">
-                {users.filter((u, i, arr) => arr.findIndex((x) => x.role === u.role) === i).map((u) => (
-                  <li key={u.id} role="none">
-                    <button role="menuitemradio" aria-checked={u.role === user.role} className={cx("role-option", u.role === user.role && "is-active")}
-                      onClick={() => { setUserId(u.id); setRoleMenu(false); setScreen("home"); notify(`Viewing as ${ROLE_LABEL[u.role]} — ${u.name}.`); }} type="button">
-                      <Avatar name={u.name} size="xs" />
-                      <span className="role-option-text">
-                        <strong>{u.name}</strong>
-                        <small>{ROLE_LABEL[u.role]}</small>
-                      </span>
-                      {u.role === user.role && <Icon name="check" className="check-icon" />}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          </div>
         </div>
 
         <nav aria-label="Primary" className="sidebar-nav">

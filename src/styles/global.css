@@ -108,36 +108,13 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
   border-right: 1px solid var(--rule); background: var(--field-2);
 }
 
-.role-switch { position: relative; margin-bottom: 12px; }
+.role-switch { margin-bottom: 12px; }
 .role-btn {
   width: 100%; min-height: 38px; display: flex; align-items: center; gap: 8px;
   padding: 6px 8px; border: 0; border-radius: var(--r-control);
-  background: transparent; cursor: pointer; text-align: left; transition: background var(--t-fast);
+  background: transparent; text-align: left;
 }
-.role-btn:hover { background: var(--surface); }
-.role-name { font-size: 13px; font-weight: 600; color: var(--ink); flex: 1; }
-.role-btn .chevron-icon { width: 12px; height: 12px; color: var(--ink-3); margin-left: auto; transition: color var(--t-fast); }
-.role-btn:hover .chevron-icon { color: var(--ink-2); }
-
-.role-menu {
-  position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; right: 0;
-  margin: 0; padding: 4px; border: 1px solid var(--rule);
-  border-radius: var(--r-surface); background: var(--raised); box-shadow: var(--shadow-float);
-  display: flex; flex-direction: column;
-}
-.role-menu-section-label { font-size: 9px; font-weight: 650; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 8px 4px; }
-.role-menu-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.role-option {
-  width: 100%; display: flex; align-items: center; gap: 9px; padding: 6px 8px;
-  border: 0; border-radius: var(--r-control); background: transparent; cursor: pointer; text-align: left;
-  color: var(--ink-2); transition: background var(--t-fast), color var(--t-fast);
-}
-.role-option:hover { background: var(--surface); color: var(--ink); }
-.role-option.is-active { background: var(--rule-soft); color: var(--ink); }
-.role-option-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-.role-option-text strong { display: block; font-size: 12px; font-weight: 600; line-height: 1.2; }
-.role-option-text small { display: block; color: var(--ink-3); font-size: 10px; margin-top: 1px; }
-.role-option .check-icon { width: 14px; height: 14px; color: var(--accent); margin-left: auto; }
+.role-name { font-size: 13px; font-weight: 600; color: var(--ink); }
 
 .sidebar-nav { display: flex; flex-direction: column; gap: 14px; }
 .nav-group { display: flex; flex-direction: column; gap: 2px; }
