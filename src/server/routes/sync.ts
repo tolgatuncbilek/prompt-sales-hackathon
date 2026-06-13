@@ -4,6 +4,102 @@ import * as schema from '../../db/schema/index.js';
 
 const app = new Hono();
 
+function calculateContractPhases(c: any): { expectedDevices: number | null; phases: { period: string; value: number }[] } {
+  const phases: { period: string; value: number }[] = [];
+  let expectedDevices: number | null = null;
+
+  const getQuarter = (dateStr: string): string => {
+    try {
+      const d = new Date(dateStr);
+      const y = d.getFullYear();
+      const q = Math.floor(d.getMonth() / 3) + 1;
+      return `${y}-Q${q}`;
+    } catch {
+      return "2026-Q3";
+    }
+  };
+
+  const parseTrajectory = (traj: any): any[] => {
+    if (!traj) return [];
+    if (Array.isArray(traj)) return traj;
+    try {
+      return typeof traj === "string" ? JSON.parse(traj) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const start = c.startDate;
+  const end = c.endDate;
+  const fixed = c.fixedValue ? Number(c.fixedValue) : 0;
+  const rate = c.monthlyRate ? Number(c.monthlyRate) : 0;
+
+  if (c.invoiceModel === 'one_off') {
+    if (fixed > 0) {
+      phases.push({ period: getQuarter(start), value: fixed });
+    }
+  } else if (c.invoiceModel === 'fixed_term') {
+    if (fixed > 0 && start && end) {
+      try {
+        const dStart = new Date(start);
+        const dEnd = new Date(end);
+
+        // Calculate difference in months
+        let monthsDiff = (dEnd.getFullYear() - dStart.getFullYear()) * 12 + (dEnd.getMonth() - dStart.getMonth());
+        if (monthsDiff <= 0) monthsDiff = 1;
+
+        const monthlyVal = fixed / monthsDiff;
+        const quarterVals: Record<string, number> = {};
+
+        for (let m = 0; m < monthsDiff; m++) {
+          const currentMonthDate = new Date(dStart.getFullYear(), dStart.getMonth() + m, 15);
+          const qLabel = `${currentMonthDate.getFullYear()}-Q${Math.floor(currentMonthDate.getMonth() / 3) + 1}`;
+          quarterVals[qLabel] = (quarterVals[qLabel] || 0) + monthlyVal;
+        }
+
+        for (const [period, value] of Object.entries(quarterVals)) {
+          phases.push({ period, value: Math.round(value) });
+        }
+      } catch (e) {
+        phases.push({ period: getQuarter(start), value: fixed });
+      }
+    } else if (fixed > 0) {
+      phases.push({ period: getQuarter(start), value: fixed });
+    }
+  } else if (c.invoiceModel === 'monthly_recurring') {
+    const traj = parseTrajectory(c.deviceCountTrajectory);
+    if (traj.length > 0 && rate > 0) {
+      const quarterVals: Record<string, number> = {};
+      let maxDevices = 0;
+
+      for (const pt of traj) {
+        const devCount = pt.expected_devices || pt.expectedDevices || 0;
+        if (devCount > maxDevices) maxDevices = devCount;
+
+        try {
+          const mParts = String(pt.month || pt.period).split('-');
+          const year = parseInt(mParts[0], 10);
+          const month = parseInt(mParts[1], 10) - 1; // 0-indexed
+          const qLabel = `${year}-Q${Math.floor(month / 3) + 1}`;
+
+          quarterVals[qLabel] = (quarterVals[qLabel] || 0) + (devCount * rate);
+        } catch {
+          // Fallback
+        }
+      }
+
+      expectedDevices = maxDevices;
+      for (const [period, value] of Object.entries(quarterVals)) {
+        phases.push({ period, value: Math.round(value) });
+      }
+    } else {
+      expectedDevices = null;
+    }
+  }
+
+  return { expectedDevices, phases };
+}
+
 app.get('/', async (c) => {
   // Fetch all tables
   const [
@@ -104,7 +200,16 @@ app.get('/', async (c) => {
       parentDealId: d.parentDealId,
       ownerId: d.ownerUserId,
       title: d.title,
-      stage: d.stage,
+      stage: d.stage === 'interest_shown' || d.stage === 'rfi_answered'
+        ? 'opportunity'
+        : d.stage === 'rfp_given' || d.stage === 'customer_test'
+          ? 'pipeline'
+          : d.stage === 'contract_negotiation'
+            ? 'committed'
+            : d.stage === 'won'
+              ? 'confirmed'
+              : 'closed',
+      apiStage: d.stage,
       channel: d.channel,
       isPilot: d.isPilot,
       expectedClose: d.expectedClose,
@@ -115,18 +220,23 @@ app.get('/', async (c) => {
     };
   });
 
-  const serviceContracts = dbContracts.map(c => ({
-    id: c.id,
-    dealId: c.dealId,
-    serviceId: c.serviceId,
-    invoiceModel: c.invoiceModel,
-    startDate: c.startDate,
-    endDate: c.endDate,
-    fixedValue: c.fixedValue ? Number(c.fixedValue) : null,
-    monthlyRate: c.monthlyRate ? Number(c.monthlyRate) : null,
-    deviceCountTrajectory: c.deviceCountTrajectory,
-    createdAt: c.createdAt.toISOString()
-  }));
+  const serviceContracts = dbContracts.map(c => {
+    const calculated = calculateContractPhases(c);
+    return {
+      id: c.id,
+      dealId: c.dealId,
+      serviceId: c.serviceId,
+      invoiceModel: c.invoiceModel,
+      startDate: c.startDate,
+      endDate: c.endDate,
+      fixedValue: c.fixedValue ? Number(c.fixedValue) : null,
+      monthlyRate: c.monthlyRate ? Number(c.monthlyRate) : null,
+      deviceCountTrajectory: c.deviceCountTrajectory,
+      createdAt: c.createdAt.toISOString(),
+      expectedDevices: calculated.expectedDevices,
+      phases: calculated.phases
+    };
+  });
 
   const cases = dbCases.map(c => ({
     id: c.id,

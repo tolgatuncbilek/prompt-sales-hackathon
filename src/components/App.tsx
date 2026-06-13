@@ -16,6 +16,7 @@ import {
   pipelineStages,
   users,
   accounts,
+  activities,
   products,
   services,
   deals as seedDeals,
@@ -81,12 +82,13 @@ import {
 } from "../lib/crm.ts";
 import type {
   Account,
+  ApiStage,
   AiInsight,
+  Channel,
   CasePriority,
   CaseRecord,
   CaseStatus,
   CaseNote,
-  Channel,
   Deal,
   Granularity,
   Measure,
@@ -350,14 +352,12 @@ type AppCtx = {
   setInsight: (id: string, status: AiInsight["status"]) => void;
   caseNotes: Record<string, CaseNote[]>;
   addNote: (caseId: string, note: CaseNote) => void;
-  extraDeals: Deal[];
-  addDeal: (deal: Deal) => void;
-  extraAccounts: Account[];
-  addAccount: (account: Account) => void;
   // inline editing: per-entity field overrides applied at render
   patch: (kind: EditKind, id: string, field: string, value: unknown) => void;
   eff: <T extends { id: string }>(kind: EditKind, base: T) => T;
   addAccount: (account: Account) => void;
+  addDeal: (deal: Deal, serviceValue: number, serviceContractId?: string | null, serviceId?: string | null) => void;
+  updateDeal: (deal: Deal, updates: Partial<Pick<Deal, "title" | "stage" | "apiStage" | "channel">> & { device?: number; service?: number; total?: number }) => Promise<void>;
 };
 
 type EditKind = "account" | "deal" | "case" | "product" | "service";
@@ -449,6 +449,215 @@ const SERVICE_OPTIONS: Opt[] = services.map((s) => ({ value: s.id, label: s.name
 const STATUS_OPTIONS: Opt[] = STATUSES.map((s) => ({ value: s, label: STAGE_META[s].label }));
 const RETIRED_OPTIONS: Opt[] = [{ value: "active", label: "Active" }, { value: "retired", label: "Retired" }];
 const SOURCE_OPTIONS: Opt[] = [{ value: "internal", label: "Internal" }, { value: "third", label: "Third party" }];
+const CHANNEL_OPTIONS: Opt[] = [{ value: "direct", label: "Direct" }, { value: "reseller", label: "Reseller" }];
+const API_STAGE_OPTIONS: Opt[] = [
+  { value: "interest_shown", label: "Interest Shown" },
+  { value: "rfi_answered", label: "RFI Answered" },
+  { value: "rfp_given", label: "RFP Given" },
+  { value: "customer_test", label: "Customer Test" },
+  { value: "contract_negotiation", label: "Contract Negotiation" },
+  { value: "won", label: "Won" },
+  { value: "lost", label: "Lost" },
+];
+
+const API_STAGE: Record<Stage, string> = {
+  opportunity: "interest_shown",
+  pipeline: "rfp_given",
+  committed: "contract_negotiation",
+  confirmed: "won",
+  closed: "lost",
+};
+
+function displayStage(apiStage: ApiStage): Stage {
+  if (apiStage === "interest_shown" || apiStage === "rfi_answered") return "opportunity";
+  if (apiStage === "rfp_given" || apiStage === "customer_test") return "pipeline";
+  if (apiStage === "contract_negotiation") return "committed";
+  if (apiStage === "won") return "confirmed";
+  return "closed";
+}
+
+function replaceDealRevenue(deal: Deal, deviceValue: number, serviceValue: number) {
+  const period = deal.devicePhases[0]?.period ?? "2026-Q2";
+  deal.deviceUnitPrice = deviceValue;
+  deal.devicePhases = deviceValue > 0 ? [{ period, units: 1 }] : [];
+
+  const existing = serviceContractsForDeal(deal.id);
+  for (let index = serviceContracts.length - 1; index >= 0; index -= 1) {
+    if (serviceContracts[index]?.dealId === deal.id) serviceContracts.splice(index, 1);
+  }
+  if (serviceValue > 0) {
+    const base = existing[0];
+    serviceContracts.unshift({
+      id: base?.id ?? `sc_${deal.id}`,
+      dealId: deal.id,
+      serviceId: base?.serviceId ?? services[0]?.id ?? "",
+      invoiceModel: "one_off",
+      startDate: base?.startDate ?? "2026-06-13",
+      endDate: null,
+      fixedValue: serviceValue,
+      monthlyRate: null,
+      expectedDevices: null,
+      phases: [{ period, value: serviceValue }],
+    });
+  }
+}
+
+function NewDealModal({ account, ctx, onClose }: { account?: Account; ctx: AppCtx; onClose: () => void }) {
+  const [accountId, setAccountId] = useState(account?.id ?? accounts[0]?.id ?? "");
+  const [title, setTitle] = useState("");
+  const [stage, setStage] = useState<Stage>("opportunity");
+  const [channel, setChannel] = useState<Channel>("direct");
+  const [device, setDevice] = useState("0");
+  const [service, setService] = useState("0");
+  const [total, setTotal] = useState("0");
+  const [totalEdited, setTotalEdited] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const titleRef = useRef<HTMLInputElement>(null);
+  const selectedAccount = account ?? accountById(accountId);
+
+  useEffect(() => {
+    titleRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !submitting) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, submitting]);
+
+  const updateAmount = (kind: "device" | "service", value: string) => {
+    if (kind === "device") setDevice(value);
+    else setService(value);
+    if (!totalEdited) {
+      const nextDevice = Number(kind === "device" ? value : device) || 0;
+      const nextService = Number(kind === "service" ? value : service) || 0;
+      setTotal(String(nextDevice + nextService));
+    }
+  };
+
+  const submit = async () => {
+    const deviceValue = Number(device);
+    const serviceValue = Number(service);
+    const totalValue = Number(total);
+    if (!selectedAccount || !title.trim()) return;
+    if (![deviceValue, serviceValue, totalValue].every(Number.isFinite) || deviceValue < 0 || serviceValue < 0 || totalValue < 0) {
+      setError("Enter non-negative numeric values for Device, Service, and Total.");
+      return;
+    }
+    if (Math.abs(totalValue - deviceValue - serviceValue) > 0.01) {
+      setError("Total must equal Device plus Service.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError("");
+    try {
+      const response = await fetch("/api/deals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: selectedAccount.id,
+          owner_user_id: selectedAccount.ownerId,
+          title: title.trim(),
+          stage: API_STAGE[stage],
+          channel,
+          device: deviceValue,
+          service: serviceValue,
+          total: totalValue,
+        }),
+      });
+      const saved = await response.json();
+      if (!response.ok) throw new Error(saved.error || "Failed to create deal");
+
+      const createdAt = saved.createdAt ?? new Date().toISOString();
+      const deal: Deal = {
+        id: saved.id,
+        accountId: selectedAccount.id,
+        parentDealId: null,
+        ownerId: saved.ownerUserId ?? selectedAccount.ownerId,
+        title: title.trim(),
+        stage,
+        apiStage: API_STAGE[stage] as ApiStage,
+        channel,
+        isPilot: false,
+        expectedClose: saved.expectedClose ?? "",
+        updatedAt: saved.updatedAt ?? createdAt,
+        createdAt,
+        deviceUnitPrice: deviceValue,
+        devicePhases: deviceValue > 0 ? [{ period: saved.periodLabel, units: 1 }] : [],
+      };
+      ctx.addDeal(deal, serviceValue, saved.serviceContractId, saved.serviceId);
+      ctx.notify(`${deal.title} created for ${selectedAccount.name}.`);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create deal.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="modal-scrim" role="dialog" aria-modal="true" aria-labelledby="new-deal-title" onClick={() => { if (!submitting) onClose(); }}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <h2 id="new-deal-title">New deal</h2>
+            <p className="modal-context">{selectedAccount?.name ?? "Select an account"}</p>
+          </div>
+          <button className="icon-btn" aria-label="Close" onClick={onClose} disabled={submitting} type="button"><Icon name="close" /></button>
+        </div>
+        <form className="modal-body" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+          {!account && (
+            <label className="field">
+              <span className="field-label">Account</span>
+              <select value={accountId} onChange={(e) => setAccountId(e.target.value)} required>
+                {accounts.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+              </select>
+            </label>
+          )}
+          <label className="field">
+            <span className="field-label">Deal text</span>
+            <input ref={titleRef} value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={500} />
+          </label>
+          <div className="modal-grid">
+            <label className="field">
+              <span className="field-label">Stage</span>
+              <select value={stage} onChange={(e) => setStage(e.target.value as Stage)}>
+                {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label">Channel</span>
+              <select value={channel} onChange={(e) => setChannel(e.target.value as Channel)}>
+                {CHANNEL_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label">Device</span>
+              <input type="number" min="0" step="0.01" inputMode="decimal" value={device} onChange={(e) => updateAmount("device", e.target.value)} required />
+            </label>
+            <label className="field">
+              <span className="field-label">Service</span>
+              <input type="number" min="0" step="0.01" inputMode="decimal" value={service} onChange={(e) => updateAmount("service", e.target.value)} required />
+            </label>
+            <label className="field modal-grid-span">
+              <span className="field-label">Total</span>
+              <input type="number" min="0" step="0.01" inputMode="decimal" value={total}
+                onChange={(e) => { setTotalEdited(true); setTotal(e.target.value); }} required />
+            </label>
+          </div>
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <div className="modal-foot">
+            <button className="btn btn--ghost" type="button" onClick={onClose} disabled={submitting}>Cancel</button>
+            <button className="btn btn--primary" type="submit" disabled={submitting || !selectedAccount || !title.trim()}>
+              {submitting ? "Creating…" : "Submit"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 // ===========================================================================
 // New account — mock AI research populates the brief from a name + website.
@@ -515,14 +724,54 @@ function NewAccountModal({ ctx, onClose }: { ctx: AppCtx; onClose: () => void })
   const patchDraft = (field: keyof Omit<Account, "id" | "ownerId">, value: string | number) =>
     setDraft((d) => (d ? { ...d, [field]: value } : d));
 
-  const create = () => {
+  const create = async () => {
     if (!draft) return;
     const ownerId = ctx.user.role === "sales_rep" ? ctx.user.id : (REP_OPTIONS[0]?.value ?? ctx.user.id);
-    const id = `acc_${Date.now().toString(36)}`;
-    ctx.addAccount({ id, ownerId, ...draft });
-    onClose();
-    ctx.openAccount(id);
-    ctx.notify(`${draft.name} created.`);
+
+    try {
+      const response = await fetch("/api/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: draft.name,
+          domain: draft.domain,
+          address: draft.address,
+          vat_id: draft.vatId,
+          industry: draft.industry,
+          owner_user_id: ownerId,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save account to database");
+      }
+
+      const savedAccount = await response.json();
+
+      // Construct full frontend Account object merging database response and research draft fields
+      const fullAccount: Account = {
+        id: savedAccount.id,
+        name: savedAccount.name,
+        domain: savedAccount.domain || draft.domain || "",
+        address: savedAccount.address || draft.address || "",
+        vatId: savedAccount.vatId || draft.vatId || "",
+        industry: savedAccount.industry || draft.industry || "",
+        region: draft.region || "Global",
+        ownerId: savedAccount.ownerUserId,
+        lifecycle: draft.lifecycle || "Prospect · New",
+        sites: draft.sites || 1,
+        summary: draft.summary || "",
+        since: draft.since || "Jun 2026",
+      };
+
+      ctx.addAccount(fullAccount);
+      onClose();
+      ctx.openAccount(fullAccount.id);
+      ctx.notify(`${fullAccount.name} created.`);
+    } catch (err) {
+      console.error("Account creation error:", err);
+      ctx.notify("Failed to create account on server.");
+    }
   };
 
   return (
@@ -868,51 +1117,16 @@ function ApprovalCard({ offer, role, ctx }: { offer: Offer; role: "sales_manager
 
 function AccountsView({ ctx }: { ctx: AppCtx }) {
   const [q, setQ] = useState("");
-  const [newAccountOpen, setNewAccountOpen] = useState(false);
-  const [naName, setNaName] = useState("");
-  const [naIndustry, setNaIndustry] = useState("");
-  const [naDomain, setNaDomain] = useState("");
-
   const [modal, setModal] = useState(false);
   const query = q.trim().toLowerCase();
-  const allAccounts = [...accounts, ...ctx.extraAccounts];
-  const rows = allAccounts
+  const rows = accounts
     .map((a) => ctx.eff("account", a))
     .filter((a) => !query || [a.name, a.region, a.industry, userName(a.ownerId)].some((v) => v.toLowerCase().includes(query)));
-
-  const submitNewAccount = () => {
-    if (!naName.trim()) return;
-    const id = crypto.randomUUID();
-    const today = new Date().toISOString().slice(0, 10);
-    const account: Account = {
-      id,
-      name: naName.trim(),
-      industry: naIndustry.trim() || "Unknown",
-      region: "Unknown",
-      domain: naDomain.trim() || "",
-      ownerId: ctx.user.id,
-      lifecycle: "prospect",
-      vatId: "",
-      since: today,
-      sites: 1,
-      summary: "",
-      address: "",
-    };
-    ctx.addAccount(account);
-    fetch("/api/accounts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: account.name, industry: account.industry, region: account.region, domain: account.domain }),
-    }).catch(console.error);
-    setNaName(""); setNaIndustry(""); setNaDomain("");
-    setNewAccountOpen(false);
-    ctx.notify(`Account "${account.name}" created.`);
-  };
 
   return (
     <>
       <PageHead title="Accounts" crumb="Customers" actions={
-        <button className="btn btn--primary" onClick={() => setNewAccountOpen(true)} type="button"><Icon name="plus" />New account</button>
+        <button className="btn btn--primary" onClick={() => setModal(true)} type="button"><Icon name="plus" />New account</button>
       } />
       <div className="toolbar">
         <label className="search">
@@ -953,49 +1167,6 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
         </table>
       </div>
 
-      {newAccountOpen && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="New account"
-          onKeyDown={(e) => { if (e.key === "Escape") setNewAccountOpen(false); }}>
-          <div className="modal">
-            <div className="modal-head">
-              <h2>New account</h2>
-              <button className="icon-btn" onClick={() => setNewAccountOpen(false)} aria-label="Close" type="button"><Icon name="close" /></button>
-            </div>
-            <div className="modal-body">
-              <div className="modal-field">
-                <label htmlFor="na-name">Account name</label>
-                <input id="na-name" type="text" value={naName} onChange={(e) => setNaName(e.target.value)}
-                  placeholder="e.g. Acme Corp" autoFocus
-                  onKeyDown={(e) => { if (e.key === "Enter") submitNewAccount(); }} />
-              </div>
-              <div className="modal-field">
-                <label htmlFor="na-industry">Industry</label>
-                <select id="na-industry" value={naIndustry} onChange={(e) => setNaIndustry(e.target.value)}>
-                  <option value="">Select industry</option>
-                  <option value="Field logistics">Field logistics</option>
-                  <option value="Transport & haulage">Transport &amp; haulage</option>
-                  <option value="Public safety">Public safety</option>
-                  <option value="Energy & utilities">Energy &amp; utilities</option>
-                  <option value="Facilities management">Facilities management</option>
-                  <option value="Healthcare">Healthcare</option>
-                  <option value="Retail">Retail</option>
-                  <option value="Manufacturing">Manufacturing</option>
-                  <option value="Construction">Construction</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-              <div className="modal-field">
-                <label htmlFor="na-domain">Domain</label>
-                <input id="na-domain" type="text" value={naDomain} onChange={(e) => setNaDomain(e.target.value)} placeholder="e.g. acme.com" />
-              </div>
-            </div>
-            <div className="modal-actions">
-              <button className="btn btn--ghost btn--sm" onClick={() => setNewAccountOpen(false)} type="button">Cancel</button>
-              <button className="btn btn--primary btn--sm" onClick={submitNewAccount} disabled={!naName.trim()} type="button">Create account</button>
-            </div>
-          </div>
-        </div>
-      )}
       {modal && <NewAccountModal ctx={ctx} onClose={() => setModal(false)} />}
     </>
   );
@@ -1007,8 +1178,9 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
 
 function AccountRecord({ account: accountInput, ctx, embedded }: { account: Account; ctx: AppCtx; embedded?: boolean }) {
   const account = ctx.eff("account", accountInput);
+  const [dealModal, setDealModal] = useState(false);
   const owner = userById(account.ownerId);
-  const accDeals = [...dealsForAccount(account.id), ...ctx.extraDeals.filter((d) => d.accountId === account.id)].map((d) => liveStage(ctx, d));
+  const accDeals = dealsForAccount(account.id).map((d) => liveStage(ctx, d));
   const openDeals = accDeals.filter(isOpen);
   const accCases = casesForAccount(account.id);
   const openCases = accCases.filter((c) => c.status !== "resolved" && c.status !== "closed");
@@ -1035,62 +1207,6 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
   const [composerOpen, setComposerOpen] = useState(false);
   const [draftKind, setDraftKind] = useState<"note" | "meeting" | "call" | "email">("note");
   const [draft, setDraft] = useState("");
-
-  const [newDealOpen, setNewDealOpen] = useState(false);
-  const [ndTitle, setNdTitle] = useState("");
-  const [ndStage, setNdStage] = useState<Stage>("opportunity");
-  const [ndChannel, setNdChannel] = useState<Channel>("direct");
-  const [ndDevice, setNdDevice] = useState("");
-  const [ndService, setNdService] = useState("");
-
-  const ndDeviceNum = parseFloat(ndDevice) || 0;
-  const ndServiceNum = parseFloat(ndService) || 0;
-  const ndTotal = ndDeviceNum + ndServiceNum;
-
-  const submitNewDeal = () => {
-    if (!ndTitle.trim()) return;
-    const id = crypto.randomUUID();
-    const today = new Date().toISOString().slice(0, 10);
-    const close = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const deal: Deal = {
-      id,
-      accountId: account.id,
-      parentDealId: null,
-      ownerId: ctx.user.id,
-      title: ndTitle.trim(),
-      stage: ndStage,
-      channel: ndChannel,
-      isPilot: false,
-      expectedClose: close,
-      updatedAt: today,
-      createdAt: today,
-      deviceUnitPrice: ndDeviceNum,
-      devicePhases: ndDeviceNum > 0 ? [{ period: "2026-Q3", units: 1 }] : [],
-    };
-    if (ndServiceNum > 0) {
-      serviceContracts.push({
-        id: `sc-${id}`,
-        dealId: id,
-        serviceId: "",
-        invoiceModel: "one_off",
-        startDate: today,
-        endDate: null,
-        fixedValue: ndServiceNum,
-        monthlyRate: null,
-        expectedDevices: null,
-        phases: [{ period: "2026-Q3", value: ndServiceNum }],
-      });
-    }
-    ctx.addDeal(deal);
-    fetch("/api/deals", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ account_id: account.id, title: deal.title, stage: ndStage, channel: ndChannel }),
-    }).catch(console.error);
-    setNdTitle(""); setNdStage("opportunity"); setNdChannel("direct"); setNdDevice(""); setNdService("");
-    setNewDealOpen(false);
-    ctx.notify(`Deal "${deal.title}" created.`);
-  };
 
   const submitLog = () => {
     if (!draft.trim()) return;
@@ -1119,7 +1235,7 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
         </div>
         <div className="record-actions">
           <button className="btn btn--secondary" onClick={() => setComposerOpen((v) => !v)} aria-expanded={composerOpen} type="button">Log activity</button>
-          <button className="btn btn--primary" onClick={() => setNewDealOpen(true)} type="button"><Icon name="plus" />New deal</button>
+          <button className="btn btn--primary" onClick={() => setDealModal(true)} type="button"><Icon name="plus" />New deal</button>
         </div>
       </header>
 
@@ -1143,12 +1259,12 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
                     const d = ctx.eff("deal", base);
                     return (
                     <tr key={d.id}>
-                      <th scope="row"><CellText value={d.title} onCommit={(v) => ctx.patch("deal", d.id, "title", v)} />{d.parentDealId && <small className="muted"><Icon name="link" />follow-on</small>}{d.isPilot && <span className="mini-tag">Pilot</span>}</th>
-                      <td className="cell-edit">{d.stage === "closed" ? <StatusTag stage={d.stage} /> : <InlineStage deal={d} ctx={ctx} />}</td>
-                      <td><span className="chan">{d.channel === "direct" ? "Direct" : "Reseller"}</span></td>
-                      <td className="numeric">{fmtEur(deviceTotal(d))}</td>
-                      <td className="numeric">{fmtEur(serviceTotal(d.id))}</td>
-                      <td className="numeric numeric--strong">{fmtEur(dealTotal(d))}</td>
+                      <th scope="row"><CellText value={d.title} onCommit={(v) => void ctx.updateDeal(d, { title: v })} />{d.parentDealId && <small className="muted"><Icon name="link" />follow-on</small>}{d.isPilot && <span className="mini-tag">Pilot</span>}</th>
+                      <td><CellSelect value={d.apiStage ?? API_STAGE[d.stage]} options={API_STAGE_OPTIONS} onCommit={(v) => void ctx.updateDeal(d, { apiStage: v as ApiStage })} /></td>
+                      <td><CellSelect value={d.channel} options={CHANNEL_OPTIONS} onCommit={(v) => void ctx.updateDeal(d, { channel: v as Channel })} /></td>
+                      <td className="numeric"><CellNumber value={deviceTotal(d)} prefix="€" onCommit={(v) => void ctx.updateDeal(d, { device: v })} /></td>
+                      <td className="numeric"><CellNumber value={serviceTotal(d.id)} prefix="€" onCommit={(v) => void ctx.updateDeal(d, { service: v })} /></td>
+                      <td className="numeric numeric--strong"><CellNumber value={dealTotal(d)} prefix="€" onCommit={(v) => void ctx.updateDeal(d, { total: v })} /></td>
                     </tr>
                     );
                   })}
@@ -1242,61 +1358,7 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
           </section>
         </aside>
       </div>
-
-      {newDealOpen && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="New deal"
-          onKeyDown={(e) => { if (e.key === "Escape") setNewDealOpen(false); }}>
-          <div className="modal">
-            <div className="modal-head">
-              <h2>New deal — {account.name}</h2>
-              <button className="icon-btn" onClick={() => setNewDealOpen(false)} aria-label="Close" type="button"><Icon name="close" /></button>
-            </div>
-            <div className="modal-body">
-              <div className="modal-field">
-                <label htmlFor="nd-title">Deal title</label>
-                <input id="nd-title" type="text" value={ndTitle} onChange={(e) => setNdTitle(e.target.value)}
-                  placeholder="e.g. Q3 device rollout — 500 units" autoFocus
-                  onKeyDown={(e) => { if (e.key === "Enter") submitNewDeal(); }} />
-              </div>
-              <div className="modal-field-row">
-                <div className="modal-field">
-                  <label htmlFor="nd-stage">Stage</label>
-                  <select id="nd-stage" value={ndStage} onChange={(e) => setNdStage(e.target.value as Stage)}>
-                    {STATUSES.map((s) => <option key={s} value={s}>{STAGE_META[s].short}</option>)}
-                  </select>
-                </div>
-                <div className="modal-field">
-                  <label htmlFor="nd-channel">Channel</label>
-                  <select id="nd-channel" value={ndChannel} onChange={(e) => setNdChannel(e.target.value as Channel)}>
-                    <option value="direct">Direct</option>
-                    <option value="reseller">Reseller</option>
-                  </select>
-                </div>
-              </div>
-              <div className="modal-field-row">
-                <div className="modal-field">
-                  <label htmlFor="nd-device">Device (€)</label>
-                  <input id="nd-device" type="number" min="0" step="1" value={ndDevice}
-                    onChange={(e) => setNdDevice(e.target.value)} placeholder="0" />
-                </div>
-                <div className="modal-field">
-                  <label htmlFor="nd-service">Service (€)</label>
-                  <input id="nd-service" type="number" min="0" step="1" value={ndService}
-                    onChange={(e) => setNdService(e.target.value)} placeholder="0" />
-                </div>
-                <div className="modal-field">
-                  <label>Total (€)</label>
-                  <input type="number" value={ndTotal || ""} readOnly tabIndex={-1} placeholder="0" />
-                </div>
-              </div>
-            </div>
-            <div className="modal-actions">
-              <button className="btn btn--ghost btn--sm" onClick={() => setNewDealOpen(false)} type="button">Cancel</button>
-              <button className="btn btn--primary btn--sm" onClick={submitNewDeal} disabled={!ndTitle.trim()} type="button">Create deal</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {dealModal && <NewDealModal account={account} ctx={ctx} onClose={() => setDealModal(false)} />}
     </section>
   );
 }
@@ -1307,6 +1369,7 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
 
 function DealsView({ ctx }: { ctx: AppCtx }) {
   const [mode, setMode] = useState<"table" | "board">("table");
+  const [dealModal, setDealModal] = useState(false);
   const [q, setQ] = useState("");
   const [onlyRisk, setOnlyRisk] = useState(false);
   const [channel, setChannel] = useState<"all" | "direct" | "reseller">("all");
@@ -1326,7 +1389,7 @@ function DealsView({ ctx }: { ctx: AppCtx }) {
   return (
     <>
       <PageHead title="Pipeline" crumb="Commercial" actions={
-        <button className="btn btn--primary" onClick={() => ctx.notify("New deal workflow opened.")} type="button"><Icon name="plus" />New deal</button>
+        <button className="btn btn--primary" onClick={() => setDealModal(true)} type="button"><Icon name="plus" />New deal</button>
       } />
 
       <div className="toolbar">
@@ -1350,6 +1413,7 @@ function DealsView({ ctx }: { ctx: AppCtx }) {
       {mode === "table"
         ? <DealTable deals={open} ctx={ctx} />
         : <DealBoard deals={filtered} ctx={ctx} />}
+      {dealModal && <NewDealModal ctx={ctx} onClose={() => setDealModal(false)} />}
     </>
   );
 }
@@ -1932,10 +1996,19 @@ const NAV: { screen: Screen; label: string; icon: string }[] = [
 
 export default function App() {
   const [ready, setReady] = useState(false);
+
   useEffect(() => {
-    initCrmFromApi().then(() => setReady(true));
+    void initCrmFromApi().then(() => setReady(true));
   }, []);
-  if (!ready) return <div style={{ padding: "2rem", color: "white" }}>Syncing with backend...</div>;
+
+  if (!ready) {
+    return (
+      <main className="startup-spinner" role="status" aria-label="Loading">
+        <span aria-hidden="true" />
+      </main>
+    );
+  }
+
   return <MainApp />;
 }
 
@@ -1966,8 +2039,6 @@ function MainApp() {
   const [insightStatus, setInsightStatus] = useState<Record<string, AiInsight["status"]>>({});
   const [caseNotes, setCaseNotes] = useState<Record<string, CaseNote[]>>({});
   const [readNotifs, setReadNotifs] = useState<Set<string>>(new Set(seedNotifications.filter((n) => n.read).map((n) => n.id)));
-  const [extraDeals, setExtraDeals] = useState<Deal[]>([]);
-  const [extraAccounts, setExtraAccounts] = useState<Account[]>([]);
   const [edits, setEdits] = useState<Record<string, Record<string, unknown>>>({});
   const [, bumpAccounts] = useReducer((c) => c + 1, 0);
 
@@ -1977,7 +2048,85 @@ function MainApp() {
     const e = edits[`${kind}:${base.id}`];
     return e ? ({ ...base, ...e } as T) : base;
   }
-  const addAccount = (account: Account) => { accounts.push(account); bumpAccounts(); };
+  const addAccount = (account: Account) => {
+    accounts.push(account);
+    activities.unshift({
+      id: `act_${Date.now().toString(36)}`,
+      accountId: account.id,
+      actorId: user.id,
+      kind: 'note',
+      summary: 'account_created',
+      when: 'Just now',
+      isAi: false,
+    });
+    bumpAccounts();
+  };
+  const addDeal = (deal: Deal, serviceValue: number, serviceContractId?: string | null, serviceId?: string | null) => {
+    seedDeals.unshift(deal);
+    if (serviceValue > 0 && serviceContractId && serviceId) {
+      serviceContracts.unshift({
+        id: serviceContractId,
+        dealId: deal.id,
+        serviceId,
+        invoiceModel: "one_off",
+        startDate: new Date().toISOString().slice(0, 10),
+        endDate: null,
+        fixedValue: serviceValue,
+        monthlyRate: null,
+        expectedDevices: null,
+        phases: [{ period: deal.devicePhases[0]?.period ?? "2026-Q2", value: serviceValue }],
+      });
+    }
+    bumpAccounts();
+  };
+  const updateDeal = async (
+    deal: Deal,
+    updates: Partial<Pick<Deal, "title" | "stage" | "apiStage" | "channel">> & { device?: number; service?: number; total?: number },
+  ) => {
+    const previous = {
+      title: deal.title,
+      stage: deal.stage,
+      apiStage: deal.apiStage,
+      channel: deal.channel,
+      device: deviceTotal(deal),
+      service: serviceTotal(deal.id),
+    };
+    const device = updates.device ?? (updates.total !== undefined ? Math.max(0, updates.total - previous.service) : previous.device);
+    const service = updates.service ?? (updates.total !== undefined ? Math.min(previous.service, updates.total) : previous.service);
+    const total = updates.total ?? device + service;
+
+    Object.assign(deal, {
+      title: updates.title ?? deal.title,
+      stage: updates.apiStage ? displayStage(updates.apiStage) : updates.stage ?? deal.stage,
+      apiStage: updates.apiStage ?? (updates.stage ? API_STAGE[updates.stage] as ApiStage : deal.apiStage),
+      channel: updates.channel ?? deal.channel,
+    });
+    replaceDealRevenue(deal, device, service);
+    bumpAccounts();
+
+    try {
+      const response = await fetch(`/api/deals/${deal.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: updates.title,
+          stage: updates.apiStage ?? (updates.stage ? API_STAGE[updates.stage] : undefined),
+          channel: updates.channel,
+          device,
+          service,
+          total,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Failed to save deal");
+      notify(`${deal.title} updated.`);
+    } catch (error) {
+      Object.assign(deal, { title: previous.title, stage: previous.stage, apiStage: previous.apiStage, channel: previous.channel });
+      replaceDealRevenue(deal, previous.device, previous.service);
+      bumpAccounts();
+      notify(error instanceof Error ? error.message : "Failed to save deal.");
+    }
+  };
 
   const notify = (msg: string) => {
     const id = ++toastSeq.current;
@@ -2031,9 +2180,7 @@ function MainApp() {
     offerState, decideOffer,
     insightStatus, setInsight: (id, s) => setInsightStatus((m) => ({ ...m, [id]: s })),
     caseNotes, addNote: (cid, n) => setCaseNotes((m) => ({ ...m, [cid]: [n, ...(m[cid] ?? [])] })),
-    patch, eff, addAccount,
-    extraDeals, addDeal: (deal) => setExtraDeals((prev) => [...prev, deal]),
-    extraAccounts, addAccount: (account) => setExtraAccounts((prev: Account[]) => [...prev, account]),
+    patch, eff, addAccount, addDeal, updateDeal,
   };
 
   const myNotifs = seedNotifications.filter((n) => n.userId === userId);

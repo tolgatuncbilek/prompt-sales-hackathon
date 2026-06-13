@@ -17,6 +17,14 @@ export type Stage =
   | "closed"; // Closed
 
 export type Channel = "direct" | "reseller";
+export type ApiStage =
+  | "interest_shown"
+  | "rfi_answered"
+  | "rfp_given"
+  | "customer_test"
+  | "contract_negotiation"
+  | "won"
+  | "lost";
 
 export type ContactRole =
   | "financial_decision_maker"
@@ -89,6 +97,7 @@ export type Deal = {
   ownerId: string;
   title: string;
   stage: Stage;
+  apiStage?: ApiStage;
   channel: Channel;
   isPilot: boolean;
   expectedClose: string; // ISO date

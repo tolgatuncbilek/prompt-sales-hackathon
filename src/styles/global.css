@@ -102,6 +102,26 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
 
 .mobilebar { display: none; }
 
+/* App startup ------------------------------------------------------------- */
+
+.startup-spinner {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+}
+
+.startup-spinner span {
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--rule);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: startup-spin 700ms linear infinite;
+}
+
+@keyframes startup-spin { to { transform: rotate(360deg); } }
+
 .sidebar {
   position: fixed; inset: 0 auto 0 0; z-index: 30; width: var(--sidebar);
   display: flex; flex-direction: column; gap: 2px; padding: 16px 12px 14px;
@@ -760,21 +780,25 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 @keyframes modal-in { from { opacity: 0; transform: translateY(10px) scale(0.99); } }
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--rule); }
 .modal-head h2 { font-size: 1.1rem; }
+.modal-context { margin-top: 3px; color: var(--ink-3); font-size: 11px; }
 .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
 .modal-intro { color: var(--ink-2); font-size: 13px; line-height: 1.55; }
 .modal-note { color: var(--ink-3); font-size: 11px; line-height: 1.45; }
 .modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.modal-grid-span { grid-column: 1 / -1; }
 .modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
 .field { display: flex; flex-direction: column; gap: 7px; }
 .field-label { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 12px; font-weight: 650; }
 .field-opt { padding: 1px 7px; border-radius: var(--r-pill); background: var(--raised); color: var(--ink-3); font-size: 9px; font-weight: 600; letter-spacing: 0.03em; }
-.field input, .field textarea {
+.field input, .field textarea, .field select {
   width: 100%; padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--r-control);
   background: var(--field); color: var(--ink); font: inherit; font-size: 13px; line-height: 1.5; resize: none;
 }
-.field input:focus-visible, .field textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.field select { min-height: 42px; color-scheme: dark; }
+.field input:focus-visible, .field textarea:focus-visible, .field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .field input::placeholder { color: var(--ink-3); }
+.form-error { padding: 10px 12px; border: 1px solid var(--red); border-radius: var(--r-control); background: var(--red-soft); color: var(--ink); font-size: 12px; line-height: 1.45; }
 .field-prefix { display: flex; align-items: center; gap: 8px; padding-left: 12px; border: 1px solid var(--rule); border-radius: var(--r-control); background: var(--field); }
 .field-prefix:focus-within { border-color: var(--accent); }
 .field-prefix .icon { width: 17px; color: var(--ink-3); flex: 0 0 auto; }
@@ -797,7 +821,10 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .research-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .research-step.is-active .research-dot { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
 
-@media (max-width: 560px) { .modal-grid { grid-template-columns: 1fr; } }
+@media (max-width: 560px) {
+  .modal-grid { grid-template-columns: 1fr; }
+  .modal-grid-span { grid-column: auto; }
+}
 
 /* --------------------------------------------------------------------------
    Record side-drawer (row click opens a collapsible split view)
