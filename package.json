@@ -6,7 +6,11 @@
     "dev": "astro dev --host 0.0.0.0",
     "build": "astro build",
     "preview": "astro preview --host 0.0.0.0",
-    "start": "bun ./dist/server/entry.mjs"
+    "start": "bun ./dist/server/entry.mjs",
+    "db:start": "docker compose up -d db",
+    "db:migrate": "bun src/db/migrate.ts",
+    "db:seed": "bun src/db/seed.ts",
+    "db:setup": "bun run db:start && sleep 3 && bun run db:migrate && bun run db:seed"
   },
   "devDependencies": {
     "@types/bun": "latest",
