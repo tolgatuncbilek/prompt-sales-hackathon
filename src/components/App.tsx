@@ -3817,9 +3817,67 @@ type AssistantEvidence = { type: string; id?: string; label: string; url?: strin
 type AssistantMessage =
   | { id: string; role: "user"; content: string }
   | { id: string; role: "assistant"; content: string; evidence: AssistantEvidence[]; uncertainty?: string }
-  | { id: string; role: "status"; content: string }
+  | { id: string; role: "status"; content: string; startedAt: number; attachmentCount: number }
   | { id: string; role: "error"; content: string };
 type AssistantThread = { id: string; title: string; createdAt: string; updatedAt: string };
+
+const ASSISTANT_RUN_STEPS = [
+  { after: 0, label: "Preparing CRM context", detail: "Collecting accounts, contacts, deals, cases, offers, and recent activity." },
+  { after: 3, label: "Assessing the request", detail: "Identifying the records, time range, and evidence needed for a useful answer." },
+  { after: 9, label: "Checking evidence", detail: "Comparing CRM facts and relevant external sources when the question requires research." },
+  { after: 20, label: "Forming the answer", detail: "Resolving conflicts, noting uncertainty, and attaching the supporting evidence." },
+] as const;
+
+function AssistantRunStatus({
+  startedAt,
+  attachmentCount,
+}: {
+  startedAt: number;
+  attachmentCount: number;
+}) {
+  const [elapsed, setElapsed] = useState(() => Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [startedAt]);
+
+  const activeIndex = ASSISTANT_RUN_STEPS.reduce(
+    (latest, step, index) => elapsed >= step.after ? index : latest,
+    0,
+  );
+
+  return (
+    <div className="assistant-run" role="status" aria-live="polite">
+      <div className="assistant-run-head">
+        <span className="assistant-run-pulse" aria-hidden="true" />
+        <strong>Working on your answer</strong>
+        <time>{elapsed}s</time>
+      </div>
+      <ol className="assistant-run-steps">
+        {ASSISTANT_RUN_STEPS.map((step, index) => {
+          const state = index < activeIndex ? "complete" : index === activeIndex ? "active" : "pending";
+          return (
+            <li className={`assistant-run-step assistant-run-step--${state}`} key={step.label}>
+              <span className="assistant-run-marker" aria-hidden="true">{state === "complete" ? "✓" : index + 1}</span>
+              <div>
+                <strong>{step.label}</strong>
+                {state === "active" && <p>{step.detail}</p>}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      <div className="assistant-run-scope">
+        <span>CRM snapshot</span>
+        {attachmentCount > 0 && <span>{attachmentCount} attachment{attachmentCount === 1 ? "" : "s"}</span>}
+      </div>
+      <p className="assistant-run-note">Progress summaries show what the assistant is doing, not private reasoning.</p>
+    </div>
+  );
+}
 
 function CrmAssistant({
   open,
@@ -3958,7 +4016,13 @@ function CrmAssistant({
     setMessages((current) => [
       ...current,
       { id: `msg_${crypto.randomUUID()}`, role: "user", content: userMsgContent },
-      { id: `msg_${crypto.randomUUID()}`, role: "status", content: "Reviewing CRM context…" },
+      {
+        id: `msg_${crypto.randomUUID()}`,
+        role: "status",
+        content: "Working on your answer",
+        startedAt: Date.now(),
+        attachmentCount: files.length,
+      },
     ]);
 
     try {
@@ -4083,7 +4147,9 @@ function CrmAssistant({
                 {entry.uncertainty && entry.id !== streamingId && <small>{entry.uncertainty}</small>}
               </div>
             ) : entry.role === "status" ? (
-              <div className="crm-message crm-message--assistant crm-message--loading" key={entry.id} role="status">{entry.content}</div>
+              <div className="crm-message crm-message--assistant crm-message--loading" key={entry.id}>
+                <AssistantRunStatus startedAt={entry.startedAt} attachmentCount={entry.attachmentCount} />
+              </div>
             ) : (
               <div className="crm-message crm-message--error" key={entry.id} role="alert">{entry.content}</div>
             ))}
