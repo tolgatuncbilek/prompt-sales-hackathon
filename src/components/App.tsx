@@ -3904,7 +3904,7 @@ function ActionsView({ ctx }: { ctx: AppCtx }) {
   const generateActions = async () => {
     setGenerating(true);
     try {
-      const res = await fetch("/api/insights/generate", { method: "POST" });
+      const res = await fetch("/api/insights/refresh-insights", { method: "POST" });
       if (!res.ok) throw new Error("Failed to generate AI actions");
       const data = await res.json() as { insights: AiInsight[] };
       const newActions = data.insights || [];

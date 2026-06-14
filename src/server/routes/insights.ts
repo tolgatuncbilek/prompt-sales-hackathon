@@ -250,7 +250,7 @@ Output ONLY a valid JSON object matching this schema:
 }
 `;
 
-app.post('/generate', async (c) => {
+app.post('/refresh-insights', async (c) => {
   try {
     const user = c.get('user');
 
