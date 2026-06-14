@@ -3,6 +3,7 @@ export * from './users.js';
 export * from './accounts.js';
 export * from './contacts.js';
 export * from './deals.js';
+export * from './deal-competitors.js';
 export * from './device-forecasts.js';
 export * from './service-catalog.js';
 export * from './product-catalog.js';

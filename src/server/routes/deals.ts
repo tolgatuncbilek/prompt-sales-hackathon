@@ -7,6 +7,7 @@ import {
   serviceCatalog,
   serviceContracts,
   offers,
+  dealCompetitors,
 } from '../../db/schema/index.js';
 import type { AuthVariables } from '../middleware/auth.js';
 import { writeActivity } from '../lib/helpers.js';
@@ -143,6 +144,57 @@ app.post('/', async (c) => {
     serviceContractId: result.serviceContract?.id ?? null,
     serviceId: result.serviceContract?.serviceId ?? null,
   }, 201);
+});
+
+/** GET /:id/competitors — list competitors for a deal */
+app.get('/:id/competitors', async (c) => {
+  const dealId = c.req.param('id');
+  const rows = await db
+    .select()
+    .from(dealCompetitors)
+    .where(eq(dealCompetitors.dealId, dealId))
+    .orderBy(dealCompetitors.createdAt);
+  return c.json(rows);
+});
+
+/** POST /:id/competitors — add a competitor to a deal */
+app.post('/:id/competitors', async (c) => {
+  const dealId = c.req.param('id');
+  const body = await c.req.json();
+  const name = String(body.name ?? '').trim();
+  if (!name) {
+    return c.json({ error: 'Competitor name is required', status: 400 }, 400);
+  }
+  const netRaw = body.net_total ?? body.netTotal;
+  const netTotal =
+    netRaw === null || netRaw === undefined || netRaw === ''
+      ? null
+      : String(Number(netRaw));
+
+  if (netTotal !== null && !Number.isFinite(Number(netTotal))) {
+    return c.json({ error: 'Net total must be a number when provided', status: 400 }, 400);
+  }
+
+  const [row] = await db
+    .insert(dealCompetitors)
+    .values({ dealId, name, netTotal })
+    .returning();
+
+  return c.json(row, 201);
+});
+
+/** DELETE /:id/competitors/:competitorId — remove a competitor */
+app.delete('/:id/competitors/:competitorId', async (c) => {
+  const dealId = c.req.param('id');
+  const competitorId = c.req.param('competitorId');
+  const [deleted] = await db
+    .delete(dealCompetitors)
+    .where(and(eq(dealCompetitors.id, competitorId), eq(dealCompetitors.dealId, dealId)))
+    .returning();
+  if (!deleted) {
+    return c.json({ error: 'Competitor not found', status: 404 }, 404);
+  }
+  return c.json({ ok: true });
 });
 
 /** GET /:id — get deal detail with forecasts, service contracts, offers */
