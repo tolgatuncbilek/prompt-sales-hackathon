@@ -2475,7 +2475,6 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
           </p>
         </div>
         <div className="record-actions">
-          <button className="btn btn--secondary" onClick={() => setComposerOpen((v) => !v)} aria-expanded={composerOpen} type="button">Log activity</button>
           {deal.stage === "lead" && !deal.leadValidated && (
             <button className="btn btn--secondary" onClick={() => ctx.validateLead(deal.id)} type="button"><Icon name="check" />Validate lead</button>
           )}
@@ -2569,7 +2568,11 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
           </section>
 
           <section>
-            <SectionHead title="Activity" count={baseActivity.length} />
+            <SectionHead title="Activity" count={baseActivity.length}>
+              {!composerOpen && (
+                <button className="btn btn--secondary btn--sm" onClick={() => setComposerOpen(true)} aria-expanded={composerOpen} type="button">Log activity</button>
+              )}
+            </SectionHead>
             {composerOpen && (
               <div className="composer">
                 <div className="composer-kinds">
