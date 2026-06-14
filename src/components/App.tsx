@@ -3915,9 +3915,16 @@ function ActionsView({ ctx }: { ctx: AppCtx }) {
   const generateActions = async () => {
     setGenerating(true);
     try {
-      const res = await fetch("/api/insights/refresh-insights", { method: "POST" });
-      if (!res.ok) throw new Error("Failed to generate AI actions");
-      const data = await res.json() as { insights: AiInsight[] };
+      const res = await fetch("/api/insights/refresh-insights", {
+        method: "POST",
+        credentials: "include",
+      });
+      const payload = await res.json().catch(async () => ({ error: await res.text() }));
+      if (!res.ok) {
+        const detail = typeof payload?.error === "string" ? payload.error : JSON.stringify(payload);
+        throw new Error(`Failed to generate AI actions (${res.status}): ${detail}`);
+      }
+      const data = payload as { insights: AiInsight[] };
       const newActions = data.insights || [];
       localStorage.setItem("hmd-crm-local-actions", JSON.stringify(newActions));
       setLocalActions(newActions);
