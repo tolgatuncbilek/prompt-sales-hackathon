@@ -10,8 +10,7 @@ import type {
   Account,
 } from "../lib/crm.ts";
 
-
-export type Screen = "home" | "accounts" | "account" | "deals" | "deal" | "cases" | "offers" | "forecast" | "catalog" | "assistant" | "actions";
+export type Screen = "home" | "accounts" | "account" | "deals" | "deal" | "cases" | "offers" | "forecast" | "catalog" | "meetings" | "assistant" | "actions";
 export type Toast = { id: number; msg: string } | null;
 
 export type PendingStageChange = { dealId: string; fromStage: Stage; targetStage: Stage; validateLead: boolean } | null;

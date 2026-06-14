@@ -162,6 +162,7 @@ import type {
   User,
 } from "../lib/crm.ts";
 import type { Screen, Toast, PendingStageChange, EditKind, AppCtx } from "./types.ts";
+import type { TranscriptSegment, WorkerOutbound } from "../lib/meeting-types.ts";
 
 // ===========================================================================
 // Icons
@@ -207,6 +208,7 @@ const ICONS: Record<string, ReactNode> = {
   remove: <path d="M7 7l10 10M17 7l-10 10" />,
   info: (<><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7h.01" /></>),
   copy: (<><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></>),
+  mic: (<><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8" /></>),
 };
 
 function Icon({ name, className }: { name: string; className?: string }) {
@@ -4029,6 +4031,177 @@ function PageHead({ title, actions }: { title: string; actions?: ReactNode }) {
   );
 }
 
+// ===========================================================================
+// Meetings — on-device transcription + diarization
+// ===========================================================================
+
+function fmtClock(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// Decode any browser-supported audio file to 16 kHz mono PCM on the main thread
+// (Web Audio decode/resample is not available inside workers).
+async function decodeToPcm(file: File): Promise<{ pcm: Float32Array; sampleRate: number }> {
+  const arrayBuffer = await file.arrayBuffer();
+  const Ctor = window.AudioContext
+    ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  const decodeCtx = new Ctor();
+  let decoded: AudioBuffer;
+  try {
+    decoded = await decodeCtx.decodeAudioData(arrayBuffer);
+  } finally {
+    void decodeCtx.close();
+  }
+
+  const targetRate = 16000;
+  const frames = Math.max(1, Math.ceil(decoded.duration * targetRate));
+  const offline = new OfflineAudioContext(1, frames, targetRate);
+  const source = offline.createBufferSource();
+  source.buffer = decoded;
+  source.connect(offline.destination);
+  source.start();
+  const rendered = await offline.startRendering();
+  return { pcm: rendered.getChannelData(0).slice(), sampleRate: targetRate };
+}
+
+type MeetingStatus = "idle" | "decoding" | "working" | "done" | "error";
+type MeetingProgress = { stage: string; pct?: number; detail?: string };
+
+function MeetingsView() {
+  const [status, setStatus] = useState<MeetingStatus>("idle");
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [progress, setProgress] = useState<MeetingProgress | null>(null);
+  const [segments, setSegments] = useState<TranscriptSegment[]>([]);
+  const [duration, setDuration] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const workerRef = useRef<Worker | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => () => workerRef.current?.terminate(), []);
+
+  const busy = status === "decoding" || status === "working";
+
+  const run = async (file: File) => {
+    setStatus("decoding");
+    setError(null);
+    setSegments([]);
+    setDuration(0);
+    setFileName(file.name);
+    setProgress({ stage: "decode", detail: "Decoding audio…" });
+
+    try {
+      const { pcm, sampleRate } = await decodeToPcm(file);
+      setDuration(pcm.length / sampleRate);
+
+      workerRef.current?.terminate();
+      const worker = new Worker(new URL("../lib/transcribe.worker.ts", import.meta.url), { type: "module" });
+      workerRef.current = worker;
+
+      worker.onmessage = (event: MessageEvent<WorkerOutbound>) => {
+        const msg = event.data;
+        if (msg.type === "progress") {
+          setStatus("working");
+          setProgress({ stage: msg.stage, pct: msg.pct, detail: msg.detail });
+        } else if (msg.type === "result") {
+          setSegments(msg.result.segments);
+          setDuration(msg.result.durationSec);
+          setStatus("done");
+          setProgress(null);
+          worker.terminate();
+        } else if (msg.type === "error") {
+          setError(msg.message);
+          setStatus("error");
+          setProgress(null);
+          worker.terminate();
+        }
+      };
+      worker.onerror = (event) => {
+        setError(event.message || "The transcription worker failed.");
+        setStatus("error");
+        setProgress(null);
+      };
+
+      worker.postMessage({ type: "transcribe", pcm, sampleRate }, [pcm.buffer]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not read the audio file.");
+      setStatus("error");
+      setProgress(null);
+    }
+  };
+
+  const onPick = (files: FileList | null) => {
+    const file = files?.[0];
+    if (file) void run(file);
+  };
+
+  return (
+    <>
+      <PageHead title="Meetings" />
+      <div className="meeting-view">
+        <p className="meeting-privacy">
+          <Icon name="lock" />
+          Audio is transcribed entirely on your device — the recording never leaves your browser.
+        </p>
+
+        <div
+          className={cx("dropzone", dragOver && "dropzone--over", busy && "dropzone--busy")}
+          role="button"
+          tabIndex={0}
+          aria-disabled={busy}
+          onClick={() => { if (!busy) inputRef.current?.click(); }}
+          onKeyDown={(e) => { if (!busy && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); inputRef.current?.click(); } }}
+          onDragOver={(e) => { e.preventDefault(); if (!busy) setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); if (!busy) onPick(e.dataTransfer.files); }}
+        >
+          <input ref={inputRef} type="file" accept="audio/*" hidden onChange={(e) => onPick(e.target.files)} />
+          <Icon name="mic" className="dropzone-icon" />
+          <strong>{fileName ?? "Drop a meeting recording, or click to upload"}</strong>
+          <small>MP3, WAV, M4A and other audio formats · processed locally</small>
+        </div>
+
+        {progress && (
+          <div className="meeting-progress">
+            <div className="meeting-progress-head">
+              <span>{progress.detail ?? "Working…"}</span>
+              {typeof progress.pct === "number" && <span className="numeric">{Math.round(progress.pct)}%</span>}
+            </div>
+            <div className="progressbar">
+              <div
+                className={cx("progressbar-fill", progress.pct == null && "progressbar-fill--indeterminate")}
+                style={progress.pct != null ? { width: `${Math.min(100, Math.max(0, progress.pct))}%` } : undefined}
+              />
+            </div>
+          </div>
+        )}
+
+        {error && <p className="meeting-error"><Icon name="alert" />{error}</p>}
+
+        {status === "done" && (
+          <section className="transcript">
+            <SectionHead title="Transcript" count={fmtClock(duration)} />
+            {segments.length ? (
+              <ol className="transcript-list">
+                {segments.map((segment, index) => (
+                  <li key={index} className="transcript-seg">
+                    <span className="transcript-time numeric">{fmtClock(segment.start)}</span>
+                    {segment.speaker && <span className="transcript-speaker">{segment.speaker}</span>}
+                    <p>{segment.text}</p>
+                  </li>
+                ))}
+              </ol>
+            ) : <Empty>No speech was detected in this recording.</Empty>}
+          </section>
+        )}
+      </div>
+    </>
+  );
+}
+
 function McpSetupModal({ onClose }: { onClose: () => void }) {
   const [copied, setCopied] = useState<string | null>(null);
   const binaryPath = "/absolute/path/to/hmd-secure-crm-mcp-linux-x64";
@@ -4113,6 +4286,7 @@ const NAV: { screen: Screen; label: string; icon: string }[] = [
   { screen: "offers", label: "Offers", icon: "offers" },
   { screen: "forecast", label: "Forecast", icon: "forecast" },
   { screen: "catalog", label: "Catalog", icon: "catalog" },
+  { screen: "meetings", label: "Meetings", icon: "mic" },
   { screen: "assistant", label: "AI Assistant", icon: "spark" },
   { screen: "actions", label: "Actions", icon: "check" },
 ];
@@ -5213,6 +5387,7 @@ export function MainApp({
   else if (screen === "forecast") content = <ForecastView ctx={ctx} />;
   else if (screen === "catalog") content = <CatalogView ctx={ctx} />;
   else if (screen === "actions") content = <ActionsView ctx={ctx} />;
+  else if (screen === "meetings") content = <MeetingsView />;
   else content = <CrmAssistant open fullPage onClose={() => undefined} />;
 
   const activeNav = screen === "account" ? "accounts" : screen === "deal" ? "deals" : (screen as string) === "case" ? "cases" : screen;

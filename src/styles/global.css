@@ -2068,3 +2068,33 @@ tbody tr:hover .row-open { color: var(--ink-2); }
   .actions-item { animation: none; }
   .actions-item.is-removing { transition: none; }
 }
+
+/* Meetings — on-device transcription + diarization ----------------------- */
+.meeting-view { max-width: 880px; }
+.meeting-privacy { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; padding: 10px 14px; border: 1px solid var(--rule); border-radius: var(--r-control); background: var(--field-2); color: var(--ink-2); font-size: 12.5px; }
+.meeting-privacy .icon { flex: none; color: var(--accent); }
+
+.dropzone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 44px 24px; border: 1.5px dashed var(--rule); border-radius: var(--r-surface); background: var(--field-2); text-align: center; cursor: pointer; transition: border-color var(--t-fast), background var(--t-fast); }
+.dropzone:hover { border-color: var(--accent-line); }
+.dropzone--over { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone--busy { cursor: default; opacity: 0.6; pointer-events: none; }
+.dropzone strong { font-size: 14px; }
+.dropzone small { color: var(--ink-3); font-size: 11.5px; }
+.dropzone-icon { width: 30px; height: 30px; color: var(--ink-2); }
+
+.meeting-progress { margin-top: 18px; }
+.meeting-progress-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 7px; color: var(--ink-2); font-size: 12.5px; }
+.progressbar { position: relative; height: 6px; border-radius: var(--r-pill); background: var(--rule-soft); overflow: hidden; }
+.progressbar-fill { height: 100%; border-radius: var(--r-pill); background: var(--accent); transition: width var(--t-fast); }
+.progressbar-fill--indeterminate { width: 40%; animation: progress-slide 1.1s ease-in-out infinite; }
+@keyframes progress-slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+
+.meeting-error { display: flex; align-items: center; gap: 8px; margin-top: 18px; padding: 10px 14px; border: 1px solid var(--danger); border-radius: var(--r-control); color: var(--danger); font-size: 12.5px; }
+
+.transcript { margin-top: 26px; }
+.transcript-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.transcript-seg { display: grid; grid-template-columns: 52px auto; gap: 4px 12px; align-items: baseline; padding: 10px 12px; border-radius: var(--r-control); transition: background var(--t-fast); }
+.transcript-seg:hover { background: var(--surface); }
+.transcript-time { color: var(--ink-3); font-size: 11.5px; padding-top: 1px; }
+.transcript-speaker { grid-column: 2; font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.03em; }
+.transcript-seg p { grid-column: 2; margin: 0; line-height: 1.5; }
