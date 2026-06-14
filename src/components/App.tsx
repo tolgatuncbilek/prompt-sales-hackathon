@@ -2435,14 +2435,13 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
   const [draft, setDraft] = useState("");
   const dealOffers = offersForDeal(deal.id).map((o) => ctx.offerState[o.id] ?? o);
   const dealCases = casesForDeal(deal.id).map((c) => ctx.eff("case", c));
+  const openDealCases = dealCases.filter((c) => c.status !== "resolved" && c.status !== "closed").length;
   const isLead = deal.stage === "lead";
   const madeOffer = madeOfferForDeal(deal.id, (id) => ctx.offerState[id] ?? seedOffers.find((o) => o.id === id));
   const economicsLocked = Boolean(madeOffer);
   const deviceVal = deviceTotal(deal);
   const serviceVal = serviceTotal(deal.id);
   const totalVal = dealTotal(deal);
-  const nqVal = nextQuarterValue(deal);
-  const weightedVal = weightedTotal(deal);
   const gmVal = dealGrossMargin(deviceVal, serviceVal);
 
   const submitLog = () => {
@@ -2487,20 +2486,12 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
         </div>
       </header>
 
-      <div className="kpi-strip kpi-strip--tight">
+      <div className="kpi-strip kpi-strip--tight kpi-strip--deal">
         {isLead && !economicsLocked ? (
           <>
             <div className="kpi kpi--editable">
               <span className="kpi-label">Total value</span>
               <CellNumber value={totalVal} prefix="€" min={0} onCommit={(v) => void ctx.updateDeal(deal, { total: v })} />
-            </div>
-            <div className="kpi kpi--editable">
-              <span className="kpi-label">Next quarter</span>
-              <CellNumber value={nqVal} prefix="€" min={0} onCommit={(v) => void ctx.updateDeal(deal, { nextQuarter: v })} />
-            </div>
-            <div className="kpi kpi--editable">
-              <span className="kpi-label">Weighted</span>
-              <CellNumber value={weightedVal} prefix="€" min={0} onCommit={(v) => void ctx.updateDeal(deal, { weighted: v })} />
             </div>
             <div className="kpi kpi--editable">
               <span className="kpi-label">Expected close</span>
@@ -2511,13 +2502,13 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
                 onChange={(e) => void ctx.updateDeal(deal, { expectedClose: e.target.value })}
               />
             </div>
+            <Kpi label="Open cases" value={`${openDealCases}`} tone={openDealCases ? "warn" : undefined} />
           </>
         ) : (
           <>
             <Kpi label="Total value" value={fmtEur(totalVal)} />
-            <Kpi label="Next quarter" value={fmtEur(nqVal)} />
-            <Kpi label="Weighted" value={fmtEur(weightedVal)} />
             <Kpi label="Expected close" value={fmtExpectedClose(deal.expectedClose)} tone={isOverdue(deal) ? "warn" : undefined} />
+            <Kpi label="Open cases" value={`${openDealCases}`} tone={openDealCases ? "warn" : undefined} />
           </>
         )}
       </div>
