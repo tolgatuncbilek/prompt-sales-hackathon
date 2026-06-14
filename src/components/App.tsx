@@ -3222,17 +3222,33 @@ const NAV: { screen: Screen; label: string; icon: string }[] = [
   { screen: "offers", label: "Offers", icon: "offers" },
   { screen: "forecast", label: "Forecast", icon: "forecast" },
   { screen: "catalog", label: "Catalog", icon: "catalog" },
+  { screen: "assistant", label: "AI Assistant", icon: "spark" },
 ];
 
-function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void }) {
+type AssistantEvidence = { type: string; id?: string; label: string; url?: string };
+type AssistantMessage =
+  | { id: string; role: "user"; content: string }
+  | { id: string; role: "assistant"; content: string; evidence: AssistantEvidence[]; uncertainty?: string }
+  | { id: string; role: "status"; content: string }
+  | { id: string; role: "error"; content: string };
+type AssistantThread = { id: string; title: string; createdAt: string; updatedAt: string };
+
+function CrmAssistant({
+  open,
+  onClose,
+  fullPage = false,
+  onOpenFullPage,
+}: {
+  open: boolean;
+  onClose: () => void;
+  fullPage?: boolean;
+  onOpenFullPage?: () => void;
+}) {
   const [draft, setDraft] = useState("");
-  const [threadId, setThreadId] = useState<string>(() => `thread_${crypto.randomUUID()}`);
-  const [messages, setMessages] = useState<Array<
-    | { id: string; role: "user"; content: string }
-    | { id: string; role: "assistant"; content: string; evidence: Array<{ type: string; id?: string; label: string; url?: string }>; uncertainty?: string }
-    | { id: string; role: "status"; content: string }
-    | { id: string; role: "error"; content: string }
-  >>([]);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [threads, setThreads] = useState<AssistantThread[]>([]);
+  const [messages, setMessages] = useState<AssistantMessage[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [answer, setAnswer] = useState<{
     answer: string;
     evidence: Array<{ type: string; id?: string; label: string; url?: string }>;
@@ -3270,43 +3286,70 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
     if (open) window.setTimeout(() => inputRef.current?.focus(), 0);
   }, [open]);
 
-  useEffect(() => {
+  const loadThread = async (id: string) => {
+    setHistoryLoading(true);
+    setError(null);
     try {
-      const raw = window.localStorage.getItem("crm-assistant-threads");
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as Record<string, Array<typeof messages[number]>>;
-      const latestThreadId = Object.keys(parsed).at(-1);
-      if (!latestThreadId) return;
-      setThreadId(latestThreadId);
-      setMessages(parsed[latestThreadId] ?? []);
-    } catch {
-      // ignore persistence failures
+      const response = await fetch(`/api/assistant/threads/${id}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not load chat.");
+      setThreadId(id);
+      setMessages((payload.messages ?? []).map((entry: {
+        id: string;
+        role: "user" | "assistant";
+        content: string;
+        evidence?: AssistantEvidence[];
+        uncertainty?: string;
+      }) => entry.role === "assistant"
+        ? { ...entry, evidence: entry.evidence ?? [] }
+        : entry));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Could not load chat.");
+    } finally {
+      setHistoryLoading(false);
     }
-  }, []);
+  };
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem("crm-assistant-threads");
-      const store = raw ? JSON.parse(raw) as Record<string, unknown> : {};
-      store[threadId] = messages;
-      window.localStorage.setItem("crm-assistant-threads", JSON.stringify(store));
-    } catch {
-      // ignore persistence failures
-    }
-  }, [messages, threadId]);
+    if (!open) return;
+    let cancelled = false;
+    void fetch("/api/assistant/threads")
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Could not load chat history.");
+        if (cancelled) return;
+        setThreads(payload);
+        if (!threadId && payload[0]?.id) await loadThread(payload[0].id);
+      })
+      .catch((loadError) => {
+        if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Could not load chat history.");
+      });
+    return () => { cancelled = true; };
+  }, [open]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, answer, loading]);
 
   const newThread = () => {
-    setThreadId(`thread_${crypto.randomUUID()}`);
+    setThreadId(null);
     setMessages([]);
     setDraft("");
     setAnswer(null);
     setError(null);
     setAttachedFiles([]);
     setLoading(false);
+  };
+
+  const deleteThread = async (id: string) => {
+    const response = await fetch(`/api/assistant/threads/${id}`, { method: "DELETE" });
+    if (!response.ok) return;
+    const remaining = threads.filter((thread) => thread.id !== id);
+    setThreads(remaining);
+    if (threadId === id) {
+      if (remaining[0]) await loadThread(remaining[0].id);
+      else newThread();
+    }
   };
 
   const ask = async (value: string) => {
@@ -3336,12 +3379,22 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: next,
+          threadId,
           messages: nextMessages.map((entry) => ({ role: entry.role, content: entry.content })),
           files: files.length > 0 ? files : undefined,
         }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "The assistant could not answer.");
+      setThreadId(payload.threadId);
+      setThreads((current) => {
+        const existing = current.find((thread) => thread.id === payload.threadId);
+        const now = new Date().toISOString();
+        const updated = existing
+          ? { ...existing, updatedAt: now }
+          : { id: payload.threadId, title: next.replace(/\s+/g, " ").slice(0, 72), createdAt: now, updatedAt: now };
+        return [updated, ...current.filter((thread) => thread.id !== payload.threadId)];
+      });
 
       const words = (payload.answer || "").split(" ");
       const msgId = `msg_${crypto.randomUUID()}`;
@@ -3394,18 +3447,33 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
 
   if (!open) return null;
 
-  return (
-    <aside className="crm-assistant" role="dialog" aria-modal="false" aria-labelledby="crm-assistant-title">
+  const conversation = (
+    <>
       <header className="crm-assistant-head">
-        <h2 id="crm-assistant-title">Ask about your workspace</h2>
-        <button className="icon-btn" type="button" aria-label="Close CRM assistant" onClick={onClose}>
-          <Icon name="close" />
-        </button>
+        <div>
+          <h2 id="crm-assistant-title">{fullPage ? "AI Assistant" : "Ask about your workspace"}</h2>
+          {fullPage && <p>Answers are grounded in the CRM snapshot and retain visible evidence.</p>}
+        </div>
+        <div className="crm-assistant-head-actions">
+          <button className="btn btn--secondary" type="button" onClick={newThread}><Icon name="plus" /> New chat</button>
+          {!fullPage && (
+            <>
+              <button className="icon-btn" type="button" aria-label="Open AI Assistant full screen" title="Open full screen" onClick={onOpenFullPage}><Icon name="expand" /></button>
+              <button className="icon-btn" type="button" aria-label="Close CRM assistant" onClick={onClose}><Icon name="close" /></button>
+            </>
+          )}
+        </div>
       </header>
 
       <div className="crm-assistant-body">
-        {messages.length === 0 ? (
-          <div className="crm-assistant-empty" aria-hidden="true" />
+        {historyLoading ? (
+          <div className="crm-assistant-empty crm-assistant-loading" role="status">Loading conversation...</div>
+        ) : messages.length === 0 ? (
+          <div className="crm-assistant-empty">
+            <Icon name="spark" />
+            <h3>{fullPage ? "What can I help you understand?" : "Start with a CRM question"}</h3>
+            <p>Ask about pipeline risk, account history, open cases, offers, or forecast changes. Answers include the CRM evidence used.</p>
+          </div>
         ) : (
           <div className="crm-conversation" ref={scrollRef} aria-live="polite">
             {messages.map((entry) => entry.role === "user" ? (
@@ -3431,7 +3499,6 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
             ) : (
               <div className="crm-message crm-message--error" key={entry.id} role="alert">{entry.content}</div>
             ))}
-            {!loading && <button className="ghost-link crm-new-question" type="button" onClick={newThread}>New chat</button>}
           </div>
         )}
       </div>
@@ -3473,6 +3540,38 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
           <Icon name="arrowRight" />
         </button>
       </form>
+    </>
+  );
+
+  if (fullPage) {
+    return (
+      <section className="assistant-page" aria-labelledby="crm-assistant-title">
+        <aside className="assistant-history" aria-label="Chat history">
+          <div className="assistant-history-head">
+            <strong>Previous chats</strong>
+            <span>{threads.length}</span>
+          </div>
+          <div className="assistant-thread-list">
+            {threads.map((thread) => (
+              <div className={cx("assistant-thread", thread.id === threadId && "assistant-thread--active")} key={thread.id}>
+                <button type="button" onClick={() => { void loadThread(thread.id); }}>
+                  <span>{thread.title}</span>
+                  <small>{new Date(thread.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</small>
+                </button>
+                <button className="icon-btn" type="button" aria-label={`Delete ${thread.title}`} onClick={() => { void deleteThread(thread.id); }}><Icon name="remove" /></button>
+              </div>
+            ))}
+            {!threads.length && <p className="assistant-history-empty">Your conversations will appear here.</p>}
+          </div>
+        </aside>
+        <div className="assistant-page-chat">{conversation}</div>
+      </section>
+    );
+  }
+
+  return (
+    <aside className="crm-assistant" role="dialog" aria-modal="false" aria-labelledby="crm-assistant-title">
+      {conversation}
     </aside>
   );
 }
@@ -3925,7 +4024,8 @@ function MainApp({
   else if ((screen as string) === "case") content = <CaseDetail caseRec={seedCases.find((c) => c.id === caseId)!} ctx={ctx} />;
   else if (screen === "offers") content = <OffersView ctx={ctx} focus={offerFocus} />;
   else if (screen === "forecast") content = <ForecastView ctx={ctx} />;
-  else content = <CatalogView ctx={ctx} />;
+  else if (screen === "catalog") content = <CatalogView ctx={ctx} />;
+  else content = <CrmAssistant open fullPage onClose={() => undefined} />;
 
   const activeNav = screen === "account" ? "accounts" : screen === "deal" ? "deals" : (screen as string) === "case" ? "cases" : screen;
 
@@ -3994,7 +4094,7 @@ function MainApp({
         </div>
       )}
 
-      <main className="workspace">{content}</main>
+      <main className={cx("workspace", screen === "assistant" && "workspace--assistant")}>{content}</main>
 
       {drawer && (
         <>
@@ -4017,8 +4117,17 @@ function MainApp({
         </>
       )}
 
-      <CrmAssistant open={assistantOpen} onClose={() => setAssistantOpen(false)} />
-      <footer className="assistant-footer">
+      <CrmAssistant
+        open={assistantOpen}
+        onClose={() => setAssistantOpen(false)}
+        onOpenFullPage={() => {
+          setAssistantOpen(false);
+          setScreen("assistant");
+          setDrawer(null);
+          setMenuOpen(false);
+        }}
+      />
+      {screen !== "assistant" && <footer className="assistant-footer">
         <div className="theme-switcher" role="group" aria-label="Color scheme">
           {([
             ["original", "Secure"],
@@ -4045,7 +4154,7 @@ function MainApp({
         >
           <Icon name="spark" /><span>Ask CRM</span>
         </button>
-      </footer>
+      </footer>}
 
       {toast && <div className="toast" role="status">{toast.msg}</div>}
       {stageChangePrompt && stageChangeCopy && (

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { desc } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import {
   accounts,
@@ -8,6 +8,8 @@ import {
   cases,
   deals,
   offers,
+  assistantThreads,
+  assistantMessages,
 } from '../../db/schema/index.js';
 import type { AuthVariables } from '../middleware/auth.js';
 
@@ -29,6 +31,55 @@ type ConversationMessage = {
   role: 'system' | 'user' | 'assistant';
   content: string;
 };
+
+const threadTitle = (message: string) => {
+  const compact = message.replace(/\s+/g, ' ').trim();
+  return compact.length > 72 ? `${compact.slice(0, 69)}...` : compact;
+};
+
+async function ownedThread(threadId: string, userId: string) {
+  const [thread] = await db.select().from(assistantThreads)
+    .where(and(eq(assistantThreads.id, threadId), eq(assistantThreads.userId, userId)))
+    .limit(1);
+  return thread;
+}
+
+app.get('/threads', async (c) => {
+  const user = c.get('user');
+  const rows = await db.select().from(assistantThreads)
+    .where(eq(assistantThreads.userId, user.id))
+    .orderBy(desc(assistantThreads.updatedAt));
+  return c.json(rows);
+});
+
+app.post('/threads', async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json<{ title?: string }>().catch(() => ({}));
+  const [thread] = await db.insert(assistantThreads).values({
+    userId: user.id,
+    title: body.title?.trim().slice(0, 160) || 'New chat',
+  }).returning();
+  return c.json(thread, 201);
+});
+
+app.get('/threads/:id', async (c) => {
+  const user = c.get('user');
+  const thread = await ownedThread(c.req.param('id'), user.id);
+  if (!thread) return c.json({ error: 'Chat not found' }, 404);
+  const messages = await db.select().from(assistantMessages)
+    .where(eq(assistantMessages.threadId, thread.id))
+    .orderBy(asc(assistantMessages.createdAt));
+  return c.json({ ...thread, messages });
+});
+
+app.delete('/threads/:id', async (c) => {
+  const user = c.get('user');
+  const deleted = await db.delete(assistantThreads)
+    .where(and(eq(assistantThreads.id, c.req.param('id')), eq(assistantThreads.userId, user.id)))
+    .returning({ id: assistantThreads.id });
+  if (!deleted.length) return c.json({ error: 'Chat not found' }, 404);
+  return c.body(null, 204);
+});
 
 const SYSTEM_PROMPT = `You are the internal CRM analyst for HMD Secure's commercial team.
 You answer questions using the supplied CRM snapshot and, when your runtime supports it,
@@ -82,13 +133,22 @@ function parseAnswer(text: string): AssistantAnswer {
 }
 
 app.post('/', async (c) => {
-  const body = await c.req.json<{ message?: string; messages?: ConversationMessage[]; files?: Array<{ name: string; dataUrl: string }> }>();
+  const body = await c.req.json<{ threadId?: string; message?: string; messages?: ConversationMessage[]; files?: Array<{ name: string; dataUrl: string }> }>();
   const message = body.message?.trim();
   const messages = Array.isArray(body.messages) ? body.messages.filter((entry) => entry && typeof entry.content === 'string') : [];
   if (!message || message.length > 4000) {
     return c.json({ error: 'message must contain between 1 and 4000 characters' }, 400);
   }
   const files = Array.isArray(body.files) ? body.files.slice(0, 5) : [];
+  const user = c.get('user');
+  let thread = body.threadId ? await ownedThread(body.threadId, user.id) : undefined;
+  if (body.threadId && !thread) return c.json({ error: 'Chat not found' }, 404);
+  if (!thread) {
+    [thread] = await db.insert(assistantThreads).values({
+      userId: user.id,
+      title: threadTitle(message),
+    }).returning();
+  }
 
   const apiKey = process.env.OPENCLAW_KEY || astroEnv.OPENCLAW_KEY;
   const endpoint = process.env.OPENCLAW_URL || astroEnv.OPENCLAW_URL;
@@ -106,7 +166,6 @@ app.post('/', async (c) => {
     db.select().from(activities).orderBy(desc(activities.createdAt)).limit(150),
   ]);
 
-  const user = c.get('user');
   const snapshot = {
     generatedAt: new Date().toISOString(),
     user: { id: user.id, name: user.name, role: user.role },
@@ -155,7 +214,25 @@ app.post('/', async (c) => {
   if (!content) return c.json({ error: 'Assistant provider returned no answer' }, 502);
 
   try {
-    return c.json(parseAnswer(content));
+    const answer = parseAnswer(content);
+    const attachmentLabel = files.length > 0 ? `\n\n[Attached: ${files.map((file) => file.name).join(', ')}]` : '';
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      await tx.insert(assistantMessages).values([
+        { threadId: thread.id, role: 'user', content: `${message}${attachmentLabel}` },
+        {
+          threadId: thread.id,
+          role: 'assistant',
+          content: answer.answer,
+          evidence: answer.evidence,
+          uncertainty: answer.uncertainty,
+        },
+      ]);
+      await tx.update(assistantThreads)
+        .set({ title: thread.title === 'New chat' ? threadTitle(message) : thread.title, updatedAt: now })
+        .where(eq(assistantThreads.id, thread.id));
+    });
+    return c.json({ ...answer, threadId: thread.id });
   } catch (error) {
     console.error('Invalid assistant response', error, content.slice(0, 500));
     return c.json({ error: 'Assistant provider returned an invalid response' }, 502);

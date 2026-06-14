@@ -9,7 +9,7 @@ import type {
   ActivityKind,
 } from "../lib/crm.ts";
 
-export type Screen = "home" | "accounts" | "account" | "deals" | "deal" | "cases" | "offers" | "forecast" | "catalog";
+export type Screen = "home" | "accounts" | "account" | "deals" | "deal" | "cases" | "offers" | "forecast" | "catalog" | "assistant";
 export type Toast = { id: number; msg: string } | null;
 
 export type PendingStageChange = { dealId: string; fromStage: Stage; targetStage: Stage; validateLead: boolean } | null;

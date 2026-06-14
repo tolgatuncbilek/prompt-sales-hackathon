@@ -15,3 +15,4 @@ export * from './activities.js';
 export * from './notifications.js';
 export * from './agent-runs.js';
 export * from './ai-insights.js';
+export * from './assistant-chats.js';

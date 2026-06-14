@@ -15,6 +15,13 @@
       "when": 1781376927290,
       "tag": "0001_overrated_solo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781420689018,
+      "tag": "0002_stale_loa",
+      "breakpoints": true
     }
   ]
 }
