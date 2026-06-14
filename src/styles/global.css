@@ -150,6 +150,19 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
   transform-origin: center center;
 }
 
+.startup-error {
+  min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 24px;
+}
+.startup-error-panel {
+  width: min(520px, 100%); padding: 28px; border: 1px solid var(--rule);
+  border-radius: var(--r-surface); background: var(--surface);
+}
+.startup-error-panel > .icon { width: 24px; height: 24px; margin-bottom: 18px; color: var(--red); }
+.startup-error-panel h1 { margin-bottom: 12px; font-size: 1.5rem; }
+.startup-error-panel p { margin-bottom: 10px; color: var(--ink-2); }
+.startup-error-panel code { color: var(--ink); }
+.startup-error-panel .btn { margin-top: 12px; }
+
 @keyframes startup-spin {
   from { transform: rotate(0deg) translateX(120px); }
   to   { transform: rotate(360deg) translateX(120px); }

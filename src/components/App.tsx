@@ -97,7 +97,6 @@ import {
   APPROVAL_ROLE_LABEL,
   demoPersonaIds,
   loginAsUser,
-  defaultDemoUserId,
   defaultOfferWorkflow,
   forecastByPeriod,
   rollUp,
@@ -3479,7 +3478,8 @@ function CrmAssistant({ open, onClose }: { open: boolean; onClose: () => void })
 }
 
 export default function App() {
-  const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [startupError, setStartupError] = useState("");
   const [initialUserId, setInitialUserId] = useState<string | null>(null);
   const [theme, setTheme] = useState<"original" | "metro" | "light">("original");
 
@@ -3500,20 +3500,40 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  useEffect(() => {
-    void initCrmFromApi().then(({ userId }) => {
-      setInitialUserId(userId ?? defaultDemoUserId() ?? users[0]?.id ?? null);
-      setReady(true);
-    });
-  }, []);
+  const loadCrm = async () => {
+    setLoading(true);
+    setStartupError("");
+    const result = await initCrmFromApi();
+    setInitialUserId(result.userId);
+    if (!result.ok || !result.userId) {
+      setStartupError(result.error ?? "Could not load CRM data from PostgreSQL.");
+    }
+    setLoading(false);
+  };
 
-  if (!ready || !initialUserId) {
+  useEffect(() => { void loadCrm(); }, []);
+
+  if (loading) {
     return (
       <main className="startup-spinner" role="status" aria-label="Loading">
         <div className="orbit">
           <div className="orbit-ring" aria-hidden="true" />
           <img src="/nokia-3310.svg" alt="" />
         </div>
+      </main>
+    );
+  }
+
+  if (startupError || !initialUserId) {
+    return (
+      <main className="startup-error">
+        <section className="startup-error-panel" role="alert">
+          <Icon name="alert" />
+          <h1>CRM database unavailable</h1>
+          <p>{startupError || "No database-backed user is available."}</p>
+          <p className="muted">For local development, run <code>bun run db:setup</code>, then retry.</p>
+          <button className="btn btn--primary" type="button" onClick={() => { void loadCrm(); }}>Retry connection</button>
+        </section>
       </main>
     );
   }

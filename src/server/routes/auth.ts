@@ -10,6 +10,7 @@ import {
 } from '../../lib/auth.js';
 
 const auth = new Hono();
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /** GET /users — list all users (for login picker, no auth required) */
 auth.get('/users', async (c) => {
@@ -29,6 +30,9 @@ auth.post('/login', async (c) => {
   const body = await c.req.json<{ userId?: string }>();
   if (!body.userId) {
     return c.json({ error: 'userId is required', status: 400 }, 400);
+  }
+  if (!UUID_PATTERN.test(body.userId)) {
+    return c.json({ error: 'userId must be a valid UUID', status: 400 }, 400);
   }
 
   const [user] = await db

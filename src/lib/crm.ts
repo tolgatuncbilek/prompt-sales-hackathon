@@ -403,7 +403,15 @@ export function defaultDemoUserId(): string {
   return users.find((u) => u.role === "sales_rep")?.id ?? users[0]?.id ?? "";
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 export async function loginAsUser(userId: string): Promise<boolean> {
+  // In-memory fallback personas use readable IDs such as "u_veera".
+  // They can switch locally, but must never reach UUID-backed API routes.
+  if (!isUuid(userId)) return false;
+
   try {
     const res = await fetch("/api/auth/login", {
       method: "POST",
@@ -434,32 +442,17 @@ export function periodYear(period: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Seed data
+// Runtime data
 // ---------------------------------------------------------------------------
 
-import {
-  seedUsers,
-  seedAccounts,
-  seedContacts,
-  seedProducts,
-  seedServices,
-  seedDeals,
-  seedServiceContracts,
-  seedCases,
-  seedOffers,
-  seedActivities,
-  seedAiInsights,
-  seedNotifications,
-} from "./crm-seed.ts";
-
-export let users: User[] = [...seedUsers];
-export let accounts: Account[] = [...seedAccounts];
-export let contacts: Contact[] = [...seedContacts];
-export let products: ProductCatalogItem[] = [...seedProducts];
-export let services: ServiceCatalogItem[] = [...seedServices];
-export let deals: Deal[] = [...seedDeals];
-export let serviceContracts: ServiceContract[] = [...seedServiceContracts];
-export let cases: CaseRecord[] = [...seedCases];
+export let users: User[] = [];
+export let accounts: Account[] = [];
+export let contacts: Contact[] = [];
+export let products: ProductCatalogItem[] = [];
+export let services: ServiceCatalogItem[] = [];
+export let deals: Deal[] = [];
+export let serviceContracts: ServiceContract[] = [];
+export let cases: CaseRecord[] = [];
 
 export function defaultOfferWorkflow(): ApprovalStep[] {
   return [
@@ -482,10 +475,10 @@ export function approvalStepActionLabel(step: ApprovalStep): string {
   return step.roleRequired === "sales_rep" ? "Submitted by" : "Approved by";
 }
 
-export let offers: Offer[] = [...seedOffers];
-export let activities: Activity[] = [...seedActivities];
-export let aiInsights: AiInsight[] = [...seedAiInsights];
-export let notifications: Notification[] = [...seedNotifications];
+export let offers: Offer[] = [];
+export let activities: Activity[] = [];
+export let aiInsights: AiInsight[] = [];
+export let notifications: Notification[] = [];
 
 // ---------------------------------------------------------------------------
 // Lookups
@@ -1032,12 +1025,13 @@ export {
 export type { Granularity, Series, RegionSeries } from "./crm-forecast.ts";
 
 
-export async function initCrmFromApi(): Promise<{ ok: boolean; userId: string | null }> {
+export async function initCrmFromApi(): Promise<{ ok: boolean; userId: string | null; error?: string }> {
   console.log("Loading CRM data from API...");
   try {
     const authRes = await fetch("/api/auth/users", { credentials: "include" });
-    if (!authRes.ok) throw new Error("Failed to load users");
+    if (!authRes.ok) throw new Error("Could not load users from PostgreSQL.");
     const apiUsers: { id: string; role: Role }[] = await authRes.json();
+    if (apiUsers.length === 0) throw new Error("PostgreSQL is connected, but the CRM has no users.");
 
     let sessionUserId: string | null = null;
     const sessionRes = await fetch("/api/auth/session", { credentials: "include" });
@@ -1053,7 +1047,7 @@ export async function initCrmFromApi(): Promise<{ ok: boolean; userId: string | 
     }
 
     const res = await fetch("/api/sync", { credentials: "include" });
-    if (!res.ok) throw new Error("Sync failed");
+    if (!res.ok) throw new Error("Could not synchronize CRM data from PostgreSQL.");
     const data = await res.json();
 
     users = data.users;
@@ -1077,8 +1071,8 @@ export async function initCrmFromApi(): Promise<{ ok: boolean; userId: string | 
 
     return { ok: true, userId: activeId };
   } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not load CRM data from PostgreSQL.";
     console.error("Failed to load from API", e);
-    const fallbackId = defaultDemoUserId() || null;
-    return { ok: false, userId: fallbackId };
+    return { ok: false, userId: null, error: message };
   }
 }
