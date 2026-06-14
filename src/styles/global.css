@@ -2170,6 +2170,14 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .meeting-error { display: flex; align-items: center; gap: 8px; margin-top: 18px; padding: 10px 14px; border: 1px solid var(--danger); border-radius: var(--r-control); color: var(--danger); font-size: 12.5px; }
 
 .meeting-summary { margin-top: 26px; }
+.briefing-deal-select {
+  appearance: none; -webkit-appearance: none; max-width: 240px;
+  padding: 0 26px 0 10px; border: 1px solid var(--rule); border-radius: var(--r-control);
+  background: var(--field-2); color: var(--ink); font-size: 12px; font-weight: 600;
+  cursor: pointer; text-overflow: ellipsis; color-scheme: dark;
+}
+.briefing-deal-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.briefing-deal-select option { background: var(--raised); color: var(--ink); }
 .briefing { display: flex; flex-direction: column; gap: 18px; }
 .briefing-overview { margin: 0; padding: 14px 16px; border-radius: var(--r-control); background: var(--field-2); border: 1px solid var(--rule); line-height: 1.55; }
 .briefing-block h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 9px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-2); }

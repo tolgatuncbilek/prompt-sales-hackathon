@@ -4139,7 +4139,7 @@ async function decodeToPcm(file: File): Promise<{ pcm: Float32Array; sampleRate:
 type MeetingStatus = "idle" | "decoding" | "working" | "done" | "error";
 type MeetingProgress = { stage: string; pct?: number; detail?: string };
 
-function MeetingsView() {
+function MeetingsView({ ctx }: { ctx: AppCtx }) {
   const [status, setStatus] = useState<MeetingStatus>("idle");
   const [fileName, setFileName] = useState<string | null>(null);
   const [progress, setProgress] = useState<MeetingProgress | null>(null);
@@ -4150,12 +4150,37 @@ function MeetingsView() {
   const [summary, setSummary] = useState<MeetingSummary | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [selectedDealId, setSelectedDealId] = useState("");
+  const [saved, setSaved] = useState(false);
   const workerRef = useRef<Worker | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => () => workerRef.current?.terminate(), []);
 
   const busy = status === "decoding" || status === "working";
+
+  // Real deals from the CRM, with live (edited) titles, sorted by account.
+  const dealOptions = seedDeals
+    .map((deal) => ctx.eff("deal", deal))
+    .map((deal) => ({ id: deal.id, title: deal.title, account: accountById(deal.accountId)?.name ?? "—", accountId: deal.accountId }))
+    .sort((a, b) => (a.account === b.account ? a.title.localeCompare(b.title) : a.account.localeCompare(b.account)));
+
+  const saveToActivity = () => {
+    if (!summary || !selectedDealId) return;
+    const deal = dealById(selectedDealId);
+    if (!deal) return;
+    const lines = [
+      summary.summary,
+      summary.decisions.length ? `Decisions: ${summary.decisions.join("; ")}` : "",
+      summary.followUps.length
+        ? `Follow-ups: ${summary.followUps.map((f) => (f.owner ? `${f.text} (${f.owner})` : f.text)).join("; ")}`
+        : "",
+    ].filter(Boolean);
+    const summaryText = `Meeting${fileName ? ` — ${fileName}` : ""}: ${lines.join(" — ")}`;
+    ctx.logActivity({ accountId: deal.accountId, dealId: deal.id, kind: "meeting", summary: summaryText });
+    setSaved(true);
+    ctx.notify(`Meeting saved to ${deal.title} activity.`);
+  };
 
   const summarize = async () => {
     const transcript = segments.map((segment) => segment.text).join("\n").trim();
@@ -4186,6 +4211,8 @@ function MeetingsView() {
     setDuration(0);
     setSummary(null);
     setSummaryError(null);
+    setSelectedDealId("");
+    setSaved(false);
     setFileName(file.name);
     setProgress({ stage: "decode", detail: "Decoding audio…" });
 
@@ -4280,6 +4307,24 @@ function MeetingsView() {
         {status === "done" && segments.length > 0 && (
           <section className="meeting-summary">
             <SectionHead title="Meeting briefing">
+              {summary && (
+                <>
+                  <select
+                    className="briefing-deal-select"
+                    value={selectedDealId}
+                    onChange={(e) => { setSelectedDealId(e.target.value); setSaved(false); }}
+                    aria-label="Link this meeting to a deal"
+                  >
+                    <option value="">Link to a deal…</option>
+                    {dealOptions.map((deal) => (
+                      <option key={deal.id} value={deal.id}>{deal.account} · {deal.title}</option>
+                    ))}
+                  </select>
+                  <button className="btn btn--secondary btn--sm" onClick={saveToActivity} disabled={!selectedDealId || saved} type="button">
+                    <Icon name={saved ? "check" : "plus"} />{saved ? "Saved" : "Save to activity"}
+                  </button>
+                </>
+              )}
               <button className="btn btn--primary btn--sm" onClick={() => void summarize()} disabled={summarizing} type="button">
                 <Icon name="spark" />{summarizing ? "Analyzing…" : summary ? "Regenerate" : "Summarize meeting"}
               </button>
@@ -5493,7 +5538,7 @@ export function MainApp({
   else if (screen === "forecast") content = <ForecastView ctx={ctx} />;
   else if (screen === "catalog") content = <CatalogView ctx={ctx} />;
   else if (screen === "actions") content = <ActionsView ctx={ctx} />;
-  else if (screen === "meetings") content = <MeetingsView />;
+  else if (screen === "meetings") content = <MeetingsView ctx={ctx} />;
   else content = <CrmAssistant open fullPage onClose={() => undefined} />;
 
   const activeNav = screen === "account" ? "accounts" : screen === "deal" ? "deals" : (screen as string) === "case" ? "cases" : screen;
