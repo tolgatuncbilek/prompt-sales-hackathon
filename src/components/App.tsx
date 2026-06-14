@@ -113,9 +113,22 @@ import {
   tierSeries,
   streamSeries,
   regionSeries,
+  ownerSeries,
   forecastTotal,
   weightedForecast,
   securedForecast,
+  defaultStageProbs,
+  dealProbability,
+  dealWeighted,
+  dealWeightedInPeriod,
+  weightedForecastP,
+  committedForecast,
+  atRiskForecast,
+  stageLadder,
+  weightedStream,
+  RESELLER_TEST_PROB,
+  deviceMeasureInPeriod,
+  serviceMeasureInPeriod,
   initCrmFromApi,
   STAGE_TO_API,
   offersForDeal,
@@ -139,6 +152,8 @@ import type {
   Role,
   Series,
   Stage,
+  StageProbs,
+  LadderRung,
   User,
 } from "../lib/crm.ts";
 import type { Screen, Toast, PendingStageChange, EditKind, AppCtx } from "./types.ts";
@@ -2872,36 +2887,113 @@ function fmtMeasure(n: number, m: Measure): string {
   return fmtEur(n);
 }
 
+function roundTo(n: number, step: number): number {
+  return Math.ceil(n / step) * step;
+}
+
+// What threatens (or holds up) a deal's contribution to the forecast — the same
+// deterministic signals the explainability panel itemises.
+type AttentionReason = { code: string; label: string; tone: "danger" | "warn" };
+
+function attentionReasons(deal: Deal, openInsights: AiInsight[]): AttentionReason[] {
+  const out: AttentionReason[] = [];
+  if (isOverdue(deal)) out.push({ code: "overdue", label: "Past close date", tone: "danger" });
+  if (isStale(deal)) out.push({ code: "stale", label: `Stalled ${daysSinceUpdate(deal)}d`, tone: "warn" });
+  if (deal.devicePhases.length === 0) out.push({ code: "no_forecast", label: "No forecast entered", tone: "warn" });
+  for (const ins of openInsights.filter((i) => i.type === "risk_flag")) {
+    out.push({ code: "ai_risk", label: "AI risk flag", tone: ins.severity === "high" ? "danger" : "warn" });
+  }
+  return out;
+}
+
 function ForecastView({ ctx }: { ctx: AppCtx }) {
-  const [lens, setLens] = useState<"commitment" | "streams" | "region">("commitment");
+  const [lens, setLens] = useState<"commitment" | "streams" | "region" | "owner">("commitment");
   const [measure, setMeasure] = useState<Measure>("net_sales");
   const [gran, setGran] = useState<Granularity>("year");
+  const [cumulative, setCumulative] = useState(false);
+  const [probs, setProbs] = useState<StageProbs>(() => defaultStageProbs());
+  const [explainId, setExplainId] = useState<string | null>(null);
+  const [target, setTarget] = useState<number | null>(null);
+  const [narrativeOpen, setNarrativeOpen] = useState(true);
+
+  const isFinance = ctx.user.role === "finance";
   const live = seedDeals.map((d) => liveStage(ctx, d));
   const buckets = periodBuckets(gran);
 
   const regionRows = lens === "region" ? regionSeries(live, measure) : null;
-  const series: Series[] = lens === "commitment" ? tierSeries(live, measure) : lens === "streams" ? streamSeries(live, measure) : regionRows!;
+  const series: Series[] =
+    lens === "commitment" ? tierSeries(live, measure)
+      : lens === "streams" ? streamSeries(live, measure)
+        : lens === "owner" ? ownerSeries(live, measure, userName)
+          : regionRows!;
 
   const colorClass = (key: string, i: number) =>
     lens === "commitment" ? `fseg fseg--tier-${key}` : lens === "streams" ? `fseg fseg--${key}` : `fseg fseg--r${i % 6}`;
   const swatchClass = (key: string, i: number) => colorClass(key, i).replace("fseg ", "");
 
+  // Bucket value, with optional rolling-cumulative view (forecasts are cumulative).
+  const seriesBucket = (se: Series, bi: number) =>
+    cumulative
+      ? buckets.slice(0, bi + 1).reduce((s, b) => s + bucketSum(se.values, b.idx), 0)
+      : bucketSum(se.values, buckets[bi]!.idx);
+  const colTotal = (bi: number) => series.reduce((s, se) => s + seriesBucket(se, bi), 0);
+
   const grand = forecastTotal(live, measure);
-  const colMax = Math.max(1, ...buckets.map((b) => series.reduce((s, se) => s + bucketSum(se.values, b.idx), 0)));
-  const netTotal = forecastTotal(live, "net_sales");
-  const gmTotal = forecastTotal(live, "gm");
+  const colMax = Math.max(1, ...buckets.map((_, bi) => colTotal(bi)));
+
+  // Headline metrics are always net-sales money, device vs service kept apart,
+  // never summed into one blended figure (FORECAST.md §1, §4.1).
+  const wDevice = weightedStream(live, "device", "net_sales", probs);
+  const wService = weightedStream(live, "service", "net_sales", probs);
+  const weighted = wDevice + wService;
+  const committed = committedForecast(live, "net_sales");
+  const atRisk = atRiskForecast(live, "net_sales", probs);
+  const targetVal = target ?? roundTo(Math.max(weighted * 1.2, weighted + 500_000), 500_000);
+  const gap = targetVal - weighted;
+
+  const ladder = stageLadder(live, measure, probs);
+  const hasReseller = live.some((d) => inForecast(d) && d.channel === "reseller" && d.stage === "customer_testing");
+
+  // Needs-attention: open deals where acting de-risks or unlocks counted value.
+  const attention = live
+    .filter(inForecast)
+    .map((d) => {
+      const inss = insightsForDeal(d.id).filter((i) => (ctx.insightStatus[i.id] ?? i.status) === "pending_review");
+      const reasons = attentionReasons(d, inss);
+      const next = inss.find((i) => i.type === "next_action");
+      const weight = dealWeighted(d, "net_sales", probs);
+      const score = reasons.reduce((s, r) => s + (r.tone === "danger" ? 2 : 1), 0) * 1_000_000 + weight;
+      return { deal: d, reasons, next, weight, score };
+    })
+    .filter((r) => r.reasons.length > 0)
+    .sort((a, b) => b.score - a.score);
+
+  // Deterministic AI narrative — built from the numbers above, not a chat model.
+  const topRisk = attention[0];
+  const stalledCount = attention.filter((a) => a.reasons.some((r) => r.code === "overdue" || r.code === "stale")).length;
+  const narrative =
+    `Weighted 3-year net sales stands at ${fmtEur(weighted)} across ${live.filter(inForecast).length} open deals — ` +
+    `${fmtEur(wDevice)} device and ${fmtEur(wService)} service, kept separate. ` +
+    `${fmtEur(committed)} sits in Final negotiation (most committed). ` +
+    (atRisk > 0
+      ? `${fmtEur(atRisk)} is at risk across ${stalledCount} stalled or overdue ${stalledCount === 1 ? "deal" : "deals"}` +
+        (topRisk ? `, led by ${accountById(topRisk.deal.accountId)?.name ?? topRisk.deal.title}. ` : ". ")
+      : "No deals are currently flagged stale or overdue. ") +
+    `Gap to the ${fmtEur(targetVal)} target is ${gap > 0 ? fmtEur(gap) + " short" : fmtEur(-gap) + " ahead"}.`;
 
   const exportCsv = () => {
     const header = ["Category", ...buckets.map((b) => b.label), "Total"];
-    const rows = series.map((se) => [se.label, ...buckets.map((b) => Math.round(bucketSum(se.values, b.idx))), Math.round(se.total)].join(","));
-    rows.push(["Total", ...buckets.map((b) => Math.round(series.reduce((s, se) => s + bucketSum(se.values, b.idx), 0))), Math.round(grand)].join(","));
+    const rows = series.map((se) => [se.label, ...buckets.map((_, bi) => Math.round(seriesBucket(se, bi))), Math.round(se.total)].join(","));
+    rows.push(["Total", ...buckets.map((_, bi) => Math.round(colTotal(bi))), Math.round(grand)].join(","));
     const csv = [header.join(","), ...rows].join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
-    a.href = url; a.download = `hmd-forecast-${lens}-${measure}-${gran}.csv`;
+    a.href = url; a.download = `hmd-forecast-${lens}-${measure}-${gran}${cumulative ? "-cumulative" : ""}.csv`;
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     ctx.notify("Forecast exported to CSV.");
   };
+
+  const lensLabel = lens === "commitment" ? "Commitment tier" : lens === "streams" ? "Revenue stream" : lens === "owner" ? "Owner" : "Country";
 
   return (
     <>
@@ -2910,15 +3002,27 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
       } />
 
       <div className="kpi-strip kpi-strip--tight">
-        <Kpi label="Weighted net sales" value={fmtEur(weightedForecast(live, "net_sales"))} hint="Tier-weighted, 3-year" />
-        <Kpi label="Gross pipeline" value={fmtEur(netTotal)} hint="All tiers, unweighted" />
-        <Kpi label="Gross margin" value={fmtEur(gmTotal)} hint={`${Math.round((gmTotal / netTotal) * 100)}% blended GM`} />
-        <Kpi label="Secured (final negotiation)" value={fmtEur(securedForecast(live, "net_sales"))} tone="good" hint="Deals in final negotiation" />
+        <Kpi label="Weighted forecast" value={fmtEur(weighted)} hint="Tier-weighted · 3-year net sales" />
+        <SplitKpi label="Device vs service" device={wDevice} service={wService} />
+        <Kpi label="Committed" value={fmtEur(committed)} tone="good" hint="Final negotiation · very high win" />
+        <Kpi label="At risk" value={fmtEur(atRisk)} tone={atRisk > 0 ? "danger" : undefined} hint="Stalled or past close date" />
+        <Kpi label="Gap to target" value={gap > 0 ? fmtEur(gap) : `+${fmtEur(-gap)}`} tone={gap > 0 ? "warn" : "good"} hint={`Target ${fmtEur(targetVal)}`} />
       </div>
+
+      {narrativeOpen && (
+        <div className="ai-narrative">
+          <div className="ai-narrative-head">
+            <span className="ai-badge"><Icon name="spark" />AI forecast narrative</span>
+            <button className="icon-btn" aria-label="Dismiss narrative" type="button" onClick={() => setNarrativeOpen(false)}><Icon name="close" /></button>
+          </div>
+          <p>{narrative}</p>
+          <small className="ai-narrative-foot">Generated from the figures on this page. Review before quoting in a forecast meeting.</small>
+        </div>
+      )}
 
       <div className="toolbar">
         <div className="saved-views" role="tablist" aria-label="Forecast lens">
-          {([["commitment", "Commitment"], ["streams", "Device vs service"], ["region", "By region"]] as const).map(([k, label]) => (
+          {([["commitment", "Commitment"], ["streams", "Device vs service"], ["region", "By region"], ["owner", "By owner"]] as const).map(([k, label]) => (
             <button key={k} className="saved-view" role="tab" aria-selected={lens === k} onClick={() => setLens(k)} type="button">{label}</button>
           ))}
         </div>
@@ -2933,48 +3037,52 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
               <button key={g} aria-pressed={gran === g} onClick={() => setGran(g)} type="button">{g === "quarter" ? "Qtr" : g === "half" ? "Half" : "Year"}</button>
             ))}
           </div>
+          <button className={cx("chip-toggle", cumulative && "chip-toggle--on")} aria-pressed={cumulative} onClick={() => setCumulative((v) => !v)} type="button">Cumulative</button>
         </div>
       </div>
 
       <p className="forecast-caption">
         {lens === "commitment" ? "Net value by deal status — Lead → Offer → Customer testing → Final negotiation (Closed excluded from the forward forecast)."
           : lens === "streams" ? "Device and service revenue kept separate, never flattened into one number."
-          : "Regional split with gross-margin percentage, the way the forecast sheet reads."}
-        {" Showing "}<strong>{MEASURE_LABEL[measure]}</strong>.
+            : lens === "owner" ? "The same pipeline split by deal owner — switching lens never duplicates a deal."
+              : "Regional split with gross-margin percentage, the way the forecast sheet reads."}
+        {" Showing "}<strong>{MEASURE_LABEL[measure]}</strong>{cumulative ? ", cumulative" : ", per period"}.
       </p>
 
+      <WinProbabilityLadder ladder={ladder} measure={measure} probs={probs} setProbs={isFinance ? setProbs : undefined} hasReseller={hasReseller} />
+
+      <SectionHead title="Time-phased forecast" />
       <div className="forecast-sheet">
         <table className="forecast-table">
           <thead>
-            <tr><th>{lens === "commitment" ? "Commitment tier" : lens === "streams" ? "Revenue stream" : "Country"}</th>{buckets.map((b) => <th key={b.label} className="numeric">{b.label}</th>)}<th className="numeric">Total</th>{lens === "region" && <th className="numeric">GM %</th>}</tr>
+            <tr><th>{lensLabel}</th>{buckets.map((b) => <th key={b.label} className="numeric">{b.label}</th>)}<th className="numeric">Total</th>{lens === "region" && <th className="numeric">GM %</th>}</tr>
           </thead>
           <tbody>
             {series.map((se, i) => (
               <tr key={se.key}>
                 <th scope="row"><span className={`swatch ${swatchClass(se.key, i)}`} />{se.label}{lens === "commitment" && <span className="mini-tag">{STAGE_META[se.key as Stage].csv}</span>}</th>
-                {buckets.map((b) => <td key={b.label} className="numeric">{fmtMeasure(bucketSum(se.values, b.idx), measure)}</td>)}
-                <td className="numeric numeric--strong">{fmtMeasure(se.total, measure)}</td>
+                {buckets.map((b, bi) => <td key={b.label} className="numeric">{fmtMeasure(seriesBucket(se, bi), measure)}</td>)}
+                <td className="numeric numeric--strong">{fmtMeasure(cumulative ? seriesBucket(se, buckets.length - 1) : se.total, measure)}</td>
                 {lens === "region" && regionRows && <td className="numeric">{Math.round((regionRows[i]?.gmPct ?? 0) * 100)}%</td>}
               </tr>
             ))}
           </tbody>
           <tfoot>
-            <tr><th scope="row">Total</th>{buckets.map((b) => <td key={b.label} className="numeric numeric--strong">{fmtMeasure(series.reduce((s, se) => s + bucketSum(se.values, b.idx), 0), measure)}</td>)}<td className="numeric numeric--strong">{fmtMeasure(grand, measure)}</td>{lens === "region" && <td className="numeric">{Math.round((gmTotal / netTotal) * 100)}%</td>}</tr>
+            <tr><th scope="row">Total</th>{buckets.map((b, bi) => <td key={b.label} className="numeric numeric--strong">{fmtMeasure(colTotal(bi), measure)}</td>)}<td className="numeric numeric--strong">{fmtMeasure(cumulative ? colTotal(buckets.length - 1) : grand, measure)}</td>{lens === "region" && <td className="numeric">{Math.round((forecastTotal(live, "gm") / forecastTotal(live, "net_sales")) * 100)}%</td>}</tr>
           </tfoot>
         </table>
       </div>
 
-      <SectionHead title="Phasing" />
       <div className="forecast-bars">
-        {buckets.map((b) => (
+        {buckets.map((b, bi) => (
           <div className="fbar" key={b.label}>
             <span className="fbar-track" aria-hidden="true">
               {series.map((se, i) => {
-                const v = bucketSum(se.values, b.idx);
+                const v = seriesBucket(se, bi);
                 return v > 0 ? <span key={se.key} className={colorClass(se.key, i)} style={{ height: `${(v / colMax) * 100}%` }} /> : null;
               })}
             </span>
-            <strong>{fmtMeasure(series.reduce((s, se) => s + bucketSum(se.values, b.idx), 0), measure)}</strong>
+            <strong>{fmtMeasure(colTotal(bi), measure)}</strong>
             <small>{b.label}</small>
           </div>
         ))}
@@ -2982,6 +3090,241 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
       <div className="phasing-legend phasing-legend--center">
         {series.map((se, i) => <span key={se.key}><i className={`swatch ${swatchClass(se.key, i)}`} />{se.label}</span>)}
       </div>
+
+      <div className="forecast-lower">
+        <section>
+          <SectionHead title="Needs attention" count={attention.length} />
+          <p className="forecast-caption forecast-caption--tight">Deals where acting de-risks the forecast or unlocks counted value. Ranked by risk, then weighted contribution.</p>
+          {attention.length === 0 ? <Empty>No open deals are stalled, overdue, or missing a forecast.</Empty> : (
+            <ul className="attn-list">
+              {attention.map(({ deal, reasons, next, weight }) => (
+                <li key={deal.id}>
+                  <button className="attn-row" type="button" onClick={() => setExplainId(deal.id)}>
+                    <span className="attn-main">
+                      <span className="attn-title">{deal.title}</span>
+                      <span className="attn-sub">{accountById(deal.accountId)?.name} · {STAGE_META[deal.stage].label}</span>
+                      <span className="attn-reasons">
+                        {reasons.map((r) => <span key={r.code} className={`reason reason--${r.tone}`}>{r.label}</span>)}
+                      </span>
+                      {next && <span className="attn-next"><Icon name="spark" />{next.headline}</span>}
+                    </span>
+                    <span className="attn-weight">
+                      <strong>{fmtEur(weight)}</strong>
+                      <small>weighted</small>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section>
+          <SectionHead title="Forecast controls" />
+          {isFinance ? (
+            <div className="fc-controls">
+              <label className="fc-target">
+                <span>Revenue target (3-year)</span>
+                <input
+                  type="number" inputMode="numeric" step={100_000} value={Math.round(targetVal)}
+                  onChange={(e) => setTarget(Number(e.target.value) || 0)}
+                />
+              </label>
+              <p className="forecast-caption forecast-caption--tight">Stage win-probabilities are editable on the ladder above. Changes re-price the weighted forecast, at-risk, and gap in real time. Reseller deals use a {Math.round(RESELLER_TEST_PROB * 100)}% Customer-testing gate.</p>
+              <button className="btn btn--secondary" type="button" onClick={() => { setProbs(defaultStageProbs()); setTarget(null); ctx.notify("Forecast weighting reset to defaults."); }}>Reset to defaults</button>
+            </div>
+          ) : (
+            <div className="fc-controls">
+              <p className="forecast-caption forecast-caption--tight">Win-probability weighting and the revenue target are maintained by Finance. You are seeing the live weighted picture they configured.</p>
+              <dl className="fc-readout">
+                {OPEN_STATUSES.map((s) => <div key={s}><dt>{STAGE_META[s].label}</dt><dd>{Math.round((probs[s] ?? 0) * 100)}%</dd></div>)}
+              </dl>
+            </div>
+          )}
+        </section>
+      </div>
+
+      {explainId && (
+        <ForecastExplainDrawer
+          deal={live.find((d) => d.id === explainId)!}
+          measure={measure}
+          probs={probs}
+          ctx={ctx}
+          onClose={() => setExplainId(null)}
+        />
+      )}
+    </>
+  );
+}
+
+// Device/service split KPI — two labelled segments, never summed.
+function SplitKpi({ label, device, service }: { label: string; device: number; service: number }) {
+  return (
+    <div className="kpi">
+      <span className="kpi-label">{label}</span>
+      <strong className="kpi-value kpi-value--split">
+        <span><i className="swatch swatch--device" />{fmtEur(device)}</span>
+        <span><i className="swatch swatch--service" />{fmtEur(service)}</span>
+      </strong>
+      <small className="kpi-hint">Device · Service (weighted)</small>
+    </div>
+  );
+}
+
+// Win-probability ladder — the visible bridge from gross pipeline to weighted.
+function WinProbabilityLadder({
+  ladder, measure, probs, setProbs, hasReseller,
+}: {
+  ladder: LadderRung[];
+  measure: Measure;
+  probs: StageProbs;
+  setProbs?: (updater: (p: StageProbs) => StageProbs) => void;
+  hasReseller: boolean;
+}) {
+  const max = Math.max(1, ...ladder.map((r) => r.gross));
+  return (
+    <div className="ladder">
+      <div className="ladder-head">
+        <h2>Win-probability ladder</h2>
+        <span className="ladder-hint">{setProbs ? "Probabilities are editable — they drive the weighted forecast." : "Gross pipeline × stage win-probability = weighted value."}</span>
+      </div>
+      <div className="ladder-rungs">
+        {ladder.map((r) => (
+          <div className="rung" key={r.stage}>
+            <div className="rung-label">
+              <span className={`swatch fseg--tier-${r.stage}`} />
+              <span>{STAGE_META[r.stage].label}</span>
+              <small>{r.count} {r.count === 1 ? "deal" : "deals"}</small>
+            </div>
+            <div className="rung-bar" aria-hidden="true">
+              <span className="rung-gross" style={{ width: `${(r.gross / max) * 100}%` }}>
+                <span className="rung-weighted" style={{ width: `${r.gross > 0 ? (r.weighted / r.gross) * 100 : 0}%` }} />
+              </span>
+            </div>
+            <div className="rung-prob">
+              {setProbs ? (
+                <label>
+                  <input
+                    type="number" min={0} max={100} step={5}
+                    value={Math.round((probs[r.stage] ?? 0) * 100)}
+                    onChange={(e) => {
+                      const pct = Math.min(100, Math.max(0, Number(e.target.value) || 0)) / 100;
+                      setProbs((p) => ({ ...p, [r.stage]: pct }));
+                    }}
+                    aria-label={`${STAGE_META[r.stage].label} win probability percent`}
+                  />
+                  <span>%</span>
+                </label>
+              ) : (
+                <span className="rung-prob-static">{Math.round((probs[r.stage] ?? 0) * 100)}%</span>
+              )}
+            </div>
+            <div className="rung-values">
+              <strong>{fmtMeasure(r.weighted, measure)}</strong>
+              <small>of {fmtMeasure(r.gross, measure)}</small>
+            </div>
+          </div>
+        ))}
+      </div>
+      {hasReseller && (
+        <p className="ladder-note">Reseller deals skip Final negotiation, so their Customer-testing weight is lifted to {Math.round(RESELLER_TEST_PROB * 100)}% as the last gate before Won.</p>
+      )}
+    </div>
+  );
+}
+
+// Explainability — what supports or threatens one deal's contribution.
+function ForecastExplainDrawer({
+  deal, measure, probs, ctx, onClose,
+}: {
+  deal: Deal;
+  measure: Measure;
+  probs: StageProbs;
+  ctx: AppCtx;
+  onClose: () => void;
+}) {
+  const account = accountById(deal.accountId);
+  const prob = dealProbability(deal, probs);
+  const gross = dealMeasureTotal(deal, measure);
+  const weighted = dealWeighted(deal, measure, probs);
+  const nq = dealWeightedInPeriod(deal, NEXT_QUARTER, "net_sales", probs);
+  const total3y = dealWeighted(deal, "net_sales", probs);
+  const insights = insightsForDeal(deal.id).filter((i) => (ctx.insightStatus[i.id] ?? i.status) === "pending_review");
+  const risks = insights.filter((i) => i.type === "risk_flag");
+  const enrich = insights.filter((i) => i.type === "enrichment" || i.type === "next_action");
+  const overdue = isOverdue(deal);
+  const stale = isStale(deal);
+  const resellerGate = deal.channel === "reseller" && deal.stage === "customer_testing";
+
+  return (
+    <>
+      <button className="drawer-scrim" aria-label="Close panel" type="button" onClick={onClose} />
+      <aside className="drawer" role="dialog" aria-label="Forecast contribution detail">
+        <div className="drawer-bar">
+          <div className="drawer-bar-actions">
+            <button className="btn btn--secondary" type="button" onClick={() => { onClose(); ctx.openDeal(deal.id); }}><Icon name="deals" />Open deal</button>
+            <button className="icon-btn" aria-label="Close" type="button" onClick={onClose}><Icon name="close" /></button>
+          </div>
+        </div>
+        <div className="drawer-body">
+          <div className="explain">
+            <div className="explain-head">
+              <h2>{deal.title}</h2>
+              <p>{account?.name} · {deal.channel === "reseller" ? "Reseller" : "Direct"}</p>
+              <div className="explain-tags"><RiskTag deal={deal} /><span className="mini-tag"><span className={`swatch fseg--tier-${deal.stage}`} />{STAGE_META[deal.stage].label}</span></div>
+            </div>
+
+            <div className="explain-figure">
+              <div><span className="kpi-label">Weighted contribution</span><strong>{fmtMeasure(weighted, measure)}</strong></div>
+              <div className="explain-math">{fmtMeasure(gross, measure)} gross × {Math.round(prob * 100)}% = {fmtMeasure(weighted, measure)}</div>
+            </div>
+
+            <SectionHead title="Why this number" />
+            <ul className="explain-list">
+              <li>
+                <span className="explain-k">Stage probability</span>
+                <span className="explain-v">{STAGE_META[deal.stage].label} → {Math.round(prob * 100)}%{resellerGate && <em> (reseller last-gate rule)</em>}</span>
+              </li>
+              <li>
+                <span className="explain-k">Recency</span>
+                <span className={cx("explain-v", stale && "t-warn")}>{activityHint(deal)}{stale && " — stalled"}</span>
+              </li>
+              <li>
+                <span className="explain-k">Timing</span>
+                <span className={cx("explain-v", overdue && "t-danger")}>Expected close {fmtExpectedClose(deal.expectedClose)}{overdue && " — overdue"}</span>
+              </li>
+              <li>
+                <span className="explain-k">Phasing</span>
+                <span className="explain-v">{fmtEur(nq)} next quarter · {fmtEur(total3y)} over 3 years (weighted)</span>
+              </li>
+            </ul>
+
+            <SectionHead title="AI risk & competitor signals" count={risks.length + enrich.length} />
+            {risks.length + enrich.length === 0 ? (
+              <Empty>No open AI signals for this deal.</Empty>
+            ) : (
+              <div className="explain-signals">
+                {[...risks, ...enrich].map((ins) => (
+                  <article key={ins.id} className={cx("signal", ins.type === "risk_flag" && "signal--risk")}>
+                    <div className="signal-top">
+                      <span className="signal-kind">{ins.type === "risk_flag" ? "Risk flag" : ins.type === "next_action" ? "Next action" : "Enrichment"}{ins.severity ? ` · ${ins.severity}` : ""}</span>
+                      <span className="signal-conf">{confidenceLabel(ins.confidence)}</span>
+                    </div>
+                    <p className="signal-headline">{ins.headline}</p>
+                    {ins.body && <p className="signal-body">{ins.body}</p>}
+                    {ins.sources.length > 0 && (
+                      <ul className="signal-sources">
+                        {ins.sources.map((s, i) => <li key={i}><Icon name="link" /><strong>{s.title}</strong> — {s.detail}</li>)}
+                      </ul>
+                    )}
+                  </article>
+                ))}
+              </div>
+            )}
+            <p className="explain-disclaimer">The weighted number is deterministic: stage maps to probability. AI signals above are reviewable evidence of risk to that number — they never auto-adjust the forecast.</p>
+          </div>
+        </div>
+      </aside>
     </>
   );
 }

@@ -14,11 +14,15 @@ import {
   serviceContractsForDeal,
   accountCountry,
   TIERS,
+  OPEN_STATUSES,
   STAGE_META,
+  isStale,
+  isOverdue,
 } from "./crm.ts";
 import type {
   Deal,
   Measure,
+  Stage,
   ForecastRow,
 } from "./crm.ts";
 
@@ -165,4 +169,102 @@ export function securedForecast(dealList: Deal[], m: Measure): number {
     .filter(inForecast)
     .filter((d) => d.stage === "final_negotiation")
     .reduce((s, d) => s + dealMeasureTotal(d, m), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Editable stage-probability weighting + explainable headline metrics.
+//
+// The deal status IS the commitment tier; each tier maps to a win probability.
+// Finance owns these values (FORECAST.md §2), so they live as config the view
+// can edit rather than a hardcoded constant. Every weighted number below flows
+// from this map, which is what makes the forecast auditable: change a rung and
+// the whole picture re-prices.
+// ---------------------------------------------------------------------------
+
+export type StageProbs = Record<Stage, number>;
+
+export function defaultStageProbs(): StageProbs {
+  return {
+    lead: STAGE_META.lead.probability,
+    offer: STAGE_META.offer.probability,
+    customer_testing: STAGE_META.customer_testing.probability,
+    final_negotiation: STAGE_META.final_negotiation.probability,
+    closed: 1,
+  };
+}
+
+/** Reseller deals skip Final negotiation, so Customer testing is their last gate
+ *  before Won — surfaced as a labelled rule, not a silent override. */
+export const RESELLER_TEST_PROB = 0.7;
+
+export function dealProbability(deal: Deal, probs: StageProbs): number {
+  if (deal.channel === "reseller" && deal.stage === "customer_testing") {
+    return Math.max(probs.customer_testing, RESELLER_TEST_PROB);
+  }
+  return probs[deal.stage] ?? STAGE_META[deal.stage].probability;
+}
+
+export function dealWeighted(deal: Deal, m: Measure, probs: StageProbs): number {
+  return dealMeasureTotal(deal, m) * dealProbability(deal, probs);
+}
+
+/** Period-level weighted contribution for one deal — used by phasing + explain. */
+export function dealWeightedInPeriod(deal: Deal, period: string, m: Measure, probs: StageProbs): number {
+  return dealMeasureInPeriod(deal, period, m) * dealProbability(deal, probs);
+}
+
+export function weightedForecastP(dealList: Deal[], m: Measure, probs: StageProbs): number {
+  return dealList.filter(inForecast).reduce((s, d) => s + dealWeighted(d, m, probs), 0);
+}
+
+/** Committed = the most-advanced open tier (Final negotiation / very high win). */
+export function committedForecast(dealList: Deal[], m: Measure): number {
+  return securedForecast(dealList, m);
+}
+
+/** At-risk = weighted value attributable to stale or overdue open deals. */
+export function atRiskForecast(dealList: Deal[], m: Measure, probs: StageProbs): number {
+  return dealList
+    .filter(inForecast)
+    .filter((d) => isStale(d) || isOverdue(d))
+    .reduce((s, d) => s + dealWeighted(d, m, probs), 0);
+}
+
+export type LadderRung = { stage: Stage; count: number; gross: number; weighted: number; probability: number };
+
+/** The win-probability ladder: per open stage, gross value × tier probability →
+ *  weighted value. The visible bridge from raw pipeline to the weighted number. */
+export function stageLadder(dealList: Deal[], m: Measure, probs: StageProbs): LadderRung[] {
+  const open = dealList.filter(inForecast);
+  return OPEN_STATUSES.map((stage) => {
+    const ds = open.filter((d) => d.stage === stage);
+    const gross = ds.reduce((s, d) => s + dealMeasureTotal(d, m), 0);
+    const weighted = ds.reduce((s, d) => s + dealWeighted(d, m, probs), 0);
+    return { stage, count: ds.length, gross, weighted, probability: probs[stage] };
+  });
+}
+
+/** Weighted total for one revenue stream, kept separate from the other so the
+ *  headline can show device and service as two labelled segments (never summed). */
+export function weightedStream(dealList: Deal[], stream: "device" | "service", m: Measure, probs: StageProbs): number {
+  return dealList.filter(inForecast).reduce((s, d) => {
+    const gross = PERIODS.reduce(
+      (t, p) => t + (stream === "device" ? deviceMeasureInPeriod(d, p, m) : serviceMeasureInPeriod(d.id, p, m)),
+      0,
+    );
+    return s + gross * dealProbability(d, probs);
+  }, 0);
+}
+
+/** Forecast re-sliced by deal owner — a saved-view lens over the same dataset. */
+export function ownerSeries(dealList: Deal[], m: Measure, nameOf: (id: string) => string): Series[] {
+  const inc = dealList.filter(inForecast);
+  const owners = [...new Set(inc.map((d) => d.ownerId))];
+  return owners
+    .map((ownerId) => {
+      const ds = inc.filter((d) => d.ownerId === ownerId);
+      const values = PERIODS.map((p) => ds.reduce((s, d) => s + dealMeasureInPeriod(d, p, m), 0));
+      return { key: ownerId, label: nameOf(ownerId), values, total: values.reduce((a, b) => a + b, 0) };
+    })
+    .sort((a, b) => b.total - a.total);
 }

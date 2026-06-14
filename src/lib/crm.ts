@@ -1028,11 +1028,22 @@ export {
   tierSeries,
   streamSeries,
   regionSeries,
+  ownerSeries,
   forecastTotal,
   weightedForecast,
   securedForecast,
+  defaultStageProbs,
+  dealProbability,
+  dealWeighted,
+  dealWeightedInPeriod,
+  weightedForecastP,
+  committedForecast,
+  atRiskForecast,
+  stageLadder,
+  weightedStream,
+  RESELLER_TEST_PROB,
 } from "./crm-forecast.ts";
-export type { Granularity, Series, RegionSeries } from "./crm-forecast.ts";
+export type { Granularity, Series, RegionSeries, StageProbs, LadderRung } from "./crm-forecast.ts";
 
 
 export async function initCrmFromApi(): Promise<{ ok: boolean; userId: string | null; error?: string }> {
