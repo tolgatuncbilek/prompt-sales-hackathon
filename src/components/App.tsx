@@ -897,11 +897,22 @@ function OpenButton({ onClick, label }: { onClick: () => void; label: string }) 
   );
 }
 
-const REP_OPTIONS: Opt[] = users.filter((u) => u.role === "sales_rep").map((u) => ({ value: u.id, label: u.name }));
-const TAM_OPTIONS: Opt[] = users.filter((u) => u.role === "tam").map((u) => ({ value: u.id, label: u.name }));
+function repOptions(): Opt[] {
+  return users.filter((u) => u.role === "sales_rep").map((u) => ({ value: u.id, label: u.name }));
+}
+
+function tamOptions(): Opt[] {
+  return users.filter((u) => u.role === "tam").map((u) => ({ value: u.id, label: u.name }));
+}
+
+function serviceOptions(includeRetired = false): Opt[] {
+  return services
+    .filter((s) => includeRetired || !s.retired)
+    .map((s) => ({ value: s.id, label: s.name }));
+}
+
 const PRIORITY_OPTIONS: Opt[] = (["critical", "high", "medium", "low"] as CasePriority[]).map((p) => ({ value: p, label: PRIORITY_LABEL[p] }));
 const CASE_STATUS_OPTIONS: Opt[] = (["open", "in_progress", "escalated", "resolved", "closed"] as CaseStatus[]).map((s) => ({ value: s, label: CASE_STATUS_LABEL[s] }));
-const SERVICE_OPTIONS: Opt[] = services.map((s) => ({ value: s.id, label: s.name }));
 const STATUS_OPTIONS: Opt[] = STATUSES.map((s) => ({ value: s, label: STAGE_META[s].label }));
 const RETIRED_OPTIONS: Opt[] = [{ value: "active", label: "Active" }, { value: "retired", label: "Retired" }];
 const SOURCE_OPTIONS: Opt[] = [{ value: "internal", label: "Internal" }, { value: "third", label: "Third party" }];
@@ -1446,7 +1457,7 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
                     </span>
                   </th>
                   <td><CellText value={a.industry} onCommit={(v) => ctx.patch("account", a.id, "industry", v)} /></td>
-                  <td><CellSelect value={a.ownerId} options={REP_OPTIONS} onCommit={(v) => ctx.patch("account", a.id, "ownerId", v)} /></td>
+                  <td><CellSelect value={a.ownerId} options={repOptions()} onCommit={(v) => ctx.patch("account", a.id, "ownerId", v)} /></td>
                   <td className="numeric numeric--strong">{fmtEur(pipeline)}</td>
                   <td>{openCases > 0 ? <span className="t-warn">{openCases}</span> : "—"}</td>
                   <td>{worst ? <RiskTag deal={worst} /> : <span className="risk risk--on_track"><span className="risk-dot" />Healthy</span>}</td>
@@ -2246,8 +2257,9 @@ function CreateCaseModal({ deal, ctx, onClose }: { deal: Deal; ctx: AppCtx; onCl
             <div className="field"><span className="field-label">Service</span>
               <CustomSelect
                 value={serviceId}
-                options={SERVICE_OPTIONS}
+                options={serviceOptions()}
                 onChange={setServiceId}
+                placeholder="Select service"
               />
             </div>
           </div>
@@ -2746,7 +2758,7 @@ function DealTable({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
                 </th>
                 <td className="cell-edit"><InlineStage deal={d} ctx={ctx} /></td>
                 <td><span className="signal-cell"><RiskTag deal={d} /><small className="activity-hint">{activityHint(d)}</small></span></td>
-                <td><CellSelect value={d.ownerId} options={REP_OPTIONS} onCommit={(v) => ctx.patch("deal", d.id, "ownerId", v)} /></td>
+                <td><CellSelect value={d.ownerId} options={repOptions()} onCommit={(v) => ctx.patch("deal", d.id, "ownerId", v)} /></td>
                 <td className={isOverdue(d) ? "t-danger" : ""}><CellDate value={d.expectedClose} onCommit={(v) => ctx.patch("deal", d.id, "expectedClose", v)} /></td>
                 <td className="numeric">{d.stage === "closed" && d.apiStage !== "lost" ? "100%" : d.apiStage === "lost" ? "0%" : fmtPct(dyn.probability)}</td>
                 <td className="numeric">{fmtEur(nextQuarterValue(d))}</td>
@@ -2849,8 +2861,8 @@ function CaseTable({ cases, ctx, compact }: { cases: CaseRecord[]; ctx: AppCtx; 
                 <th scope="row"><CellText value={c.title} onCommit={(v) => ctx.patch("case", c.id, "title", v)} /><small className="muted">{c.ref} · {accountById(c.accountId)!.name}{c.escalated ? " · escalated" : ""}</small></th>
                 <td><CellSelect value={c.priority} options={PRIORITY_OPTIONS} onCommit={(v) => ctx.patch("case", c.id, "priority", v)} /></td>
                 <td><CellSelect value={c.status} options={CASE_STATUS_OPTIONS} onCommit={(v) => ctx.patch("case", c.id, "status", v)} /></td>
-                {!compact && <td><CellSelect value={c.serviceId ?? ""} options={SERVICE_OPTIONS} onCommit={(v) => ctx.patch("case", c.id, "serviceId", v)} /></td>}
-                <td><CellSelect value={c.ownerId} options={TAM_OPTIONS} onCommit={(v) => ctx.patch("case", c.id, "ownerId", v)} /></td>
+                {!compact && <td><CellSelect value={c.serviceId ?? ""} options={serviceOptions()} onCommit={(v) => ctx.patch("case", c.id, "serviceId", v)} /></td>}
+                <td><CellSelect value={c.ownerId} options={tamOptions()} onCommit={(v) => ctx.patch("case", c.id, "ownerId", v)} /></td>
                 <td>{caseAgeDays(c)}d</td>
                 <td><span className={cx("sla", `sla--${sla.state}`)}>{sla.state === "breached" && <Icon name="alert" />}{sla.label}</span></td>
                 <td><OpenButton label={`Open ${c.ref}`} onClick={() => ctx.openCase(c.id)} /></td>
