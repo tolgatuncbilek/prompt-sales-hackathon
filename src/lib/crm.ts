@@ -493,10 +493,106 @@ export function approvalTimestamp(): string {
 }
 
 export function offerWorkflowSteps(offer: Offer): ApprovalStep[] {
-  const steps = offer.approvals.filter(
-    (a) => a.roleRequired === "sales_rep" || a.roleRequired === "sales_manager" || a.roleRequired === "finance",
-  );
-  return steps.length >= 3 ? steps.sort((a, b) => a.stepOrder - b.stepOrder).slice(0, 3) : defaultOfferWorkflow();
+  return normalizeOfferWorkflow(offer);
+}
+
+/** Raw DB step that can receive an approve/reject action (has step id). */
+export function findActiveApprovalStep(offer: Offer): ApprovalStep | undefined {
+  const raw = offer.approvals
+    .filter((a) => a.roleRequired === "sales_manager" || a.roleRequired === "finance")
+    .sort((a, b) => a.stepOrder - b.stepOrder);
+  if (offer.status === "pending_manager") {
+    return raw.find((s) => s.roleRequired === "sales_manager" && !s.decision);
+  }
+  if (offer.status === "pending_finance") {
+    return raw.find((s) => s.roleRequired === "finance" && !s.decision);
+  }
+  return undefined;
+}
+
+export function formatApprovalWhen(value: string | null | undefined): string {
+  if (!value?.trim()) return "—";
+  const d = new Date(value);
+  if (!Number.isNaN(d.getTime())) {
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  }
+  return value;
+}
+
+export function approvalStepSummary(step: ApprovalStep): string {
+  if (step.decision !== "approved") return "";
+  const who = userName(step.decidedById);
+  const when = formatApprovalWhen(step.decidedAt);
+  if (step.roleRequired === "sales_rep") return `Submitted by ${who} · ${when}`;
+  if (step.note?.includes("Auto-approved")) return `Auto-approved · ${when}`;
+  return `Approved by ${who} · ${when}`;
+}
+
+/** Build a consistent 3-step view from DB rows (supports legacy 2-step offers). */
+export function normalizeOfferWorkflow(offer: Offer): ApprovalStep[] {
+  const raw = offer.approvals
+    .filter(
+      (a) => a.roleRequired === "sales_rep" || a.roleRequired === "sales_manager" || a.roleRequired === "finance",
+    )
+    .sort((a, b) => a.stepOrder - b.stepOrder);
+
+  const pastRep = offer.status !== "sales_rep" && offer.status !== "rejected";
+  let repStep = raw.find((a) => a.roleRequired === "sales_rep");
+  let managerStep = raw.find((a) => a.roleRequired === "sales_manager");
+  let financeStep = raw.find((a) => a.roleRequired === "finance");
+
+  // Legacy offers: only Sales Manager (order 1) + Finance (order 2)
+  if (!repStep && raw.length >= 2 && raw[0]?.roleRequired === "sales_manager") {
+    managerStep = raw[0];
+    financeStep = raw.find((a) => a.roleRequired === "finance") ?? raw[1];
+  }
+
+  const rep: ApprovalStep = repStep ?? {
+    stepOrder: 1,
+    roleRequired: "sales_rep",
+    decidedById: pastRep ? offer.createdById : null,
+    decision: pastRep ? "approved" : null,
+    note: null,
+    decidedAt: pastRep ? offer.createdAt : null,
+  };
+
+  const sm: ApprovalStep = {
+    id: managerStep?.id,
+    stepOrder: 2,
+    roleRequired: "sales_manager",
+    decidedById: managerStep?.decidedById ?? null,
+    decision: managerStep?.decision ?? null,
+    note: managerStep?.note ?? null,
+    decidedAt: managerStep?.decidedAt ?? null,
+  };
+
+  if (
+    pastRep &&
+    !sm.decision &&
+    offer.status === "pending_finance" &&
+    !offerRequiresManagerApproval(offer)
+  ) {
+    sm.decision = "approved";
+    sm.note = "Auto-approved — all line discounts below 10%.";
+    sm.decidedById = sm.decidedById ?? offer.createdById;
+    sm.decidedAt = sm.decidedAt ?? offer.createdAt ?? null;
+  }
+
+  const fin: ApprovalStep = {
+    id: financeStep?.id,
+    stepOrder: 3,
+    roleRequired: "finance",
+    decidedById: financeStep?.decidedById ?? null,
+    decision: financeStep?.decision ?? null,
+    note: financeStep?.note ?? null,
+    decidedAt: financeStep?.decidedAt ?? null,
+  };
+
+  return [
+    { ...rep, stepOrder: 1 },
+    sm,
+    fin,
+  ];
 }
 
 export function approvalStepActionLabel(step: ApprovalStep): string {
@@ -1117,16 +1213,11 @@ export type { DynamicForecastBreakdown, IndustryStats } from "./crm-dynamic-fore
 // GET requests (If-None-Match) so the browser can get a 304 on repeat loads.
 let _bootstrapEtag: string | null = null;
 
-export async function initCrmFromApi(): Promise<{ ok: boolean; userId: string | null; error?: string }> {
+export async function initCrmFromApi(options?: { force?: boolean }): Promise<{ ok: boolean; userId: string | null; error?: string }> {
   console.log("Loading CRM data from API...");
   try {
-    // Single RTT: /api/bootstrap resolves the session, auto-logs-in when there
-    // is no cookie, and returns all sync data in one response — replacing the
-    // previous 4-hop waterfall:
-    //   GET /api/auth/users → GET /api/auth/session
-    //   → POST /api/auth/login → GET /api/sync
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (_bootstrapEtag) headers["If-None-Match"] = _bootstrapEtag;
+    if (_bootstrapEtag && !options?.force) headers["If-None-Match"] = _bootstrapEtag;
 
     const res = await fetch("/api/bootstrap", { credentials: "include", headers });
 

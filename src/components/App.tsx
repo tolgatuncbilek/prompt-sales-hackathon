@@ -92,8 +92,9 @@ import {
   persistOfferToApi,
   persistOfferUpdateToApi,
   offerWorkflowSteps,
-  approvalStepActionLabel,
-  approvalTimestamp,
+  approvalStepSummary,
+  findActiveApprovalStep,
+  formatApprovalWhen,
   offerRequiresManagerApproval,
   APPROVAL_ROLE_LABEL,
   demoPersonaIds,
@@ -1426,7 +1427,7 @@ function ApprovalCard({ offer, ctx }: { offer: Offer; ctx: AppCtx }) {
         <div className="approval-just"><strong>Justification</strong><p>{offer.justification}</p></div>
       )}
       {smStep?.decision === "approved" && (
-        <p className="approval-prior"><Icon name="check" />{smStep.note?.includes("Auto-approved") ? "Sales Manager auto-approved" : `Approved by Sales Manager ${userName(smStep.decidedById)}`} — {smStep.decidedAt}</p>
+        <p className="approval-prior"><Icon name="check" />{approvalStepSummary(smStep)}{smStep.note && !smStep.note.includes("Auto-approved") ? ` — ${smStep.note}` : ""}</p>
       )}
       {((ctx.user.role === "sales_manager" && offer.status === "pending_manager") ||
         (ctx.user.role === "finance" && offer.status === "pending_finance")) && (
@@ -2203,7 +2204,6 @@ function OfferDetailPanel({
       <p className="offer-stage-label">Current stage: <strong>{OFFER_STATUS_LABEL[offer.status]}</strong></p>
       <ol className="approval-steps">
         {workflow.map((step) => {
-          const repDone = step.roleRequired === "sales_rep" && step.decision === "approved";
           const isActive =
             (offer.status === "sales_rep" && step.roleRequired === "sales_rep" && !step.decision)
             || (offer.status === "pending_manager" && step.roleRequired === "sales_manager" && !step.decision)
@@ -2215,19 +2215,19 @@ function OfferDetailPanel({
           const submitLabel = offerRequiresManagerApproval(offer)
             ? "Send for Sales Manager approval"
             : "Send for Finance approval";
+          const isDone = step.decision === "approved";
           return (
             <li
-              key={step.stepOrder}
+              key={`${step.roleRequired}-${step.stepOrder}`}
               className={cx(
                 "approval-step",
-                step.decision === "approved" && "is-approved",
+                isDone && "is-approved",
                 step.decision === "rejected" && "is-rejected",
                 isActive && "is-active",
-                repDone && "is-approved",
               )}
             >
               <span className="approval-mark" aria-hidden="true">
-                {step.decision === "approved" ? <Icon name="check" /> : step.decision === "rejected" ? <Icon name="close" /> : step.stepOrder}
+                {isDone ? <Icon name="check" /> : step.decision === "rejected" ? <Icon name="close" /> : step.stepOrder}
               </span>
               <div className="approval-step-body">
                 <div className="approval-step-row">
@@ -2251,21 +2251,18 @@ function OfferDetailPanel({
                     </div>
                   )}
                 </div>
-                {!step.decision && isActive && (
+                {isActive && (
                   <small className="approval-step-status">In progress — action required</small>
                 )}
-                {!step.decision && !isActive && offer.status !== "rejected" && offer.status !== "locked" && offer.status !== "made" && (
-                  <small className="approval-step-status">Waiting on prior step</small>
-                )}
-                {step.decision === "approved" && (
+                {isDone && (
                   <p className="approval-step-meta">
-                    {approvalStepActionLabel(step)} {userName(step.decidedById)} — {step.decidedAt}
-                    {step.note ? ` — ${step.note}` : ""}
+                    {approvalStepSummary(step)}
+                    {step.note && !step.note.includes("Auto-approved") ? ` — ${step.note}` : step.note?.includes("Auto-approved") ? ` — ${step.note}` : ""}
                   </p>
                 )}
                 {step.decision === "rejected" && (
                   <p className="approval-step-meta approval-step-meta--rejected">
-                    Rejected by {userName(step.decidedById)} — {step.decidedAt}{step.note ? ` — ${step.note}` : ""}
+                    Rejected by {userName(step.decidedById)} · {formatApprovalWhen(step.decidedAt)}{step.note ? ` — ${step.note}` : ""}
                   </p>
                 )}
               </div>
@@ -4998,7 +4995,8 @@ export function MainApp({
   const [, bumpCompetitors] = useReducer((c) => c + 1, 0);
 
   const reloadCrm = async () => {
-    await initCrmFromApi();
+    await initCrmFromApi({ force: true });
+    setOfferState({});
     bumpAccounts();
   };
 
@@ -5342,90 +5340,59 @@ export function MainApp({
 
     fetch(`/api/offers/${offerId}/submit`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
     })
-      .then((r) => {
-        if (!r.ok) throw new Error("Failed to submit offer");
-        return r.json();
+      .then(async (r) => {
+        const payload = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(payload.error || "Failed to submit offer");
+        return payload;
       })
+      .then(() => reloadCrm())
       .then(() => {
-        void reloadCrm();
         notify(skipManager ? `${base.ref} sent for Finance approval.` : `${base.ref} sent for Sales Manager approval.`);
       })
       .catch((err) => {
         console.error(err);
-        notify("Failed to submit offer.");
+        notify(err instanceof Error ? err.message : "Failed to submit offer.");
       });
-
-    const nextStatus = skipManager ? ("pending_finance" as const) : ("pending_manager" as const);
-    const updated: Offer = { ...base, status: nextStatus };
-    setOfferState((m) => ({ ...m, [offerId]: updated }));
-    const idx = seedOffers.findIndex((o) => o.id === offerId);
-    if (idx >= 0) seedOffers[idx] = updated;
-    bumpAccounts();
-    const decisionDeal = dealById(base.dealId);
-    if (decisionDeal) {
-      recordActivity({
-        accountId: decisionDeal.accountId,
-        dealId: decisionDeal.id,
-        actorId: user.id,
-        kind: "offer",
-        summary: skipManager
-          ? `${base.ref} submitted for Finance approval (Sales Manager auto-approved).`
-          : `${base.ref} submitted for Sales Manager approval.`,
-      });
-    }
   };
 
   const approveOfferMade = (offerId: string) => {
     const base = offerState[offerId] ?? seedOffers.find((o) => o.id === offerId);
     if (!base) return;
 
-    // Find active step matching role
-    const activeStep = offerWorkflowSteps(base).find(
-      (a) =>
-        (base.status === "pending_manager" && a.roleRequired === "sales_manager" && !a.decision) ||
-        (base.status === "pending_finance" && a.roleRequired === "finance" && !a.decision)
-    );
-
-    if (!activeStep || !activeStep.id) {
+    const activeStep = findActiveApprovalStep(base);
+    if (!activeStep?.id) {
       notify("No active approval step found.");
       return;
     }
 
     fetch(`/api/offers/approval-steps/${activeStep.id}/decide`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decision: "approved" }),
     })
-      .then((r) => {
-        if (!r.ok) throw new Error("Failed to approve offer");
-        return r.json();
+      .then(async (r) => {
+        const payload = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(payload.error || "Failed to approve offer");
+        return payload;
       })
+      .then(() => reloadCrm())
       .then(() => {
-        void reloadCrm();
+        const refreshed = seedOffers.find((o) => o.id === offerId);
+        const decisionDeal = refreshed ? dealById(refreshed.dealId) : undefined;
+        if (decisionDeal && refreshed?.status === "locked") {
+          syncDealFromMadeOffer(decisionDeal, refreshed);
+          bumpAccounts();
+        }
         notify(`${base.ref} approved.`);
       })
       .catch((err) => {
         console.error(err);
-        notify("Failed to approve offer.");
+        notify(err instanceof Error ? err.message : "Failed to approve offer.");
       });
-
-    const stamp = approvalTimestamp();
-    const approvals = offerWorkflowSteps(base).map((a) =>
-      a.id === activeStep.id ? { ...a, decision: "approved" as const, decidedById: user.id, decidedAt: stamp } : a
-    );
-    const nextStatus = base.status === "pending_manager" ? ("pending_finance" as const) : ("locked" as const);
-    const updated: Offer = { ...base, status: nextStatus, approvals };
-    setOfferState((m) => ({ ...m, [offerId]: updated }));
-    const idx = seedOffers.findIndex((o) => o.id === offerId);
-    if (idx >= 0) seedOffers[idx] = updated;
-    bumpAccounts();
-
-    const decisionDeal = dealById(base.dealId);
-    if (decisionDeal && nextStatus === "locked") {
-      syncDealFromMadeOffer(decisionDeal, updated);
-    }
   };
 
   const decideOffer = (offerId: string, decision: "approved" | "rejected", note?: string) => {
@@ -5436,12 +5403,7 @@ export function MainApp({
       return;
     }
 
-    const activeStep = offerWorkflowSteps(base).find(
-      (a) =>
-        (base.status === "pending_manager" && a.roleRequired === "sales_manager" && !a.decision) ||
-        (base.status === "pending_finance" && a.roleRequired === "finance" && !a.decision),
-    );
-
+    const activeStep = findActiveApprovalStep(base);
     if (!activeStep?.id) {
       notify("No active approval step found to reject.");
       return;
@@ -5449,27 +5411,23 @@ export function MainApp({
 
     fetch(`/api/offers/approval-steps/${activeStep.id}/decide`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decision: "rejected", note: note?.trim() || "Rejected." }),
     })
-      .then((r) => {
-        if (!r.ok) throw new Error("Failed to reject offer");
-        return r.json();
+      .then(async (r) => {
+        const payload = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(payload.error || "Failed to reject offer");
+        return payload;
       })
+      .then(() => reloadCrm())
       .then(() => {
-        void reloadCrm();
         notify(`${base.ref} returned to Sales Representative for revision.`);
       })
       .catch((err) => {
         console.error(err);
-        notify("Failed to record decision.");
+        notify(err instanceof Error ? err.message : "Failed to record decision.");
       });
-
-    const updated: Offer = { ...base, status: "sales_rep" as const, approvals: [] };
-    setOfferState((m) => ({ ...m, [offerId]: updated }));
-    const idx = seedOffers.findIndex((o) => o.id === offerId);
-    if (idx >= 0) seedOffers[idx] = updated;
-    bumpAccounts();
   };
 
   const expandDrawer = () => {
