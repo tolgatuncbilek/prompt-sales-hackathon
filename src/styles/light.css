@@ -48,6 +48,7 @@
 
   .role-btn:hover,
   .role-btn[aria-expanded="true"],
+  .role-menu-item:hover,
   .nav:hover,
   .notif-row:hover {
     background: #e7e7e2;
