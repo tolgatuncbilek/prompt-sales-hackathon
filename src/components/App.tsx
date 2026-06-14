@@ -1463,17 +1463,33 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
     .map((a) => ctx.eff("account", a))
     .filter((a) => !query || [a.name, a.region, a.industry, userName(a.ownerId)].some((v) => v.toLowerCase().includes(query)));
 
-  const submitNewAccount = () => {
+  const submitNewAccount = async () => {
     if (!naName.trim()) return;
-    const id = crypto.randomUUID();
+    const name = naName.trim();
+    const industry = naIndustry.trim() || "Unknown";
+    const domain = naDomain.trim() || "";
+    let saved: { id: string; ownerUserId?: string; error?: string };
+    try {
+      const res = await fetch("/api/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, industry, region: "Unknown", domain }),
+      });
+      saved = await res.json();
+      if (!res.ok) throw new Error(saved.error || "Failed to create account");
+    } catch (err) {
+      console.error(err);
+      ctx.notify(`Could not create account: ${err instanceof Error ? err.message : "Unknown error"}`);
+      return;
+    }
     const today = new Date().toISOString().slice(0, 10);
     const account: Account = {
-      id,
-      name: naName.trim(),
-      industry: naIndustry.trim() || "Unknown",
+      id: saved.id,
+      name,
+      industry,
       region: "Unknown",
-      domain: naDomain.trim() || "",
-      ownerId: ctx.user.id,
+      domain,
+      ownerId: saved.ownerUserId ?? ctx.user.id,
       lifecycle: "prospect",
       vatId: "",
       since: today,
@@ -1482,11 +1498,6 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
       address: "",
     };
     ctx.addAccount(account);
-    fetch("/api/accounts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: account.name, industry: account.industry, region: account.region, domain: account.domain }),
-    }).catch(console.error);
     setNaName("");
     setNaIndustry("");
     setNaDomain("");
