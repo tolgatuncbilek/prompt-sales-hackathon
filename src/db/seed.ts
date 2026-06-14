@@ -171,7 +171,7 @@ for (let i = 1; i <= 4; i++) {
 
 // Activities
 const activityId: Record<string, string> = {};
-for (let i = 1; i <= 60; i++) {
+for (let i = 1; i <= 70; i++) {
   activityId[`act${i}`] = crypto.randomUUID();
 }
 
@@ -899,6 +899,129 @@ async function main() {
     { id: activityId.act58, accountId: accountId.nhs,           actorUserId: userId.maria, entityType: "deal",    entityId: dealId.d9,  eventType: "note_added",     payload: JSON.stringify({ text: "Second attempt at NHS — this time through reseller HealthTech Solutions who hold the NHS framework. Mental health team needs 200 smartphones. RFP submitted." }), isAiGenerated: false, createdAt: daysAgo(7) },
     { id: activityId.act59, accountId: accountId.postnord,      actorUserId: userId.tomas, entityType: "case",    entityId: caseId.cs3,  eventType: "case_opened",   payload: JSON.stringify({ priority: "low", service: "HMD Secure MDM" }), isAiGenerated: false, createdAt: daysAgo(1) },
     { id: activityId.act60, accountId: accountId.danishDefence, actorUserId: userId.sofia, entityType: "case",    entityId: caseId.cs7,  eventType: "case_status_changed", payload: JSON.stringify({ old: "open", new: "escalated" }), isAiGenerated: false, createdAt: daysAgo(3) },
+
+    // --- Mock Emails (6) ---
+    {
+      id: activityId.act61,
+      accountId: accountId.securitas,
+      actorUserId: null, // External sender (Sari Laine)
+      entityType: "account",
+      entityId: accountId.securitas,
+      eventType: "email_received",
+      payload: JSON.stringify({
+        from: "sari.laine@securitas.fi",
+        fromName: "Sari Laine",
+        to: ["janne@hmdsecure.com"],
+        subject: "Re: HMD Secure XR-20 Pilot Feedback",
+        snippet: "Hi Janne, we are very pleased with the initial Finnish pilot deployment. Let's discuss pricing options for a 3-year rollout of 3,000 devices across our Baltic operations.",
+        messageId: "msg-outlook-securitas-001",
+        accountId: accountId.securitas,
+        contactEmail: "sari.laine@securitas.fi"
+      }),
+      isAiGenerated: false,
+      createdAt: daysAgo(2)
+    },
+    {
+      id: activityId.act62,
+      accountId: accountId.securitas,
+      actorUserId: userId.janne, // Internal sender (Janne)
+      entityType: "account",
+      entityId: accountId.securitas,
+      eventType: "email_sent",
+      payload: JSON.stringify({
+        from: "janne@hmdsecure.com",
+        fromName: "Janne Lehtosalo",
+        to: ["sari.laine@securitas.fi"],
+        cc: ["pekka.koistinen@securitas.fi"],
+        subject: "HMD Secure Offer - Q4 guard fleet",
+        snippet: "Sari, attached is the revised offer including the 12% volume discount for the Finland and Baltic rollout. Let me know if this works for the procurement board.",
+        messageId: "msg-outlook-janne-002",
+        accountId: accountId.securitas,
+        contactEmail: "sari.laine@securitas.fi"
+      }),
+      isAiGenerated: false,
+      createdAt: daysAgo(2)
+    },
+    {
+      id: activityId.act63,
+      accountId: accountId.deutscheBahn,
+      actorUserId: null, // External sender (Petra Schneider)
+      entityType: "case",
+      entityId: caseId.cs2,
+      eventType: "email_received",
+      payload: JSON.stringify({
+        from: "petra.schneider@deutschebahn.com",
+        fromName: "Petra Schneider",
+        to: ["sofia@hmdsecure.com"],
+        subject: "Shield agent performance issues on XR-20",
+        snippet: "Sofia, some engineers are reporting warm XR-20s and high CPU usage when running Shield in the Munich engine yards. This is draining battery quickly. Please look into this.",
+        messageId: "msg-outlook-db-003",
+        accountId: accountId.deutscheBahn,
+        contactEmail: "petra.schneider@deutschebahn.com"
+      }),
+      isAiGenerated: false,
+      createdAt: daysAgo(1)
+    },
+    {
+      id: activityId.act64,
+      accountId: accountId.deutscheBahn,
+      actorUserId: userId.sofia, // Internal sender (Sofia)
+      entityType: "case",
+      entityId: caseId.cs2,
+      eventType: "email_sent",
+      payload: JSON.stringify({
+        from: "sofia@hmdsecure.com",
+        fromName: "Sofia Andersson",
+        to: ["petra.schneider@deutschebahn.com"],
+        subject: "Re: Shield agent performance issues on XR-20",
+        snippet: "Petra, we are coordinating with the Shield development team to run a CPU profiling session on the Munich devices tomorrow. I will keep you posted on the workaround.",
+        messageId: "msg-outlook-sofia-004",
+        accountId: accountId.deutscheBahn,
+        contactEmail: "petra.schneider@deutschebahn.com"
+      }),
+      isAiGenerated: false,
+      createdAt: daysAgo(1)
+    },
+    {
+      id: activityId.act65,
+      accountId: accountId.danishDefence,
+      actorUserId: null, // External sender (Christian Nielsen)
+      entityType: "deal",
+      entityId: dealId.d6,
+      eventType: "email_received",
+      payload: JSON.stringify({
+        from: "cnielsen@forsvaret.dk",
+        fromName: "Christian Nielsen",
+        to: ["janne@hmdsecure.com"],
+        subject: "Danish Defence Field Communication Pilot status",
+        snippet: "Janne, the scout team has finished the field test report. We observed some accuracy issues with location tracking in remote terrain. Let's arrange a call to discuss.",
+        messageId: "msg-outlook-dkdef-005",
+        accountId: accountId.danishDefence,
+        contactEmail: "cnielsen@forsvaret.dk"
+      }),
+      isAiGenerated: false,
+      createdAt: daysAgo(5)
+    },
+    {
+      id: activityId.act66,
+      accountId: accountId.veolia,
+      actorUserId: null, // External sender (Ville Aaltonen)
+      entityType: "deal",
+      entityId: dealId.d8,
+      eventType: "email_received",
+      payload: JSON.stringify({
+        from: "ville.aaltonen@veolia.fi",
+        fromName: "Ville Aaltonen",
+        to: ["janne@hmdsecure.com"],
+        subject: "RFP Clarification: IoT Gateways",
+        snippet: "Hi Janne, sorry for the delay. We are finalizing our assessment of the Field Worker IoT Kit. Can you confirm the operating temperature range for the GW-200 IoT gateway?",
+        messageId: "msg-outlook-veolia-006",
+        accountId: accountId.veolia,
+        contactEmail: "ville.aaltonen@veolia.fi"
+      }),
+      isAiGenerated: false,
+      createdAt: daysAgo(4)
+    }
   ];
   await db.insert(activities).values(activityRows);
   console.log("  ✓ Activities");
