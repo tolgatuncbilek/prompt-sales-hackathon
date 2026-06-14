@@ -220,6 +220,21 @@ function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
 }
 
+const THEMES = ["original", "metro", "light"] as const;
+type Theme = (typeof THEMES)[number];
+const THEME_STORAGE_KEY = "hmd-crm-theme";
+
+function storedTheme(): Theme {
+  if (typeof window === "undefined") return "original";
+
+  try {
+    const value = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return THEMES.find((theme) => theme === value) ?? "original";
+  } catch {
+    return "original";
+  }
+}
+
 function monogram(name: string): string {
   return name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
 }
@@ -4234,20 +4249,25 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [startupError, setStartupError] = useState("");
   const [initialUserId, setInitialUserId] = useState<string | null>(null);
-  const [theme, setTheme] = useState<"original" | "metro" | "light">("original");
+  const [theme, setTheme] = useState<Theme>(storedTheme);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
     if (themeColor) themeColor.content = theme === "light" ? "#f7f7f5" : theme === "metro" ? "#000000" : "#070a10";
+
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // The selected theme still applies when storage is unavailable.
+    }
   }, [theme]);
 
   useEffect(() => {
-    const themes = ["original", "metro", "light"] as const;
     const onKeyDown = (event: KeyboardEvent) => {
       if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey || event.key.toLowerCase() !== "y") return;
       event.preventDefault();
-      setTheme((current) => themes[(themes.indexOf(current) + 1) % themes.length]);
+      setTheme((current) => THEMES[(THEMES.indexOf(current) + 1) % THEMES.length]);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -4300,8 +4320,8 @@ function MainApp({
   onThemeChange,
 }: {
   initialUserId: string;
-  theme: "original" | "metro" | "light";
-  onThemeChange: (theme: "original" | "metro" | "light") => void;
+  theme: Theme;
+  onThemeChange: (theme: Theme) => void;
 }) {
   const [userId, setUserId] = useState<string>(initialUserId);
   const [screen, setScreen] = useState<Screen>("home");
