@@ -23,6 +23,36 @@ app.get('/accounts/:accountId/activities', async (c) => {
   return c.json(rows);
 });
 
+/** POST / — create a general activity */
+app.post('/', async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json();
+
+  const accountId = body.account_id;
+  if (!accountId) {
+    return c.json({ error: 'Missing account_id', status: 400 }, 400);
+  }
+
+  const [activity] = await db
+    .insert(activities)
+    .values({
+      accountId,
+      actorUserId: user.id,
+      entityType: body.entity_type ?? 'account',
+      entityId: body.entity_id ?? accountId,
+      eventType: body.event_type ?? 'note_added',
+      payload: body.payload ?? {},
+      isAiGenerated: false,
+    })
+    .returning();
+
+  if (!activity) {
+    return c.json({ error: 'Failed to create activity', status: 500 }, 500);
+  }
+
+  return c.json(activity, 201);
+});
+
 /** POST /accounts/:accountId/activities — create a manual activity */
 app.post('/accounts/:accountId/activities', async (c) => {
   const accountId = c.req.param('accountId');

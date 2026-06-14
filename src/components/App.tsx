@@ -1342,8 +1342,14 @@ function FinanceDashboard({ ctx }: { ctx: AppCtx }) {
         </section>
 
         <section>
-          <SectionHead title="Offer approvals" />
-          <Empty>Offer approval is handled by Sales Representative and Sales Manager in Accounts.</Empty>
+          <SectionHead title="Offers awaiting your approval" count={seedOffers.map((o) => ctx.offerState[o.id] ?? o).filter((o) => o.status === "pending_finance").length} />
+          {seedOffers.map((o) => ctx.offerState[o.id] ?? o).filter((o) => o.status === "pending_finance").length ? (
+            <div className="insight-stack">
+              {seedOffers.map((o) => ctx.offerState[o.id] ?? o).filter((o) => o.status === "pending_finance").map((o) => (
+                <ApprovalCard key={o.id} offer={o} ctx={ctx} />
+              ))}
+            </div>
+          ) : <Empty>No discounted offers waiting on Finance approval.</Empty>}
         </section>
       </div>
     </>
@@ -1375,23 +1381,24 @@ function ApprovalCard({ offer, ctx }: { offer: Offer; ctx: AppCtx }) {
       {offer.justification && (
         <div className="approval-just"><strong>Justification</strong><p>{offer.justification}</p></div>
       )}
-      {repStep?.decision === "approved" && (
-        <p className="approval-prior"><Icon name="check" />Submitted by {userName(repStep.decidedById)} — {repStep.decidedAt}</p>
+      {smStep?.decision === "approved" && (
+        <p className="approval-prior"><Icon name="check" />Approved by Sales Manager {userName(smStep.decidedById)} — {smStep.decidedAt}</p>
       )}
-      <label className="approval-note">
-        <span className="sr-only">Decision note</span>
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note for the rep" />
-      </label>
-      <div className="insight-actions">
-        {ctx.user.role === "sales_manager" && (
-          <>
+      {((ctx.user.role === "sales_manager" && offer.status === "pending_manager") ||
+        (ctx.user.role === "finance" && offer.status === "pending_finance")) && (
+        <>
+          <label className="approval-note">
+            <span className="sr-only">Decision note</span>
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note for the rep" />
+          </label>
+          <div className="insight-actions">
             <button className="btn btn--primary btn--sm" type="button" onClick={() => ctx.approveOfferMade(offer.id)}>
               <Icon name="check" />Approve offer
             </button>
             <button className="btn btn--danger btn--sm" type="button" onClick={() => ctx.decideOffer(offer.id, "rejected", note)}>Reject</button>
-          </>
-        )}
-      </div>
+          </div>
+        </>
+      )}
     </article>
   );
 }
@@ -1598,7 +1605,7 @@ function AccountRecord({ account: accountInput, ctx, embedded }: { account: Acco
         <Kpi label="Weighted, next quarter" value={fmtEur(weightedNext)} />
         <Kpi label="3-year total" value={fmtEur(threeYear)} />
         <Kpi label="Active cases" value={`${openCases.length}`} tone={openCases.length ? "warn" : undefined} />
-        <Kpi label="Open offers" value={`${accOffers.filter((o) => o.status !== "made" && o.status !== "rejected").length}`} />
+        <Kpi label="Open offers" value={`${accOffers.filter((o) => o.status !== "made" && o.status !== "locked" && o.status !== "rejected").length}`} />
       </div>
 
       <div className="record-body">
@@ -2150,10 +2157,12 @@ function OfferDetailPanel({
       <ol className="approval-steps">
         {workflow.map((step) => {
           const isActive =
-            (offer.status === "sales_rep" && step.roleRequired === "sales_rep" && !step.decision)
-            || (offer.status === "pending_manager" && step.roleRequired === "sales_manager" && !step.decision);
-          const showSubmit = canSubmit && step.roleRequired === "sales_rep" && !step.decision;
-          const showApprove = canManagerApprove && step.roleRequired === "sales_manager" && !step.decision;
+            (offer.status === "pending_manager" && step.roleRequired === "sales_manager" && !step.decision)
+            || (offer.status === "pending_finance" && step.roleRequired === "finance" && !step.decision);
+          const showSubmit = canSubmit && step.stepOrder === 1 && !step.decision;
+          const showApprove =
+            (offer.status === "pending_manager" && ctx.user.role === "sales_manager" && step.roleRequired === "sales_manager" && !step.decision)
+            || (offer.status === "pending_finance" && ctx.user.role === "finance" && step.roleRequired === "finance" && !step.decision);
           return (
             <li
               key={step.stepOrder}
@@ -2176,15 +2185,23 @@ function OfferDetailPanel({
                     </button>
                   )}
                   {showApprove && (
-                    <button className="btn btn--primary btn--sm" type="button" onClick={() => ctx.approveOfferMade(offer.id)}>
-                      Approve offer
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button className="btn btn--primary btn--sm" type="button" onClick={() => ctx.approveOfferMade(offer.id)}>
+                        <Icon name="check" />Approve offer
+                      </button>
+                      <button className="btn btn--danger btn--sm" type="button" onClick={() => {
+                        const note = prompt("Enter rejection reason:");
+                        if (note !== null) ctx.decideOffer(offer.id, "rejected", note);
+                      }}>
+                        Reject
+                      </button>
+                    </div>
                   )}
                 </div>
                 {!step.decision && isActive && (
                   <small className="approval-step-status">In progress — action required</small>
                 )}
-                {!step.decision && !isActive && offer.status !== "rejected" && offer.status !== "made" && (
+                {!step.decision && !isActive && offer.status !== "rejected" && offer.status !== "locked" && (
                   <small className="approval-step-status">Waiting on prior step</small>
                 )}
                 {step.decision === "approved" && (
@@ -2924,6 +2941,15 @@ function CaseDetail({ caseRec: caseInput, ctx, embedded }: { caseRec: CaseRecord
 
   const add = () => {
     if (!draft.trim()) return;
+    ctx.logActivity({
+      accountId: caseRec.accountId,
+      kind: "note",
+      summary: `${ctx.user.name} added a note: ${draft.trim()}`,
+      entityType: "case",
+      entityId: caseRec.id,
+      eventType: "note_added",
+      payload: { text: draft.trim(), author_name: ctx.user.name, internal }
+    });
     ctx.addNote(caseRec.id, { author: ctx.user.name, body: draft.trim(), when: "Just now", internal });
     setDraft(""); ctx.notify("Note added to the case log.");
   };
@@ -4255,27 +4281,81 @@ function MainApp({
 
   const patch = (kind: EditKind, id: string, field: string, value: unknown) => {
     setEdits((m) => ({ ...m, [`${kind}:${id}`]: { ...(m[`${kind}:${id}`] ?? {}), [field]: value } }));
+
+    // Update in-memory arrays if they are direct-mutated locally to ensure immediate responsiveness
     if (kind === "case") {
       const idx = seedCases.findIndex((c) => c.id === id);
       if (idx >= 0) {
         seedCases[idx] = { ...seedCases[idx]!, [field]: value } as CaseRecord;
         bumpAccounts();
-        const apiField =
-          field === "ownerId" ? "owner_user_id"
-            : field === "serviceId" ? "service_id"
-              : field === "thirdPartyRef" ? "third_party_ref"
-                : field;
-        if (["status", "priority", "owner_user_id", "service_id", "third_party_ref"].includes(apiField)) {
-          fetch(`/api/cases/${id}`, {
-            method: "PATCH",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ [apiField]: value }),
-          }).catch(console.error);
-        }
+      }
+    } else if (kind === "account") {
+      const idx = accounts.findIndex((a) => a.id === id);
+      if (idx >= 0) {
+        accounts[idx] = { ...accounts[idx]!, [field]: value } as Account;
+        bumpAccounts();
+      }
+    } else if (kind === "deal") {
+      const idx = seedDeals.findIndex((d) => d.id === id);
+      if (idx >= 0) {
+        seedDeals[idx] = { ...seedDeals[idx]!, [field]: value } as Deal;
+        bumpAccounts();
       }
     }
+
+    let url = "";
+    let backendField = field;
+    if (field === "vatId" || field === "vat_id") backendField = "vat_id";
+    else if (field === "ownerId" || field === "ownerUserId" || field === "owner_user_id") backendField = "owner_user_id";
+    else if (field === "isPilot") backendField = "is_pilot";
+    else if (field === "expectedClose") backendField = "expected_close";
+    else if (field === "parentDealId") backendField = "parent_deal_id";
+    else if (field === "thirdPartyRef") backendField = "third_party_ref";
+    else if (field === "slaDeadline") backendField = "sla_deadline";
+    else if (field === "listPrice") backendField = "list_price";
+    else if (field === "serviceType") backendField = "service_type";
+    else if (field === "isThirdParty") backendField = "is_third_party";
+    else if (field === "serviceId") backendField = "service_id";
+
+    const body = { [backendField]: value };
+
+    if (kind === "account") {
+      url = `/api/accounts/${id}`;
+    } else if (kind === "deal") {
+      url = `/api/deals/${id}`;
+    } else if (kind === "case") {
+      url = `/api/cases/${id}`;
+    } else if (kind === "product") {
+      url = `/api/catalogs/products/${id}`;
+    } else if (kind === "service") {
+      url = `/api/catalogs/services/${id}`;
+    }
+
+    if (url) {
+      fetch(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: "Unknown error" }));
+            console.error(`Autosave failed: ${err.error || res.statusText}`);
+            notify(`Autosave failed: ${err.error || res.statusText}`);
+          } else {
+            const result = await initCrmFromApi();
+            if (result.ok) {
+              bumpAccounts();
+            }
+          }
+        })
+        .catch((err) => {
+          console.error("Network error during autosave", err);
+          notify("Autosave failed: check network connection.");
+        });
+    }
   };
+
   function eff<T extends { id: string }>(kind: EditKind, base: T): T {
     const e = edits[`${kind}:${base.id}`];
     return e ? ({ ...base, ...e } as T) : base;
@@ -4534,13 +4614,26 @@ function MainApp({
     if (user.role !== "sales_rep") return;
     const base = offerState[offerId] ?? seedOffers.find((o) => o.id === offerId);
     if (!base || base.status !== "sales_rep") return;
-    const stamp = approvalTimestamp();
-    const approvals = offerWorkflowSteps(base).map((a) =>
-      a.roleRequired === "sales_rep"
-        ? { ...a, decision: "approved" as const, decidedById: user.id, decidedAt: stamp, note: null }
-        : a,
-    );
-    const updated: Offer = { ...base, status: "pending_manager", approvals };
+    
+    fetch(`/api/offers/${offerId}/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to submit offer");
+        return r.json();
+      })
+      .then(() => {
+        void loadCrm();
+        notify(`${base.ref} sent for Sales Manager approval.`);
+      })
+      .catch((err) => {
+        console.error(err);
+        notify("Failed to submit offer.");
+      });
+
+    // Optimistic local state change
+    const updated: Offer = { ...base, status: "pending_manager" };
     setOfferState((m) => ({ ...m, [offerId]: updated }));
     const idx = seedOffers.findIndex((o) => o.id === offerId);
     if (idx >= 0) seedOffers[idx] = updated;
@@ -4555,36 +4648,57 @@ function MainApp({
         summary: `${base.ref} submitted for Sales Manager approval.`,
       });
     }
-    notify(`${base.ref} sent for Sales Manager approval.`);
   };
 
   const approveOfferMade = (offerId: string) => {
-    if (user.role !== "sales_manager") return;
     const base = offerState[offerId] ?? seedOffers.find((o) => o.id === offerId);
-    if (!base || base.status !== "pending_manager") return;
+    if (!base) return;
+
+    // Find active step matching role
+    const activeStep = offerWorkflowSteps(base).find(
+      (a) =>
+        (base.status === "pending_manager" && a.roleRequired === "sales_manager" && !a.decision) ||
+        (base.status === "pending_finance" && a.roleRequired === "finance" && !a.decision)
+    );
+
+    if (!activeStep || !activeStep.id) {
+      notify("No active approval step found.");
+      return;
+    }
+
+    fetch(`/api/offers/approval-steps/${activeStep.id}/decide`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "approved" }),
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to approve offer");
+        return r.json();
+      })
+      .then(() => {
+        void loadCrm();
+        notify(`${base.ref} approved.`);
+      })
+      .catch((err) => {
+        console.error(err);
+        notify("Failed to approve offer.");
+      });
+
     const stamp = approvalTimestamp();
     const approvals = offerWorkflowSteps(base).map((a) =>
-      a.roleRequired === "sales_manager"
-        ? { ...a, decision: "approved" as const, decidedById: user.id, decidedAt: stamp, note: "Offer approved." }
-        : a,
+      a.id === activeStep.id ? { ...a, decision: "approved" as const, decidedById: user.id, decidedAt: stamp } : a
     );
-    const updated: Offer = { ...base, status: "made", approvals, lockedAt: null };
+    const nextStatus = base.status === "pending_manager" ? ("pending_finance" as const) : ("locked" as const);
+    const updated: Offer = { ...base, status: nextStatus, approvals };
     setOfferState((m) => ({ ...m, [offerId]: updated }));
     const idx = seedOffers.findIndex((o) => o.id === offerId);
     if (idx >= 0) seedOffers[idx] = updated;
     bumpAccounts();
+
     const decisionDeal = dealById(base.dealId);
-    if (decisionDeal) {
+    if (decisionDeal && nextStatus === "locked") {
       syncDealFromMadeOffer(decisionDeal, updated);
-      recordActivity({
-        accountId: decisionDeal.accountId,
-        dealId: decisionDeal.id,
-        actorId: user.id,
-        kind: "offer",
-        summary: `${base.ref} approved — offer is made.`,
-      });
     }
-    notify(`${base.ref} approved. Offer is made.`);
   };
 
   const decideOffer = (offerId: string, decision: "approved" | "rejected", note?: string) => {
@@ -4594,20 +4708,48 @@ function MainApp({
       approveOfferMade(offerId);
       return;
     }
-    if (base.status === "pending_manager" && user.role !== "sales_manager") return;
-    if (base.status === "sales_rep" && user.role !== "sales_rep") return;
-    const stamp = approvalTimestamp();
-    const role: "sales_rep" | "sales_manager" = base.status === "pending_manager" ? "sales_manager" : "sales_rep";
-    const approvals = offerWorkflowSteps(base).map((a) =>
-      a.roleRequired === role
-        ? { ...a, decision: "rejected" as const, decidedById: user.id, note: note?.trim() || "Rejected.", decidedAt: stamp }
-        : a,
+    
+    // Rejection
+    const activeStep = offerWorkflowSteps(base).find(
+      (a) =>
+        (base.status === "pending_manager" && a.roleRequired === "sales_manager" && !a.decision) ||
+        (base.status === "pending_finance" && a.roleRequired === "finance" && !a.decision)
     );
-    setOfferState((m) => ({ ...m, [offerId]: { ...base, approvals, status: "rejected" } }));
+
+    if (!activeStep || !activeStep.id) {
+      notify("No active approval step found to reject.");
+      return;
+    }
+
+    fetch(`/api/offers/approval-steps/${activeStep.id}/decide`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "rejected", note: note?.trim() || "Rejected." }),
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to reject offer");
+        return r.json();
+      })
+      .then(() => {
+        void loadCrm();
+        notify(`${base.ref} rejected.`);
+      })
+      .catch((err) => {
+        console.error(err);
+        notify("Failed to record decision.");
+      });
+
+    const stamp = approvalTimestamp();
+    const approvals = offerWorkflowSteps(base).map((a) =>
+      a.id === activeStep.id
+        ? { ...a, decision: "rejected" as const, decidedById: user.id, note: note?.trim() || "Rejected.", decidedAt: stamp }
+        : a
+    );
+    const updated: Offer = { ...base, status: "rejected" as const, approvals };
+    setOfferState((m) => ({ ...m, [offerId]: updated }));
     const idx = seedOffers.findIndex((o) => o.id === offerId);
-    if (idx >= 0) seedOffers[idx] = { ...base, approvals, status: "rejected" };
+    if (idx >= 0) seedOffers[idx] = updated;
     bumpAccounts();
-    notify(`${base.ref} rejected.`);
   };
 
   const expandDrawer = () => {
@@ -4636,7 +4778,16 @@ function MainApp({
     notify,
     dealStage, dealLeadValidated, requestMoveDeal, validateLead, moveDeal,
     offerState, decideOffer, submitOfferForApproval, approveOfferMade, addOffer, updateOffer, addCase,
-    insightStatus, setInsight: (id, s) => setInsightStatus((m) => ({ ...m, [id]: s })),
+    insightStatus, setInsight: (id, s) => {
+      setInsightStatus((m) => ({ ...m, [id]: s }));
+      fetch(`/api/insights/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: s }),
+      })
+        .then(() => void loadCrm())
+        .catch(console.error);
+    },
     caseNotes, addNote: (cid, n) => setCaseNotes((m) => ({ ...m, [cid]: [n, ...(m[cid] ?? [])] })),
     patch, eff, addAccount, addDeal, addCompetitor, removeCompetitor, updateDeal, logActivity,
   };

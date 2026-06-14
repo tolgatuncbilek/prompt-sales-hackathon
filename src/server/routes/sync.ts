@@ -328,7 +328,18 @@ app.get('/', async (c) => {
     slaDeadline: c.slaDeadline ? c.slaDeadline.toISOString() : null,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
-    notes: [] // Not modelled in db yet
+    notes: dbActivities
+      .filter(a => a.entityType === 'case' && a.entityId === c.id && a.eventType === 'note_added')
+      .map(a => {
+        const p = (a.payload as Record<string, any>) || {};
+        return {
+          author: p.author_name || 'System',
+          body: p.text || '',
+          when: a.createdAt.toISOString(),
+          internal: !!p.internal
+        };
+      })
+      .sort((a, b) => new Date(a.when).getTime() - new Date(b.when).getTime())
   }));
 
   const offers = dbOffers.map(o => {
@@ -345,9 +356,10 @@ app.get('/', async (c) => {
       };
     });
     const approvals = dbApprovals.filter(a => a.offerId === o.id).map(a => ({
+      id: a.id,
       stepOrder: a.stepOrder,
       roleRequired: a.roleRequired,
-      decidedById: a.decidedByUserId,
+      decidedById: a.decidedBy,
       decision: a.decision,
       note: a.note,
       decidedAt: a.decidedAt ? a.decidedAt.toISOString() : null
@@ -356,7 +368,7 @@ app.get('/', async (c) => {
       id: o.id,
       ref: `OFF-${o.id.split('-')[0]}`,
       dealId: o.dealId,
-      createdById: o.createdByUserId,
+      createdById: o.createdBy,
       version: o.version,
       status: o.status,
       discountPct: Number(o.discountPct),

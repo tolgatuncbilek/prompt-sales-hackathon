@@ -40,10 +40,12 @@ export type InvoiceModel = "one_off" | "fixed_term" | "monthly_recurring";
 export type OfferStatus =
   | "sales_rep"
   | "pending_manager"
+  | "pending_finance"
   | "made"
-  | "rejected";
+  | "rejected"
+  | "locked";
 
-export type ApprovalRole = "sales_rep" | "sales_manager";
+export type ApprovalRole = "sales_manager" | "finance";
 
 export type InsightType =
   | "enrichment"
@@ -175,6 +177,7 @@ export type OfferLine = {
 };
 
 export type ApprovalStep = {
+  id?: string;
   stepOrder: number;
   roleRequired: ApprovalRole;
   decidedById: string | null;
@@ -378,13 +381,15 @@ export const INVOICE_MODEL_LABEL: Record<InvoiceModel, string> = {
 export const OFFER_STATUS_LABEL: Record<OfferStatus, string> = {
   sales_rep: "With Sales Representative",
   pending_manager: "Pending — Sales Manager",
+  pending_finance: "Pending — Finance",
   made: "Offer made",
   rejected: "Rejected",
+  locked: "Approved & Locked",
 };
 
 export const APPROVAL_ROLE_LABEL: Record<ApprovalRole, string> = {
-  sales_rep: "Sales Representative",
   sales_manager: "Sales Manager",
+  finance: "Finance",
 };
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -464,8 +469,8 @@ export let cases: CaseRecord[] = [];
 
 export function defaultOfferWorkflow(): ApprovalStep[] {
   return [
-    { stepOrder: 1, roleRequired: "sales_rep", decidedById: null, decision: null, note: null, decidedAt: null },
-    { stepOrder: 2, roleRequired: "sales_manager", decidedById: null, decision: null, note: null, decidedAt: null },
+    { stepOrder: 1, roleRequired: "sales_manager", decidedById: null, decision: null, note: null, decidedAt: null },
+    { stepOrder: 2, roleRequired: "finance", decidedById: null, decision: null, note: null, decidedAt: null },
   ];
 }
 
@@ -474,13 +479,13 @@ export function approvalTimestamp(): string {
 }
 
 export function offerWorkflowSteps(offer: Offer): ApprovalStep[] {
-  const steps = offer.approvals.filter((a) => a.roleRequired === "sales_rep" || a.roleRequired === "sales_manager");
+  const steps = offer.approvals.filter((a) => a.roleRequired === "sales_manager" || a.roleRequired === "finance");
   return steps.length >= 2 ? steps.sort((a, b) => a.stepOrder - b.stepOrder).slice(0, 2) : defaultOfferWorkflow();
 }
 
 export function approvalStepActionLabel(step: ApprovalStep): string {
   if (step.decision !== "approved") return "";
-  return step.roleRequired === "sales_rep" ? "Submitted by" : "Approved by";
+  return step.roleRequired === "sales_manager" ? "Approved by SM" : "Approved by Finance";
 }
 
 export let offers: Offer[] = [];
@@ -552,6 +557,10 @@ export function recordActivity(input: {
   summary: string;
   isAi?: boolean;
   persist?: boolean;
+  entityType?: string;
+  entityId?: string;
+  eventType?: string;
+  payload?: any;
 }): Activity {
   const activity: Activity = {
     id: `act_local_${Date.now().toString(36)}_${localActivitySeq++}`,
@@ -565,14 +574,15 @@ export function recordActivity(input: {
   };
   activities.unshift(activity);
   if (input.persist) {
-    void fetch(`/api/accounts/${activity.accountId}/activities`, {
+    void fetch(`/api/activities`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        entity_type: activity.dealId ? "deal" : "account",
-        entity_id: activity.dealId ?? activity.accountId,
-        event_type: activity.kind,
-        payload: { summary: activity.summary, kind: activity.kind },
+        account_id: activity.accountId,
+        entity_type: input.entityType ?? (activity.dealId ? "deal" : "account"),
+        entity_id: input.entityId ?? (activity.dealId ?? activity.accountId),
+        event_type: input.eventType ?? activity.kind,
+        payload: input.payload ?? { summary: activity.summary, kind: activity.kind },
       }),
     }).catch((e) => console.error("Failed to persist activity", e));
   }
@@ -830,7 +840,7 @@ export function syncDealFromMadeOffer(deal: Deal, offer: Offer) {
 export function madeOfferForDeal(dealId: string, offerLookup?: (id: string) => Offer | undefined): Offer | undefined {
   return offers
     .map((o) => offerLookup?.(o.id) ?? o)
-    .filter((o) => o.dealId === dealId && o.status === "made")
+    .filter((o) => o.dealId === dealId && (o.status === "made" || o.status === "locked"))
     .sort((a, b) => b.version - a.version)[0];
 }
 
