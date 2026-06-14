@@ -15,4 +15,12 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 3000,
   },
+  vite: {
+    // The transcription worker is the only importer of @huggingface/transformers.
+    // Pre-bundle it at startup so the first worker load doesn't trigger Vite's
+    // "new dependencies optimized, reloading" full-page reload mid-upload.
+    optimizeDeps: {
+      include: ["@huggingface/transformers"],
+    },
+  },
 });

@@ -15,6 +15,14 @@ export type MeetingResult = {
   durationSec: number;
 };
 
+// AI briefing produced from the transcript (server-side, via DeepSeek).
+export type MeetingFollowUp = { text: string; owner?: string };
+export type MeetingSummary = {
+  summary: string;
+  decisions: string[];
+  followUps: MeetingFollowUp[];
+};
+
 // main thread -> worker
 export type WorkerInbound = {
   type: "transcribe";

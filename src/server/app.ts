@@ -19,6 +19,7 @@ import insightsRoutes from './routes/insights.js';
 import webhooksRoutes from './routes/webhooks.js';
 import syncRoutes from './routes/sync.js';
 import bootstrapRoutes from './routes/bootstrap.js';
+import meetingsRoutes from './routes/meetings.js';
 import assistantRoutes from './routes/assistant.js';
 
 export const app = new Hono<{ Variables: AuthVariables }>().basePath('/api');
@@ -67,3 +68,4 @@ app.route('/users', usersRoutes);
 app.route('/insights', insightsRoutes);
 app.route('/sync', syncRoutes);
 app.route('/assistant', assistantRoutes);
+app.route('/meetings', meetingsRoutes);

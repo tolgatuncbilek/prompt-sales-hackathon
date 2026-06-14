@@ -2091,6 +2091,16 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 
 .meeting-error { display: flex; align-items: center; gap: 8px; margin-top: 18px; padding: 10px 14px; border: 1px solid var(--danger); border-radius: var(--r-control); color: var(--danger); font-size: 12.5px; }
 
+.meeting-summary { margin-top: 26px; }
+.briefing { display: flex; flex-direction: column; gap: 18px; }
+.briefing-overview { margin: 0; padding: 14px 16px; border-radius: var(--r-control); background: var(--field-2); border: 1px solid var(--rule); line-height: 1.55; }
+.briefing-block h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 9px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-2); }
+.briefing-block h3 .icon { width: 15px; height: 15px; color: var(--accent); }
+.briefing-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.briefing-list li { position: relative; padding: 10px 12px 10px 28px; border-radius: var(--r-control); background: var(--surface); border: 1px solid var(--rule); line-height: 1.45; }
+.briefing-list li::before { content: ""; position: absolute; left: 12px; top: 16px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.briefing-owner { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 600; }
+
 .transcript { margin-top: 26px; }
 .transcript-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .transcript-seg { display: grid; grid-template-columns: 52px auto; gap: 4px 12px; align-items: baseline; padding: 10px 12px; border-radius: var(--r-control); transition: background var(--t-fast); }

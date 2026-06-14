@@ -162,7 +162,7 @@ import type {
   User,
 } from "../lib/crm.ts";
 import type { Screen, Toast, PendingStageChange, EditKind, AppCtx } from "./types.ts";
-import type { TranscriptSegment, WorkerOutbound } from "../lib/meeting-types.ts";
+import type { TranscriptSegment, WorkerOutbound, MeetingSummary } from "../lib/meeting-types.ts";
 
 // ===========================================================================
 // Icons
@@ -4078,6 +4078,9 @@ function MeetingsView() {
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [summary, setSummary] = useState<MeetingSummary | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -4085,11 +4088,35 @@ function MeetingsView() {
 
   const busy = status === "decoding" || status === "working";
 
+  const summarize = async () => {
+    const transcript = segments.map((segment) => segment.text).join("\n").trim();
+    if (!transcript || summarizing) return;
+    setSummarizing(true);
+    setSummaryError(null);
+    try {
+      const response = await fetch("/api/meetings/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ transcript }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not summarize the meeting.");
+      setSummary(payload as MeetingSummary);
+    } catch (err) {
+      setSummaryError(err instanceof Error ? err.message : "Could not summarize the meeting.");
+    } finally {
+      setSummarizing(false);
+    }
+  };
+
   const run = async (file: File) => {
     setStatus("decoding");
     setError(null);
     setSegments([]);
     setDuration(0);
+    setSummary(null);
+    setSummaryError(null);
     setFileName(file.name);
     setProgress({ stage: "decode", detail: "Decoding audio…" });
 
@@ -4180,6 +4207,55 @@ function MeetingsView() {
         )}
 
         {error && <p className="meeting-error"><Icon name="alert" />{error}</p>}
+
+        {status === "done" && segments.length > 0 && (
+          <section className="meeting-summary">
+            <SectionHead title="Meeting briefing">
+              <button className="btn btn--primary btn--sm" onClick={() => void summarize()} disabled={summarizing} type="button">
+                <Icon name="spark" />{summarizing ? "Analyzing…" : summary ? "Regenerate" : "Summarize meeting"}
+              </button>
+            </SectionHead>
+
+            {summarizing && (
+              <div className="meeting-progress">
+                <div className="meeting-progress-head"><span>Reading the transcript and extracting decisions…</span></div>
+                <div className="progressbar"><div className="progressbar-fill progressbar-fill--indeterminate" /></div>
+              </div>
+            )}
+
+            {summaryError && <p className="meeting-error"><Icon name="alert" />{summaryError}</p>}
+
+            {!summarizing && !summary && !summaryError && (
+              <Empty>Generate an AI briefing — key decisions and follow-ups — from this transcript.</Empty>
+            )}
+
+            {summary && (
+              <div className="briefing">
+                {summary.summary && <p className="briefing-overview">{summary.summary}</p>}
+
+                <div className="briefing-block">
+                  <h3><Icon name="check" />Key decisions</h3>
+                  {summary.decisions.length ? (
+                    <ul className="briefing-list">
+                      {summary.decisions.map((decision, index) => <li key={index}>{decision}</li>)}
+                    </ul>
+                  ) : <p className="muted">No clear decisions were recorded.</p>}
+                </div>
+
+                <div className="briefing-block">
+                  <h3><Icon name="arrowRight" />Follow-ups</h3>
+                  {summary.followUps.length ? (
+                    <ul className="briefing-list">
+                      {summary.followUps.map((followUp, index) => (
+                        <li key={index}>{followUp.text}{followUp.owner && <span className="briefing-owner">{followUp.owner}</span>}</li>
+                      ))}
+                    </ul>
+                  ) : <p className="muted">No follow-ups were identified.</p>}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         {status === "done" && (
           <section className="transcript">
