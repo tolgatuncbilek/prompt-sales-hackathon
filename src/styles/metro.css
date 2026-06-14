@@ -519,10 +519,17 @@ table td {
 .crm-assistant {
   background: #090909;
 }
-
 .crm-assistant-head {
-  background: var(--accent);
-  color: #000;
+  background: #111;
+  border-bottom: 2px solid var(--rule);
+  color: var(--ink);
+}
+
+.crm-assistant-head h2 {
+  color: var(--accent);
+  text-transform: lowercase;
+  font-weight: 300;
+  font-size: 1.35rem;
 }
 
 .assistant-footer {
