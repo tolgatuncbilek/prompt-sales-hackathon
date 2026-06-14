@@ -192,12 +192,40 @@ for (let i = 1; i <= 12; i++) {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  // Check if data already exists
-  const existing = await db.select({ count: sql<number>`count(*)` }).from(users);
-  if (existing[0]?.count > 0) {
-    console.log("⏭  Database already seeded — skipping.");
-    process.exit(0);
+  if (process.argv.includes("--force")) {
+    console.log("🗑  Truncating existing tables...");
+    await db.execute(sql.raw(`
+      TRUNCATE TABLE 
+        users, 
+        accounts, 
+        contacts, 
+        deals, 
+        deal_competitors, 
+        device_forecasts, 
+        service_catalog, 
+        product_catalog, 
+        service_contracts, 
+        cases, 
+        offers, 
+        offer_lines, 
+        approval_steps, 
+        activities, 
+        notifications, 
+        agent_runs, 
+        ai_insights, 
+        assistant_threads, 
+        assistant_messages 
+      CASCADE
+    `));
+  } else {
+    // Check if data already exists
+    const existing = await db.select({ count: sql<number>`count(*)` }).from(users);
+    if (existing[0]?.count > 0) {
+      console.log("⏭  Database already seeded — skipping.");
+      process.exit(0);
+    }
   }
+
 
   console.log("🌱 Seeding HMD Secure CRM...");
 
@@ -789,9 +817,11 @@ async function main() {
         { url: "https://www.deutschebahn.com/en/procurement-portal", title: "DB Procurement Portal", snippet: "Open tenders for mobile field solutions..." },
         { url: "https://www.handelsblatt.com/unternehmen/industrie/deutsche-bahn-digitalisierung", title: "Handelsblatt — DB Digitalization", snippet: "EUR 12B investment in digital infrastructure..." },
       ]),
+      draftEmail: "Hi Klaus,\n\nI understand Deutsche Bahn's maintenance division has a procurement window closing on July 15. I'd love to schedule a quick 15-minute technical demo before June 30 to showcase how HMD Secure Shield can be bundled with your next rugged device order. Our solution would provide a seamless replacement for Motorola Solutions, which I believe is expiring in Q3.\n\nLet me know if you have any availability next week.\n\nBest regards,\nJanne",
       status: "pending_review", reviewedBy: null, reviewedAt: null,
       createdAt: daysAgo(3),
     },
+
     // in3 — risk_flag for stale Danish Defence deal
     {
       id: insightId.in3, agentRunId: agentRunId.ar3, accountId: accountId.danishDefence,

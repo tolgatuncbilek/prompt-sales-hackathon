@@ -471,20 +471,46 @@ app.get('/', async (c) => {
     };
   });
 
-  const aiInsights = dbInsights.map((i) => ({
-    id: i.id,
-    accountId: i.accountId,
-    dealId: i.dealId,
-    caseId: i.caseId,
-    type: i.insightType,
-    headline: i.body.substring(0, 50) + '...',
-    body: i.body,
-    confidence: Number(i.confidence),
-    evidence: [],
-    sources: i.sources || [],
-    status: i.status,
-    draftEmail: i.draftEmail || undefined,
-  }));
+  function parseInsightBody(body: string): { headline: string; evidence: string[] } {
+    const sentences = body.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
+    if (sentences.length === 0) {
+      return { headline: body, evidence: [] };
+    }
+    const headline = sentences[0];
+    const evidence: string[] = [];
+    for (let i = 1; i < sentences.length; i++) {
+      const s = sentences[i];
+      if (s.includes("(1)") || s.toLowerCase().startsWith("risk factors:")) {
+        const parts = s.split(/\(\d+\)/);
+        for (const p of parts) {
+          const cleanPart = p.replace(/^\s*risk\s+factors:\s*/i, "").trim();
+          if (cleanPart) evidence.push(cleanPart);
+        }
+      } else {
+        evidence.push(s);
+      }
+    }
+    return { headline, evidence };
+  }
+
+  const aiInsights = dbInsights.map((i) => {
+    const { headline, evidence } = parseInsightBody(i.body);
+    return {
+      id: i.id,
+      accountId: i.accountId,
+      dealId: i.dealId,
+      caseId: i.caseId,
+      type: i.insightType,
+      headline,
+      body: i.body,
+      confidence: Number(i.confidence),
+      evidence,
+      sources: i.sources || [],
+      status: i.status,
+      draftEmail: i.draftEmail || undefined,
+    };
+  });
+
 
   const offerToDeal = new Map(dbOffers.map((o) => [o.id, o.dealId]));
 

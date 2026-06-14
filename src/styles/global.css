@@ -1841,3 +1841,220 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 }
 .competitor-form-row .field--grow { flex: 1 1 180px; }
 .competitor-list small { display: block; margin-top: 2px; }
+
+/* --------------------------------------------------------------------------
+   Actions page — flat task-queue of AI next best actions
+   -------------------------------------------------------------------------- */
+
+.actions-page { max-width: 720px; }
+
+.actions-list { display: flex; flex-direction: column; }
+
+.actions-item {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--rule);
+  transition: opacity 300ms var(--ease-out), max-height 300ms var(--ease-out);
+  overflow: hidden;
+}
+.actions-item:first-child { padding-top: 0; }
+.actions-item:last-child { border-bottom: none; }
+.actions-item.is-removing {
+  opacity: 0;
+  max-height: 0 !important;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* Row 1: account / deal / confidence */
+.actions-item-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.actions-acct-link {
+  padding: 0; border: 0; background: transparent;
+  color: var(--ink); font: inherit; font-size: 13px; font-weight: 650;
+  cursor: pointer; text-align: left;
+}
+.actions-acct-link:hover { color: var(--accent); }
+.actions-deal-link {
+  padding: 0; border: 0; background: transparent;
+  color: var(--ink-2); font: inherit; font-size: 12px; font-weight: 550;
+  cursor: pointer; text-align: left;
+}
+.actions-deal-link:hover { color: var(--accent); }
+.actions-sep {
+  color: var(--ink-3); font-size: 11px; user-select: none;
+}
+.actions-item-header .confidence {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Row 2: headline */
+.actions-headline {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+/* Contact row */
+.actions-contact {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  color: var(--ink-2);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.actions-contact-name { font-weight: 650; color: var(--ink-mid); }
+.actions-contact-sep { color: var(--ink-3); user-select: none; }
+
+/* Evidence toggle */
+.actions-evidence {
+  margin-top: 6px;
+  border: none;
+  padding: 0;
+}
+.actions-evidence summary {
+  color: var(--ink-3);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  padding: 4px 0;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.actions-evidence summary::-webkit-details-marker { display: none; }
+.actions-evidence summary::before {
+  content: "▸";
+  display: inline-block;
+  font-size: 9px;
+  transition: transform var(--t-fast);
+}
+.actions-evidence[open] summary::before {
+  transform: rotate(90deg);
+}
+.actions-evidence summary:hover { color: var(--ink-2); }
+.actions-evidence ul {
+  margin: 6px 0 0;
+  padding-left: 14px;
+  display: grid;
+  gap: 4px;
+  color: var(--ink-mid);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+/* Draft email */
+.actions-draft { margin-top: 8px; }
+.actions-draft-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+.actions-draft-toggle:hover { color: var(--ink-2); }
+.actions-draft-toggle .icon { width: 13px; }
+
+.actions-draft-content {
+  position: relative;
+  margin-top: 6px;
+}
+.actions-draft-pre {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  background: var(--field-2);
+  color: var(--ink-mid);
+  font-family: "Fira Code", "Cascadia Code", "Menlo", monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.actions-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  background: var(--surface);
+  color: var(--ink-3);
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.actions-copy-btn:hover { color: var(--ink); border-color: #34425e; }
+.actions-copy-btn .icon { width: 12px; }
+
+/* Action buttons row */
+.actions-btns {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Empty state */
+.actions-empty {
+  padding: 48px 20px;
+  text-align: center;
+}
+.actions-empty-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-mid);
+}
+.actions-empty-sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+  max-width: 36ch;
+  margin-inline: auto;
+  line-height: 1.5;
+}
+
+/* Entry animation */
+.actions-item {
+  animation: rise 320ms var(--ease-out) backwards;
+}
+.actions-item:nth-child(1) { animation-delay: 20ms; }
+.actions-item:nth-child(2) { animation-delay: 55ms; }
+.actions-item:nth-child(3) { animation-delay: 90ms; }
+.actions-item:nth-child(4) { animation-delay: 125ms; }
+.actions-item:nth-child(5) { animation-delay: 160ms; }
+.actions-item:nth-child(n + 6) { animation-delay: 195ms; }
+
+/* Resolved items inline */
+.actions-item.is-resolved .actions-headline { color: var(--ink-3); }
+.actions-item.is-resolved .actions-acct-link { color: var(--ink-3); }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .actions-item { animation: none; }
+  .actions-item.is-removing { transition: none; }
+}

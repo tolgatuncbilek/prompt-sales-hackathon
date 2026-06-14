@@ -3779,6 +3779,233 @@ function CatalogView({ ctx }: { ctx: AppCtx }) {
 }
 
 // ===========================================================================
+// Actions page — cross-account queue of AI next best actions
+// ===========================================================================
+
+function ActionsView({ ctx }: { ctx: AppCtx }) {
+  const [showEmail, setShowEmail] = useState<Record<string, boolean>>({});
+  const [removing, setRemoving] = useState<Record<string, boolean>>({});
+  const [copied, setCopied] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+
+  const [localActions, setLocalActions] = useState<AiInsight[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const data = localStorage.getItem("hmd-crm-local-actions");
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const ownedIds = new Set(accounts.filter((a) => a.ownerId === ctx.user.id).map((a) => a.id));
+
+  const allItems = [...localActions, ...seedInsights];
+  const items = allItems
+    .filter((i) => i.type === "next_action" && ownedIds.has(i.accountId))
+    .sort((a, b) => b.confidence - a.confidence);
+
+  const handleAction = (id: string, status: AiInsight["status"]) => {
+    setRemoving((prev) => ({ ...prev, [id]: true }));
+    window.setTimeout(() => {
+      if (id.startsWith("local-")) {
+        const updated = localActions.map(item => item.id === id ? { ...item, status } : item);
+        localStorage.setItem("hmd-crm-local-actions", JSON.stringify(updated));
+        setLocalActions(updated);
+      } else {
+        ctx.setInsight(id, status);
+      }
+      ctx.notify(status === "accepted" ? "Action accepted" : "Action dismissed");
+    }, 320);
+  };
+
+  const generateActions = async () => {
+    setGenerating(true);
+    try {
+      const res = await fetch("/api/insights/generate", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to generate AI actions");
+      const data = await res.json() as { insights: AiInsight[] };
+      const newActions = data.insights || [];
+      localStorage.setItem("hmd-crm-local-actions", JSON.stringify(newActions));
+      setLocalActions(newActions);
+      ctx.notify(`Generated ${newActions.length} actions from AI.`);
+    } catch (err) {
+      console.error(err);
+      ctx.notify("Failed to generate actions via AI.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const toggleEmail = (id: string) => {
+    setShowEmail((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const copyDraft = async (id: string, text: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(id);
+    window.setTimeout(() => setCopied((c) => (c === id ? null : c)), 1800);
+  };
+
+  const pendingItems = items.filter((i) => {
+    const s = ctx.insightStatus[i.id] ?? i.status;
+    return s === "pending_review" && !removing[i.id];
+  });
+
+  return (
+    <div className="actions-page">
+      <PageHead 
+        title="Actions" 
+        actions={
+          <button 
+            className={cx("btn btn--primary btn--sm", generating && "loading")}
+            type="button" 
+            onClick={generateActions} 
+            disabled={generating}
+            style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+          >
+            <Icon name="spark" />
+            {generating ? "Generating..." : "Generate AI Actions"}
+          </button>
+        }
+      />
+
+
+      {pendingItems.length === 0 ? (
+        <div className="actions-empty">
+          <p className="actions-empty-title">No actions right now</p>
+          <p className="actions-empty-sub">
+            AI-generated next steps will appear here when your accounts need attention.
+          </p>
+        </div>
+      ) : (
+        <div className="actions-list">
+          {pendingItems.map((insight) => {
+            const account = accountById(insight.accountId);
+            const deal = insight.dealId ? dealById(insight.dealId) : null;
+            const contacts = contactsForAccount(insight.accountId);
+            const primary = contacts.find((c) => c.primary) ?? contacts[0] ?? null;
+            const emailOpen = showEmail[insight.id] ?? false;
+            const isRemoving = removing[insight.id];
+
+            return (
+              <article
+                key={insight.id}
+                className={cx("actions-item", isRemoving && "is-removing")}
+              >
+                {/* Header: account / deal / confidence */}
+                <div className="actions-item-header">
+                  {account && (
+                    <button
+                      className="actions-acct-link"
+                      type="button"
+                      onClick={() => ctx.openAccount(account.id)}
+                    >
+                      {account.name}
+                    </button>
+                  )}
+                  {deal && (
+                    <>
+                      <span className="actions-sep" aria-hidden="true">›</span>
+                      <button
+                        className="actions-deal-link"
+                        type="button"
+                        onClick={() => ctx.openDeal(deal.id)}
+                      >
+                        {deal.title}
+                      </button>
+                    </>
+                  )}
+                  <Confidence value={insight.confidence} />
+                </div>
+
+                {/* Headline */}
+                <p className="actions-headline">{insight.headline}</p>
+
+                {/* Recommended contact */}
+                {primary && (
+                  <div className="actions-contact">
+                    <span className="actions-contact-name">{primary.name}</span>
+                    <span className="actions-contact-sep" aria-hidden="true">·</span>
+                    <span>{CONTACT_ROLE_LABEL[primary.roleType]}</span>
+                    <span className="actions-contact-sep" aria-hidden="true">·</span>
+                    <span>{primary.email}</span>
+                    {primary.phone && (
+                      <>
+                        <span className="actions-contact-sep" aria-hidden="true">·</span>
+                        <span>{primary.phone}</span>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Evidence — collapsed by default */}
+                {insight.evidence.length > 0 && (
+                  <details className="actions-evidence">
+                    <summary>Evidence · {insight.evidence.length}</summary>
+                    <ul>
+                      {insight.evidence.slice(0, 3).map((e) => (
+                        <li key={e}>{e}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+
+                {/* Draft email — collapsed */}
+                {insight.draftEmail && (
+                  <div className="actions-draft">
+                    <button
+                      className="actions-draft-toggle"
+                      type="button"
+                      onClick={() => toggleEmail(insight.id)}
+                      aria-expanded={emailOpen}
+                    >
+                      <Icon name="mail" />
+                      {emailOpen ? "Hide draft" : "View draft email"}
+                    </button>
+                    {emailOpen && (
+                      <div className="actions-draft-content">
+                        <pre className="actions-draft-pre">{insight.draftEmail}</pre>
+                        <button
+                          className="actions-copy-btn"
+                          type="button"
+                          onClick={() => { void copyDraft(insight.id, insight.draftEmail!); }}
+                        >
+                          <Icon name="copy" />
+                          {copied === insight.id ? "Copied" : "Copy"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Accept / Dismiss */}
+                <div className="actions-btns">
+                  <button
+                    className="btn btn--primary btn--sm"
+                    type="button"
+                    onClick={() => handleAction(insight.id, "accepted")}
+                  >
+                    Accept
+                  </button>
+                  <button
+                    className="btn btn--ghost btn--sm"
+                    type="button"
+                    onClick={() => handleAction(insight.id, "dismissed")}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===========================================================================
 // Page header
 // ===========================================================================
 
@@ -3876,6 +4103,7 @@ const NAV: { screen: Screen; label: string; icon: string }[] = [
   { screen: "forecast", label: "Forecast", icon: "forecast" },
   { screen: "catalog", label: "Catalog", icon: "catalog" },
   { screen: "assistant", label: "AI Assistant", icon: "spark" },
+  { screen: "actions", label: "Actions", icon: "check" },
 ];
 
 type AssistantEvidence = { type: string; id?: string; label: string; url?: string };
@@ -4973,6 +5201,7 @@ export function MainApp({
   else if (screen === "offers") content = <OffersView ctx={ctx} focus={offerFocus} />;
   else if (screen === "forecast") content = <ForecastView ctx={ctx} />;
   else if (screen === "catalog") content = <CatalogView ctx={ctx} />;
+  else if (screen === "actions") content = <ActionsView ctx={ctx} />;
   else content = <CrmAssistant open fullPage onClose={() => undefined} />;
 
   const activeNav = screen === "account" ? "accounts" : screen === "deal" ? "deals" : (screen as string) === "case" ? "cases" : screen;
