@@ -7,9 +7,11 @@ import type {
   AiInsight,
   Deal,
   ActivityKind,
+  Account,
 } from "../lib/crm.ts";
 
-export type Screen = "home" | "accounts" | "account" | "deals" | "deal" | "cases" | "offers" | "forecast" | "catalog" | "assistant";
+
+export type Screen = "home" | "accounts" | "account" | "deals" | "deal" | "cases" | "offers" | "forecast" | "catalog" | "assistant" | "actions";
 export type Toast = { id: number; msg: string } | null;
 
 export type PendingStageChange = { dealId: string; fromStage: Stage; targetStage: Stage; validateLead: boolean } | null;
@@ -58,5 +60,5 @@ export type AppCtx = {
   addDeal: (deal: Deal, serviceValue: number, serviceContractId?: string | null, serviceId?: string | null) => void;
   addCompetitor: (dealId: string, name: string, netTotal: number | null) => Promise<void>;
   removeCompetitor: (dealId: string, competitorId: string) => Promise<void>;
-  updateDeal: (deal: Deal, updates: Partial<Pick<Deal, "title" | "stage" | "apiStage" | "channel" | "leadValidated">> & { device?: number; service?: number; total?: number }) => Promise<void>;
+  updateDeal: (deal: Deal, updates: Partial<Pick<Deal, "title" | "stage" | "apiStage" | "channel" | "leadValidated" | "expectedClose">> & { device?: number; service?: number; total?: number }) => Promise<void>;
 };

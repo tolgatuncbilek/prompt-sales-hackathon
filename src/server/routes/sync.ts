@@ -7,6 +7,18 @@ const app = new Hono();
 const humanize = (s: string): string =>
   s.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
 
+function formatDateOnly(value: Date | string | null | undefined): string {
+  if (!value) return '';
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
+function mapOfferStatus(status: string): string {
+  if (status === 'draft') return 'sales_rep';
+  if (status === 'approved') return 'made';
+  return status;
+}
+
 /**
  * Turn a stored activity (event_type + payload) into the frontend's
  * { kind, summary } shape. Manual entries carry their own summary/kind in the
@@ -257,7 +269,8 @@ app.get('/', async (c) => {
   const services = dbServices.map(s => ({
     id: s.id,
     name: s.name,
-    type: s.serviceType,
+    serviceType: s.serviceType,
+    listPrice: Number(s.listPrice ?? 0),
     isThirdParty: s.isThirdParty,
     retired: s.retired
   }));
@@ -286,7 +299,7 @@ app.get('/', async (c) => {
       leadValidated: d.stage !== 'interest_shown',
       channel: d.channel,
       isPilot: d.isPilot,
-      expectedClose: d.expectedClose,
+      expectedClose: formatDateOnly(d.expectedClose),
       updatedAt: d.updatedAt.toISOString(),
       createdAt: d.createdAt.toISOString(),
       deviceUnitPrice: unitPrice,
@@ -370,7 +383,7 @@ app.get('/', async (c) => {
       dealId: o.dealId,
       createdById: o.createdBy,
       version: o.version,
-      status: o.status,
+      status: mapOfferStatus(o.status),
       discountPct: Number(o.discountPct),
       justification: o.justification,
       lockedAt: o.lockedAt ? o.lockedAt.toISOString() : null,
@@ -380,20 +393,46 @@ app.get('/', async (c) => {
     };
   });
 
-  const aiInsights = dbInsights.map(i => ({
-    id: i.id,
-    accountId: i.accountId,
-    dealId: i.dealId,
-    caseId: i.caseId,
-    type: i.insightType,
-    headline: i.body.substring(0, 50) + '...',
-    body: i.body,
-    confidence: Number(i.confidence),
-    evidence: [],
-    sources: i.sources || [],
-    status: i.status,
-    draftEmail: i.draftEmail || undefined
-  }));
+  function parseInsightBody(body: string): { headline: string; evidence: string[] } {
+    const sentences = body.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
+    if (sentences.length === 0) {
+      return { headline: body, evidence: [] };
+    }
+    const headline = sentences[0];
+    const evidence: string[] = [];
+    for (let i = 1; i < sentences.length; i++) {
+      const s = sentences[i];
+      if (s.includes("(1)") || s.toLowerCase().startsWith("risk factors:")) {
+        const parts = s.split(/\(\d+\)/);
+        for (const p of parts) {
+          const cleanPart = p.replace(/^\s*risk\s+factors:\s*/i, "").trim();
+          if (cleanPart) evidence.push(cleanPart);
+        }
+      } else {
+        evidence.push(s);
+      }
+    }
+    return { headline, evidence };
+  }
+
+  const aiInsights = dbInsights.map(i => {
+    const { headline, evidence } = parseInsightBody(i.body);
+    return {
+      id: i.id,
+      accountId: i.accountId,
+      dealId: i.dealId,
+      caseId: i.caseId,
+      type: i.insightType,
+      headline,
+      body: i.body,
+      confidence: Number(i.confidence),
+      evidence,
+      sources: i.sources || [],
+      status: i.status,
+      draftEmail: i.draftEmail || undefined
+    };
+  });
+
 
   // Map offer -> deal so offer activities also surface on the deal timeline.
   const offerToDeal = new Map(dbOffers.map((o) => [o.id, o.dealId]));
@@ -438,6 +477,18 @@ app.get('/', async (c) => {
     netTotal: row.netTotal != null ? Number(row.netTotal) : null,
     createdAt: row.createdAt.toISOString(),
   }));
+
+  // Build a lightweight ETag from counts + unread notification count so clients
+  // can use conditional GET (If-None-Match) and receive 304 Not Modified when
+  // the data hasn't changed since the previous fetch.
+  const etag = `"sync-${dbDeals.length}-${dbOffers.length}-${dbActivities.length}-${dbNotifications.filter((n) => !n.read).length}"`;
+  const ifNoneMatch = c.req.header('If-None-Match');
+  if (ifNoneMatch === etag) {
+    return c.body(null, 304);
+  }
+
+  c.header('ETag', etag);
+  c.header('Cache-Control', 'private, no-cache'); // validate with ETag before using cached copy
 
   return c.json({
     users, accounts, contacts, products, services,

@@ -94,6 +94,7 @@ import {
   offerWorkflowSteps,
   approvalStepActionLabel,
   approvalTimestamp,
+  offerRequiresManagerApproval,
   APPROVAL_ROLE_LABEL,
   demoPersonaIds,
   loginAsUser,
@@ -218,6 +219,20 @@ function Icon({ name, className }: { name: string; className?: string }) {
 
 function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
+}
+
+async function readResponseBody(response: Response): Promise<unknown> {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return response.json();
+  }
+
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: text.trim() || `Request failed with status ${response.status}` };
+  }
 }
 
 const THEMES = ["original", "metro", "light"] as const;
@@ -1380,6 +1395,7 @@ function ApprovalCard({ offer, ctx }: { offer: Offer; ctx: AppCtx }) {
   const account = accountById(deal.accountId)!;
   const [note, setNote] = useState("");
   const repStep = offerWorkflowSteps(offer).find((a) => a.roleRequired === "sales_rep");
+  const smStep = offerWorkflowSteps(offer).find((a) => a.roleRequired === "sales_manager");
 
   return (
     <article className="insight insight--approval">
@@ -1396,8 +1412,8 @@ function ApprovalCard({ offer, ctx }: { offer: Offer; ctx: AppCtx }) {
       {offer.justification && (
         <div className="approval-just"><strong>Justification</strong><p>{offer.justification}</p></div>
       )}
-      {offer.smStep?.decision === "approved" && (
-        <p className="approval-prior"><Icon name="check" />Approved by Sales Manager {userName(offer.smStep.decidedById)} — {offer.smStep.decidedAt}</p>
+      {smStep?.decision === "approved" && (
+        <p className="approval-prior"><Icon name="check" />{smStep.note?.includes("Auto-approved") ? "Sales Manager auto-approved" : `Approved by Sales Manager ${userName(smStep.decidedById)}`} — {smStep.decidedAt}</p>
       )}
       {((ctx.user.role === "sales_manager" && offer.status === "pending_manager") ||
         (ctx.user.role === "finance" && offer.status === "pending_finance")) && (
@@ -1903,7 +1919,9 @@ function BuildOfferModal({
                       value={item.catalogId}
                       options={catalogItems.map((entry) => ({
                         value: entry.id,
-                        label: entry.name + (item.kind === "product" ? ` — ${fmtEurExact((entry as typeof products[0]).listPrice)}` : ""),
+                        label: entry.name + (item.kind === "product"
+                          ? ` — ${fmtEurExact((entry as typeof products[0]).listPrice)}`
+                          : ` — ${fmtEurExact((entry as typeof services[0]).listPrice)}`),
                       }))}
                       onChange={(val) => updateItem(item.key, { catalogId: val })}
                     />
@@ -1998,9 +2016,9 @@ function OfferEditText({ value, onCommit, placeholder }: { value: string; onComm
 }
 
 function OfferEditNumber({
-  value, onCommit, prefix, min, max, integer, ariaLabel,
+  value, onCommit, prefix, suffix, min, max, integer, ariaLabel,
 }: {
-  value: number; onCommit: (v: number) => void; prefix?: string; min?: number; max?: number; integer?: boolean; ariaLabel?: string;
+  value: number; onCommit: (v: number) => void; prefix?: string; suffix?: string; min?: number; max?: number; integer?: boolean; ariaLabel?: string;
 }) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => { setDraft(String(value)); }, [value]);
@@ -2034,6 +2052,7 @@ function OfferEditNumber({
           if (e.key === "Escape") { setDraft(String(value)); e.currentTarget.blur(); }
         }}
       />
+      {suffix && <span className="cell-num-prefix">{suffix}</span>}
     </span>
   );
 }
@@ -2110,7 +2129,7 @@ function OfferDetailPanel({
                 </td>
                 <td className="numeric">
                   {canEdit ? (
-                    <OfferEditNumber value={l.discountPct} min={0} max={100} ariaLabel="Discount percent" onCommit={(v) => patchLine(i, { discountPct: v })} />
+                    <OfferEditNumber value={l.discountPct} suffix="%" min={0} max={100} ariaLabel="Discount percent" onCommit={(v) => patchLine(i, { discountPct: v })} />
                   ) : l.discountPct > 0 ? `${l.discountPct}%` : "—"}
                 </td>
                 <td className="numeric numeric--strong">
@@ -2133,7 +2152,7 @@ function OfferDetailPanel({
               <td colSpan={5}>Headline discount</td>
               <td className="numeric">
                 {canEdit ? (
-                  <OfferEditNumber value={offer.discountPct} min={0} max={100} ariaLabel="Headline discount percent" onCommit={(v) => patchOffer((o) => ({ ...o, discountPct: v }))} />
+                  <OfferEditNumber value={offer.discountPct} suffix="%" min={0} max={100} ariaLabel="Headline discount percent" onCommit={(v) => patchOffer((o) => ({ ...o, discountPct: v }))} />
                 ) : `${offer.discountPct}%`}
               </td>
             </tr>
@@ -2171,13 +2190,18 @@ function OfferDetailPanel({
       <p className="offer-stage-label">Current stage: <strong>{OFFER_STATUS_LABEL[offer.status]}</strong></p>
       <ol className="approval-steps">
         {workflow.map((step) => {
+          const repDone = step.roleRequired === "sales_rep" && step.decision === "approved";
           const isActive =
-            (offer.status === "pending_manager" && step.roleRequired === "sales_manager" && !step.decision)
+            (offer.status === "sales_rep" && step.roleRequired === "sales_rep" && !step.decision)
+            || (offer.status === "pending_manager" && step.roleRequired === "sales_manager" && !step.decision)
             || (offer.status === "pending_finance" && step.roleRequired === "finance" && !step.decision);
-          const showSubmit = canSubmit && step.stepOrder === 1 && !step.decision;
+          const showSubmit = canSubmit && step.roleRequired === "sales_rep" && !step.decision;
           const showApprove =
             (offer.status === "pending_manager" && ctx.user.role === "sales_manager" && step.roleRequired === "sales_manager" && !step.decision)
             || (offer.status === "pending_finance" && ctx.user.role === "finance" && step.roleRequired === "finance" && !step.decision);
+          const submitLabel = offerRequiresManagerApproval(offer)
+            ? "Send for Sales Manager approval"
+            : "Send for Finance approval";
           return (
             <li
               key={step.stepOrder}
@@ -2186,6 +2210,7 @@ function OfferDetailPanel({
                 step.decision === "approved" && "is-approved",
                 step.decision === "rejected" && "is-rejected",
                 isActive && "is-active",
+                repDone && "is-approved",
               )}
             >
               <span className="approval-mark" aria-hidden="true">
@@ -2196,7 +2221,7 @@ function OfferDetailPanel({
                   <strong>{step.stepOrder}. {APPROVAL_ROLE_LABEL[step.roleRequired]}</strong>
                   {showSubmit && (
                     <button className="btn btn--secondary btn--sm" type="button" onClick={() => ctx.submitOfferForApproval(offer.id)}>
-                      Send for Sales Manager approval
+                      {submitLabel}
                     </button>
                   )}
                   {showApprove && (
@@ -2216,12 +2241,13 @@ function OfferDetailPanel({
                 {!step.decision && isActive && (
                   <small className="approval-step-status">In progress — action required</small>
                 )}
-                {!step.decision && !isActive && offer.status !== "rejected" && offer.status !== "locked" && (
+                {!step.decision && !isActive && offer.status !== "rejected" && offer.status !== "locked" && offer.status !== "made" && (
                   <small className="approval-step-status">Waiting on prior step</small>
                 )}
                 {step.decision === "approved" && (
                   <p className="approval-step-meta">
                     {approvalStepActionLabel(step)} {userName(step.decidedById)} — {step.decidedAt}
+                    {step.note ? ` — ${step.note}` : ""}
                   </p>
                 )}
                 {step.decision === "rejected" && (
@@ -2539,7 +2565,19 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
         ) : (
           <>
             <Kpi label="Total value" value={fmtEur(totalVal)} />
-            <Kpi label="Expected close" value={fmtExpectedClose(deal.expectedClose)} tone={isOverdue(deal) ? "warn" : undefined} />
+            {isOpen(deal) ? (
+              <div className="kpi kpi--editable">
+                <span className="kpi-label">Expected close</span>
+                <input
+                  type="date"
+                  className="kpi-date-input"
+                  value={deal.expectedClose?.slice(0, 10) ?? ""}
+                  onChange={(e) => void ctx.updateDeal(deal, { expectedClose: e.target.value })}
+                />
+              </div>
+            ) : (
+              <Kpi label="Expected close" value={fmtExpectedClose(deal.expectedClose)} tone={isOverdue(deal) ? "warn" : undefined} />
+            )}
             <Kpi label="Open cases" value={`${openDealCases}`} tone={openDealCases ? "warn" : undefined} />
           </>
         )}
@@ -3103,6 +3141,8 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
   const [probs, setProbs] = useState<StageProbs>(() => defaultStageProbs());
   const [explainId, setExplainId] = useState<string | null>(null);
   const [target, setTarget] = useState<number | null>(null);
+  const [narrativeOpen, setNarrativeOpen] = useState(true);
+
   const isFinance = ctx.user.role === "finance";
   const live = seedDeals.map((d) => liveStage(ctx, d));
   const buckets = periodBuckets(gran);
@@ -3155,11 +3195,18 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
     .filter((r) => r.reasons.length > 0)
     .sort((a, b) => b.score - a.score);
 
-  // Success prediction metrics — forecast attainment vs target.
+  // Deterministic AI narrative — built from the numbers above, not a chat model.
+  const topRisk = attention[0];
   const stalledCount = attention.filter((a) => a.reasons.some((r) => r.code === "overdue" || r.code === "stale")).length;
-  const successPct = Math.min(200, Math.round(weighted / Math.max(1, targetVal) * 100));
-  const successTone = successPct >= 90 ? "good" : successPct >= 65 ? "warn" : "danger";
-  const finalNegCount = live.filter(inForecast).filter((d) => d.stage === "final_negotiation").length;
+  const narrative =
+    `Weighted 3-year net sales stands at ${fmtEur(weighted)} across ${live.filter(inForecast).length} open deals — ` +
+    `${fmtEur(wDevice)} device and ${fmtEur(wService)} service, kept separate. ` +
+    `${fmtEur(committed)} sits in Final negotiation (most committed). ` +
+    (atRisk > 0
+      ? `${fmtEur(atRisk)} is at risk across ${stalledCount} stalled or overdue ${stalledCount === 1 ? "deal" : "deals"}` +
+        (topRisk ? `, led by ${accountById(topRisk.deal.accountId)?.name ?? topRisk.deal.title}. ` : ". ")
+      : "No deals are currently flagged stale or overdue. ") +
+    `Gap to the ${fmtEur(targetVal)} target is ${gap > 0 ? fmtEur(gap) + " short" : fmtEur(-gap) + " ahead"}.`;
 
   const exportCsv = () => {
     const header = ["Category", ...buckets.map((b) => b.label), "Total"];
@@ -3181,122 +3228,6 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
         <button className="btn btn--secondary" onClick={exportCsv} type="button"><Icon name="download" />Export CSV</button>
       } />
 
-      {/* 1. Forecast confidence — success prediction, reasoning, and top actions */}
-      <div className="fc-outlook">
-        <div className="fc-score-block">
-          <span className={`fc-score-pct fc-score-pct--${successTone}`}>
-            {successPct}<small>%</small>
-          </span>
-          <div
-            className="fc-score-bar"
-            role="progressbar"
-            aria-valuenow={Math.min(100, successPct)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label={`${successPct}% of ${fmtEur(targetVal)} target reached`}
-          >
-            <div className={`fc-score-fill fc-score-fill--${successTone}`} style={{ width: `${Math.min(100, successPct)}%` }} />
-          </div>
-          <span className="fc-score-label">of {fmtEur(targetVal)} target</span>
-          <span className={`fc-score-delta fc-score-delta--${gap > 0 ? "short" : "ahead"}`}>
-            {gap > 0 ? `${fmtEur(gap)} short` : `${fmtEur(-gap)} ahead of target`}
-          </span>
-        </div>
-
-        <div className="fc-factors">
-          <h2 className="fc-section-label">Why this number</h2>
-          <ul>
-            <li className="fc-factor">
-              <span className={`fc-factor-dot fc-factor-dot--${committed > 0 ? "good" : "neutral"}`} />
-              <span>
-                {committed > 0
-                  ? `${fmtEur(committed)} committed — ${finalNegCount} ${finalNegCount === 1 ? "deal" : "deals"} in Final negotiation`
-                  : "No deals in Final negotiation yet"}
-              </span>
-            </li>
-            <li className="fc-factor">
-              <span className={`fc-factor-dot fc-factor-dot--${atRisk > 0 ? (stalledCount > 2 ? "danger" : "warn") : "good"}`} />
-              <span>
-                {atRisk > 0
-                  ? `${fmtEur(atRisk)} at risk — ${stalledCount} stalled or overdue ${stalledCount === 1 ? "deal" : "deals"}`
-                  : "No deals currently stalled or overdue"}
-              </span>
-            </li>
-            {(() => {
-              const topRung = [...ladder].sort((a, b) => b.weighted - a.weighted)[0];
-              return topRung && topRung.weighted > 0 ? (
-                <li className="fc-factor">
-                  <span className="fc-factor-dot fc-factor-dot--neutral" />
-                  <span>Largest weighted stage: {STAGE_META[topRung.stage].label} at {Math.round(topRung.probability * 100)}% — {fmtEur(topRung.weighted)} from {fmtEur(topRung.gross)} gross</span>
-                </li>
-              ) : null;
-            })()}
-            <li className="fc-factor">
-              <span className="fc-factor-dot fc-factor-dot--neutral" />
-              <span>{live.filter(inForecast).length} open deals · {fmtEur(wDevice)} device + {fmtEur(wService)} service (weighted)</span>
-            </li>
-          </ul>
-        </div>
-
-        <div className="fc-improve">
-          <h2 className="fc-section-label">What improves it</h2>
-          {attention.length === 0 ? (
-            <p className="fc-improve-empty">Pipeline is clean — no deals need immediate action.</p>
-          ) : (
-            <ul className="fc-action-list">
-              {attention.slice(0, 3).map(({ deal, reasons, next, weight }) => (
-                <li key={deal.id}>
-                  <button className="fc-action" type="button" onClick={() => setExplainId(deal.id)}>
-                    <span className="fc-action-main">
-                      <span className="fc-action-title">{deal.title}</span>
-                      <span className="fc-action-sub">{accountById(deal.accountId)?.name} · {STAGE_META[deal.stage].label}</span>
-                      <span className="fc-action-reasons">
-                        {reasons.slice(0, 2).map((r) => <span key={r.code} className={`reason reason--${r.tone}`}>{r.label}</span>)}
-                      </span>
-                      {next && <span className="fc-action-next"><Icon name="spark" />{next.headline}</span>}
-                    </span>
-                    <span className="fc-action-value">
-                      <strong>{fmtEur(weight)}</strong>
-                      <small>weighted</small>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {attention.length > 3 && <p className="fc-improve-more">+{attention.length - 3} more in the full list below</p>}
-        </div>
-      </div>
-
-      {/* 2. Needs attention — full ranked actionable list */}
-      <section className="fc-attn-section">
-        <SectionHead title="Needs attention" count={attention.length} />
-        <p className="forecast-caption forecast-caption--tight">Deals where acting de-risks the forecast or unlocks counted value. Ranked by risk, then weighted contribution.</p>
-        {attention.length === 0 ? <Empty>No open deals are stalled, overdue, or missing a forecast.</Empty> : (
-          <ul className="attn-list">
-            {attention.map(({ deal, reasons, next, weight }) => (
-              <li key={deal.id}>
-                <button className="attn-row" type="button" onClick={() => setExplainId(deal.id)}>
-                  <span className="attn-main">
-                    <span className="attn-title">{deal.title}</span>
-                    <span className="attn-sub">{accountById(deal.accountId)?.name} · {STAGE_META[deal.stage].label}</span>
-                    <span className="attn-reasons">
-                      {reasons.map((r) => <span key={r.code} className={`reason reason--${r.tone}`}>{r.label}</span>)}
-                    </span>
-                    {next && <span className="attn-next"><Icon name="spark" />{next.headline}</span>}
-                  </span>
-                  <span className="attn-weight">
-                    <strong>{fmtEur(weight)}</strong>
-                    <small>weighted</small>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* 3. Supporting KPI strip */}
       <div className="kpi-strip kpi-strip--tight">
         <Kpi label="Weighted forecast" value={fmtEur(weighted)} hint="Tier-weighted · 3-year net sales" />
         <SplitKpi label="Device vs service" device={wDevice} service={wService} />
@@ -3305,104 +3236,139 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
         <Kpi label="Gap to target" value={gap > 0 ? fmtEur(gap) : `+${fmtEur(-gap)}`} tone={gap > 0 ? "warn" : "good"} hint={`Target ${fmtEur(targetVal)}`} />
       </div>
 
-      {/* 4. Win-probability ladder */}
-      <WinProbabilityLadder ladder={ladder} measure={measure} probs={probs} setProbs={isFinance ? setProbs : undefined} hasReseller={hasReseller} />
-
-      {/* 5. Forecast controls */}
-      <section>
-        <SectionHead title="Forecast controls" />
-        {isFinance ? (
-          <div className="fc-controls">
-            <label className="fc-target">
-              <span>Revenue target (3-year)</span>
-              <input
-                type="number" inputMode="numeric" step={100_000} value={Math.round(targetVal)}
-                onChange={(e) => setTarget(Number(e.target.value) || 0)}
-              />
-            </label>
-            <p className="forecast-caption forecast-caption--tight">Stage win-probabilities are editable on the ladder above. Changes re-price the weighted forecast, at-risk, and gap in real time. Reseller deals use a {Math.round(RESELLER_TEST_PROB * 100)}% Customer-testing gate.</p>
-            <button className="btn btn--secondary" type="button" onClick={() => { setProbs(defaultStageProbs()); setTarget(null); ctx.notify("Forecast weighting reset to defaults."); }}>Reset to defaults</button>
+      {narrativeOpen && (
+        <div className="ai-narrative">
+          <div className="ai-narrative-head">
+            <span className="ai-badge"><Icon name="spark" />AI forecast narrative</span>
+            <button className="icon-btn" aria-label="Dismiss narrative" type="button" onClick={() => setNarrativeOpen(false)}><Icon name="close" /></button>
           </div>
-        ) : (
-          <div className="fc-controls">
-            <p className="forecast-caption forecast-caption--tight">Win-probability weighting and the revenue target are maintained by Finance. You are seeing the live weighted picture they configured.</p>
-            <dl className="fc-readout">
-              {OPEN_STATUSES.map((s) => <div key={s}><dt>{STAGE_META[s].label}</dt><dd>{Math.round((probs[s] ?? 0) * 100)}%</dd></div>)}
-            </dl>
-          </div>
-        )}
-      </section>
-
-      {/* 6. Time-phased data — lower priority visualization */}
-      <div className="fc-data-section">
-        <SectionHead title="Time-phased data" />
-        <div className="toolbar">
-          <div className="saved-views" role="tablist" aria-label="Forecast lens">
-            {([["commitment", "Commitment"], ["streams", "Device vs service"], ["region", "By region"], ["owner", "By owner"]] as const).map(([k, label]) => (
-              <button key={k} className="saved-view" role="tab" aria-selected={lens === k} onClick={() => setLens(k)} type="button">{label}</button>
-            ))}
-          </div>
-          <div className="toolbar-right">
-            <div className="seg seg--wide" role="group" aria-label="Measure">
-              {(["net_sales", "volume", "gm"] as Measure[]).map((m) => (
-                <button key={m} aria-pressed={measure === m} onClick={() => setMeasure(m)} type="button">{m === "net_sales" ? "Net sales" : m === "volume" ? "Volume" : "Gross margin"}</button>
-              ))}
-            </div>
-            <div className="seg seg--wide" role="group" aria-label="Granularity">
-              {(["quarter", "half", "year"] as Granularity[]).map((g) => (
-                <button key={g} aria-pressed={gran === g} onClick={() => setGran(g)} type="button">{g === "quarter" ? "Qtr" : g === "half" ? "Half" : "Year"}</button>
-              ))}
-            </div>
-            <button className={cx("chip-toggle", cumulative && "chip-toggle--on")} aria-pressed={cumulative} onClick={() => setCumulative((v) => !v)} type="button">Cumulative</button>
-          </div>
+          <p>{narrative}</p>
+          <small className="ai-narrative-foot">Generated from the figures on this page. Review before quoting in a forecast meeting.</small>
         </div>
+      )}
 
-        <p className="forecast-caption">
-          {lens === "commitment" ? "Net value by deal status — Lead → Offer → Customer testing → Final negotiation (Closed excluded from the forward forecast)."
-            : lens === "streams" ? "Device and service revenue kept separate, never flattened into one number."
-              : lens === "owner" ? "The same pipeline split by deal owner — switching lens never duplicates a deal."
-                : "Regional split with gross-margin percentage, the way the forecast sheet reads."}
-          {" Showing "}<strong>{MEASURE_LABEL[measure]}</strong>{cumulative ? ", cumulative" : ", per period"}.
-        </p>
-
-        <div className="forecast-sheet">
-          <table className="forecast-table">
-            <thead>
-              <tr><th>{lensLabel}</th>{buckets.map((b) => <th key={b.label} className="numeric">{b.label}</th>)}<th className="numeric">Total</th>{lens === "region" && <th className="numeric">GM %</th>}</tr>
-            </thead>
-            <tbody>
-              {series.map((se, i) => (
-                <tr key={se.key}>
-                  <th scope="row"><span className={`swatch ${swatchClass(se.key, i)}`} />{se.label}{lens === "commitment" && <span className="mini-tag">{STAGE_META[se.key as Stage].csv}</span>}</th>
-                  {buckets.map((b, bi) => <td key={b.label} className="numeric">{fmtMeasure(seriesBucket(se, bi), measure)}</td>)}
-                  <td className="numeric numeric--strong">{fmtMeasure(cumulative ? seriesBucket(se, buckets.length - 1) : se.total, measure)}</td>
-                  {lens === "region" && regionRows && <td className="numeric">{Math.round((regionRows[i]?.gmPct ?? 0) * 100)}%</td>}
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr><th scope="row">Total</th>{buckets.map((b, bi) => <td key={b.label} className="numeric numeric--strong">{fmtMeasure(colTotal(bi), measure)}</td>)}<td className="numeric numeric--strong">{fmtMeasure(cumulative ? colTotal(buckets.length - 1) : grand, measure)}</td>{lens === "region" && <td className="numeric">{Math.round((forecastTotal(live, "gm") / forecastTotal(live, "net_sales")) * 100)}%</td>}</tr>
-            </tfoot>
-          </table>
-        </div>
-
-        <div className="forecast-bars">
-          {buckets.map((b, bi) => (
-            <div className="fbar" key={b.label}>
-              <span className="fbar-track" aria-hidden="true">
-                {series.map((se, i) => {
-                  const v = seriesBucket(se, bi);
-                  return v > 0 ? <span key={se.key} className={colorClass(se.key, i)} style={{ height: `${(v / colMax) * 100}%` }} /> : null;
-                })}
-              </span>
-              <strong>{fmtMeasure(colTotal(bi), measure)}</strong>
-              <small>{b.label}</small>
-            </div>
+      <div className="toolbar">
+        <div className="saved-views" role="tablist" aria-label="Forecast lens">
+          {([["commitment", "Commitment"], ["streams", "Device vs service"], ["region", "By region"], ["owner", "By owner"]] as const).map(([k, label]) => (
+            <button key={k} className="saved-view" role="tab" aria-selected={lens === k} onClick={() => setLens(k)} type="button">{label}</button>
           ))}
         </div>
-        <div className="phasing-legend phasing-legend--center">
-          {series.map((se, i) => <span key={se.key}><i className={`swatch ${swatchClass(se.key, i)}`} />{se.label}</span>)}
+        <div className="toolbar-right">
+          <div className="seg seg--wide" role="group" aria-label="Measure">
+            {(["net_sales", "volume", "gm"] as Measure[]).map((m) => (
+              <button key={m} aria-pressed={measure === m} onClick={() => setMeasure(m)} type="button">{m === "net_sales" ? "Net sales" : m === "volume" ? "Volume" : "Gross margin"}</button>
+            ))}
+          </div>
+          <div className="seg seg--wide" role="group" aria-label="Granularity">
+            {(["quarter", "half", "year"] as Granularity[]).map((g) => (
+              <button key={g} aria-pressed={gran === g} onClick={() => setGran(g)} type="button">{g === "quarter" ? "Qtr" : g === "half" ? "Half" : "Year"}</button>
+            ))}
+          </div>
+          <button className={cx("chip-toggle", cumulative && "chip-toggle--on")} aria-pressed={cumulative} onClick={() => setCumulative((v) => !v)} type="button">Cumulative</button>
         </div>
+      </div>
+
+      <p className="forecast-caption">
+        {lens === "commitment" ? "Net value by deal status — Lead → Offer → Customer testing → Final negotiation (Closed excluded from the forward forecast)."
+          : lens === "streams" ? "Device and service revenue kept separate, never flattened into one number."
+            : lens === "owner" ? "The same pipeline split by deal owner — switching lens never duplicates a deal."
+              : "Regional split with gross-margin percentage, the way the forecast sheet reads."}
+        {" Showing "}<strong>{MEASURE_LABEL[measure]}</strong>{cumulative ? ", cumulative" : ", per period"}.
+      </p>
+
+      <WinProbabilityLadder ladder={ladder} measure={measure} probs={probs} setProbs={isFinance ? setProbs : undefined} hasReseller={hasReseller} />
+
+      <SectionHead title="Time-phased forecast" />
+      <div className="forecast-sheet">
+        <table className="forecast-table">
+          <thead>
+            <tr><th>{lensLabel}</th>{buckets.map((b) => <th key={b.label} className="numeric">{b.label}</th>)}<th className="numeric">Total</th>{lens === "region" && <th className="numeric">GM %</th>}</tr>
+          </thead>
+          <tbody>
+            {series.map((se, i) => (
+              <tr key={se.key}>
+                <th scope="row"><span className={`swatch ${swatchClass(se.key, i)}`} />{se.label}{lens === "commitment" && <span className="mini-tag">{STAGE_META[se.key as Stage].csv}</span>}</th>
+                {buckets.map((b, bi) => <td key={b.label} className="numeric">{fmtMeasure(seriesBucket(se, bi), measure)}</td>)}
+                <td className="numeric numeric--strong">{fmtMeasure(cumulative ? seriesBucket(se, buckets.length - 1) : se.total, measure)}</td>
+                {lens === "region" && regionRows && <td className="numeric">{Math.round((regionRows[i]?.gmPct ?? 0) * 100)}%</td>}
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr><th scope="row">Total</th>{buckets.map((b, bi) => <td key={b.label} className="numeric numeric--strong">{fmtMeasure(colTotal(bi), measure)}</td>)}<td className="numeric numeric--strong">{fmtMeasure(cumulative ? colTotal(buckets.length - 1) : grand, measure)}</td>{lens === "region" && <td className="numeric">{Math.round((forecastTotal(live, "gm") / forecastTotal(live, "net_sales")) * 100)}%</td>}</tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div className="forecast-bars">
+        {buckets.map((b, bi) => (
+          <div className="fbar" key={b.label}>
+            <span className="fbar-track" aria-hidden="true">
+              {series.map((se, i) => {
+                const v = seriesBucket(se, bi);
+                return v > 0 ? <span key={se.key} className={colorClass(se.key, i)} style={{ height: `${(v / colMax) * 100}%` }} /> : null;
+              })}
+            </span>
+            <strong>{fmtMeasure(colTotal(bi), measure)}</strong>
+            <small>{b.label}</small>
+          </div>
+        ))}
+      </div>
+      <div className="phasing-legend phasing-legend--center">
+        {series.map((se, i) => <span key={se.key}><i className={`swatch ${swatchClass(se.key, i)}`} />{se.label}</span>)}
+      </div>
+
+      <div className="forecast-lower">
+        <section>
+          <SectionHead title="Needs attention" count={attention.length} />
+          <p className="forecast-caption forecast-caption--tight">Deals where acting de-risks the forecast or unlocks counted value. Ranked by risk, then weighted contribution.</p>
+          {attention.length === 0 ? <Empty>No open deals are stalled, overdue, or missing a forecast.</Empty> : (
+            <ul className="attn-list">
+              {attention.map(({ deal, reasons, next, weight }) => (
+                <li key={deal.id}>
+                  <button className="attn-row" type="button" onClick={() => setExplainId(deal.id)}>
+                    <span className="attn-main">
+                      <span className="attn-title">{deal.title}</span>
+                      <span className="attn-sub">{accountById(deal.accountId)?.name} · {STAGE_META[deal.stage].label}</span>
+                      <span className="attn-reasons">
+                        {reasons.map((r) => <span key={r.code} className={`reason reason--${r.tone}`}>{r.label}</span>)}
+                      </span>
+                      {next && <span className="attn-next"><Icon name="spark" />{next.headline}</span>}
+                    </span>
+                    <span className="attn-weight">
+                      <strong>{fmtEur(weight)}</strong>
+                      <small>weighted</small>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section>
+          <SectionHead title="Forecast controls" />
+          {isFinance ? (
+            <div className="fc-controls">
+              <label className="fc-target">
+                <span>Revenue target (3-year)</span>
+                <input
+                  type="number" inputMode="numeric" step={100_000} value={Math.round(targetVal)}
+                  onChange={(e) => setTarget(Number(e.target.value) || 0)}
+                />
+              </label>
+              <p className="forecast-caption forecast-caption--tight">Stage win-probabilities are editable on the ladder above. Changes re-price the weighted forecast, at-risk, and gap in real time. Reseller deals use a {Math.round(RESELLER_TEST_PROB * 100)}% Customer-testing gate.</p>
+              <button className="btn btn--secondary" type="button" onClick={() => { setProbs(defaultStageProbs()); setTarget(null); ctx.notify("Forecast weighting reset to defaults."); }}>Reset to defaults</button>
+            </div>
+          ) : (
+            <div className="fc-controls">
+              <p className="forecast-caption forecast-caption--tight">Win-probability weighting and the revenue target are maintained by Finance. You are seeing the live weighted picture they configured.</p>
+              <dl className="fc-readout">
+                {OPEN_STATUSES.map((s) => <div key={s}><dt>{STAGE_META[s].label}</dt><dd>{Math.round((probs[s] ?? 0) * 100)}%</dd></div>)}
+              </dl>
+            </div>
+          )}
+        </section>
       </div>
 
       {explainId && (
@@ -3631,11 +3597,15 @@ function NewCatalogEntryModal({
       setError("List price must be a non-negative number.");
       return;
     }
+    if (kind === "service" && (!Number.isFinite(listPrice) || listPrice < 0)) {
+      setError("Unit price must be a non-negative number.");
+      return;
+    }
 
     const path = kind === "product" ? "products" : "services";
     const payload = kind === "product"
       ? { name: trimmedName, category: trimmedCategory, list_price: listPrice }
-      : { name: trimmedName, service_type: trimmedCategory, is_third_party: source === "third" };
+      : { name: trimmedName, service_type: trimmedCategory, list_price: listPrice, is_third_party: source === "third" };
 
     setSubmitting(true);
     setError("");
@@ -3667,6 +3637,7 @@ function NewCatalogEntryModal({
           id: saved.id,
           name: saved.name,
           serviceType: saved.serviceType,
+          listPrice: Number(saved.listPrice ?? 0),
           isThirdParty: saved.isThirdParty,
           retired: saved.retired,
         });
@@ -3706,15 +3677,21 @@ function NewCatalogEntryModal({
               <input type="number" min="0" step="0.01" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} required />
             </label>
           ) : (
-            <div className="field">
-              <span className="field-label">Source</span>
-              <CustomSelect value={source} options={SOURCE_OPTIONS} onChange={(value) => setSource(value as "internal" | "third")} />
-            </div>
+            <>
+              <label className="field">
+                <span className="field-label">Unit price</span>
+                <input type="number" min="0" step="0.01" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} required />
+              </label>
+              <div className="field">
+                <span className="field-label">Source</span>
+                <CustomSelect value={source} options={SOURCE_OPTIONS} onChange={(value) => setSource(value as "internal" | "third")} />
+              </div>
+            </>
           )}
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className="modal-foot">
             <button className="btn btn--ghost" type="button" onClick={onClose} disabled={submitting}>Cancel</button>
-            <button className="btn btn--primary" type="submit" disabled={submitting || !name.trim() || !category.trim() || (kind === "product" && price === "")}>
+            <button className="btn btn--primary" type="submit" disabled={submitting || !name.trim() || !category.trim() || price === ""}>
               {submitting ? "Adding…" : `Add ${kind}`}
             </button>
           </div>
@@ -3767,7 +3744,7 @@ function CatalogView({ ctx }: { ctx: AppCtx }) {
       ) : (
         <div className="table-wrap card-edge">
           <table>
-            <thead><tr><th>Service</th><th>Type</th><th>Source</th><th>Status</th></tr></thead>
+            <thead><tr><th>Service</th><th>Type</th><th className="numeric">Unit price</th><th>Source</th><th>Status</th></tr></thead>
             <tbody>
               {services.map((base) => {
                 const s = ctx.eff("service", base);
@@ -3775,6 +3752,7 @@ function CatalogView({ ctx }: { ctx: AppCtx }) {
                   <tr key={s.id} className={s.retired ? "is-retired" : ""}>
                     <th scope="row">{canEdit ? <CellText value={s.name} onCommit={(v) => ctx.patch("service", s.id, "name", v)} /> : s.name}</th>
                     <td>{canEdit ? <CellText value={s.serviceType} onCommit={(v) => ctx.patch("service", s.id, "serviceType", v)} /> : s.serviceType}</td>
+                    <td className="numeric numeric--strong">{canEdit ? <CellNumber value={s.listPrice} prefix="€" onCommit={(v) => ctx.patch("service", s.id, "listPrice", v)} /> : fmtEurExact(s.listPrice)}</td>
                     <td>{canEdit
                       ? <CellSelect value={s.isThirdParty ? "third" : "internal"} options={SOURCE_OPTIONS} onCommit={(v) => ctx.patch("service", s.id, "isThirdParty", v === "third")} />
                       : s.isThirdParty ? <span className="mini-tag">Third party</span> : <span className="mini-tag mini-tag--accent">Internal</span>}</td>
@@ -3797,6 +3775,233 @@ function CatalogView({ ctx }: { ctx: AppCtx }) {
         />
       )}
     </>
+  );
+}
+
+// ===========================================================================
+// Actions page — cross-account queue of AI next best actions
+// ===========================================================================
+
+function ActionsView({ ctx }: { ctx: AppCtx }) {
+  const [showEmail, setShowEmail] = useState<Record<string, boolean>>({});
+  const [removing, setRemoving] = useState<Record<string, boolean>>({});
+  const [copied, setCopied] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+
+  const [localActions, setLocalActions] = useState<AiInsight[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const data = localStorage.getItem("hmd-crm-local-actions");
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const ownedIds = new Set(accounts.filter((a) => a.ownerId === ctx.user.id).map((a) => a.id));
+
+  const allItems = [...localActions, ...seedInsights];
+  const items = allItems
+    .filter((i) => i.type === "next_action" && ownedIds.has(i.accountId))
+    .sort((a, b) => b.confidence - a.confidence);
+
+  const handleAction = (id: string, status: AiInsight["status"]) => {
+    setRemoving((prev) => ({ ...prev, [id]: true }));
+    window.setTimeout(() => {
+      if (id.startsWith("local-")) {
+        const updated = localActions.map(item => item.id === id ? { ...item, status } : item);
+        localStorage.setItem("hmd-crm-local-actions", JSON.stringify(updated));
+        setLocalActions(updated);
+      } else {
+        ctx.setInsight(id, status);
+      }
+      ctx.notify(status === "accepted" ? "Action accepted" : "Action dismissed");
+    }, 320);
+  };
+
+  const generateActions = async () => {
+    setGenerating(true);
+    try {
+      const res = await fetch("/api/insights/generate", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to generate AI actions");
+      const data = await res.json() as { insights: AiInsight[] };
+      const newActions = data.insights || [];
+      localStorage.setItem("hmd-crm-local-actions", JSON.stringify(newActions));
+      setLocalActions(newActions);
+      ctx.notify(`Generated ${newActions.length} actions from AI.`);
+    } catch (err) {
+      console.error(err);
+      ctx.notify("Failed to generate actions via AI.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const toggleEmail = (id: string) => {
+    setShowEmail((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const copyDraft = async (id: string, text: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(id);
+    window.setTimeout(() => setCopied((c) => (c === id ? null : c)), 1800);
+  };
+
+  const pendingItems = items.filter((i) => {
+    const s = ctx.insightStatus[i.id] ?? i.status;
+    return s === "pending_review" && !removing[i.id];
+  });
+
+  return (
+    <div className="actions-page">
+      <PageHead 
+        title="Actions" 
+        actions={
+          <button 
+            className={cx("btn btn--primary btn--sm", generating && "loading")}
+            type="button" 
+            onClick={generateActions} 
+            disabled={generating}
+            style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+          >
+            <Icon name="spark" />
+            {generating ? "Generating..." : "Generate AI Actions"}
+          </button>
+        }
+      />
+
+
+      {pendingItems.length === 0 ? (
+        <div className="actions-empty">
+          <p className="actions-empty-title">No actions right now</p>
+          <p className="actions-empty-sub">
+            AI-generated next steps will appear here when your accounts need attention.
+          </p>
+        </div>
+      ) : (
+        <div className="actions-list">
+          {pendingItems.map((insight) => {
+            const account = accountById(insight.accountId);
+            const deal = insight.dealId ? dealById(insight.dealId) : null;
+            const contacts = contactsForAccount(insight.accountId);
+            const primary = contacts.find((c) => c.primary) ?? contacts[0] ?? null;
+            const emailOpen = showEmail[insight.id] ?? false;
+            const isRemoving = removing[insight.id];
+
+            return (
+              <article
+                key={insight.id}
+                className={cx("actions-item", isRemoving && "is-removing")}
+              >
+                {/* Header: account / deal / confidence */}
+                <div className="actions-item-header">
+                  {account && (
+                    <button
+                      className="actions-acct-link"
+                      type="button"
+                      onClick={() => ctx.openAccount(account.id)}
+                    >
+                      {account.name}
+                    </button>
+                  )}
+                  {deal && (
+                    <>
+                      <span className="actions-sep" aria-hidden="true">›</span>
+                      <button
+                        className="actions-deal-link"
+                        type="button"
+                        onClick={() => ctx.openDeal(deal.id)}
+                      >
+                        {deal.title}
+                      </button>
+                    </>
+                  )}
+                  <Confidence value={insight.confidence} />
+                </div>
+
+                {/* Headline */}
+                <p className="actions-headline">{insight.headline}</p>
+
+                {/* Recommended contact */}
+                {primary && (
+                  <div className="actions-contact">
+                    <span className="actions-contact-name">{primary.name}</span>
+                    <span className="actions-contact-sep" aria-hidden="true">·</span>
+                    <span>{CONTACT_ROLE_LABEL[primary.roleType]}</span>
+                    <span className="actions-contact-sep" aria-hidden="true">·</span>
+                    <span>{primary.email}</span>
+                    {primary.phone && (
+                      <>
+                        <span className="actions-contact-sep" aria-hidden="true">·</span>
+                        <span>{primary.phone}</span>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Evidence — collapsed by default */}
+                {insight.evidence.length > 0 && (
+                  <details className="actions-evidence">
+                    <summary>Evidence · {insight.evidence.length}</summary>
+                    <ul>
+                      {insight.evidence.slice(0, 3).map((e) => (
+                        <li key={e}>{e}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+
+                {/* Draft email — collapsed */}
+                {insight.draftEmail && (
+                  <div className="actions-draft">
+                    <button
+                      className="actions-draft-toggle"
+                      type="button"
+                      onClick={() => toggleEmail(insight.id)}
+                      aria-expanded={emailOpen}
+                    >
+                      <Icon name="mail" />
+                      {emailOpen ? "Hide draft" : "View draft email"}
+                    </button>
+                    {emailOpen && (
+                      <div className="actions-draft-content">
+                        <pre className="actions-draft-pre">{insight.draftEmail}</pre>
+                        <button
+                          className="actions-copy-btn"
+                          type="button"
+                          onClick={() => { void copyDraft(insight.id, insight.draftEmail!); }}
+                        >
+                          <Icon name="copy" />
+                          {copied === insight.id ? "Copied" : "Copy"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Accept / Dismiss */}
+                <div className="actions-btns">
+                  <button
+                    className="btn btn--primary btn--sm"
+                    type="button"
+                    onClick={() => handleAction(insight.id, "accepted")}
+                  >
+                    Accept
+                  </button>
+                  <button
+                    className="btn btn--ghost btn--sm"
+                    type="button"
+                    onClick={() => handleAction(insight.id, "dismissed")}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -3898,6 +4103,7 @@ const NAV: { screen: Screen; label: string; icon: string }[] = [
   { screen: "forecast", label: "Forecast", icon: "forecast" },
   { screen: "catalog", label: "Catalog", icon: "catalog" },
   { screen: "assistant", label: "AI Assistant", icon: "spark" },
+  { screen: "actions", label: "Actions", icon: "check" },
 ];
 
 type AssistantEvidence = { type: string; id?: string; label: string; url?: string };
@@ -3966,6 +4172,12 @@ function AssistantRunStatus({
   );
 }
 
+let _sharedMessages: AssistantMessage[] = [];
+let _sharedThreadId: string | null = null;
+let _sharedDraft = "";
+let _sharedThreads: AssistantThread[] = [];
+let _sharedAttachedFiles: Array<{ name: string; size: number; dataUrl: string }> = [];
+
 function CrmAssistant({
   open,
   onClose,
@@ -3977,10 +4189,10 @@ function CrmAssistant({
   fullPage?: boolean;
   onOpenFullPage?: () => void;
 }) {
-  const [draft, setDraft] = useState("");
-  const [threadId, setThreadId] = useState<string | null>(null);
-  const [threads, setThreads] = useState<AssistantThread[]>([]);
-  const [messages, setMessages] = useState<AssistantMessage[]>([]);
+  const [draft, setDraft] = useState(_sharedDraft);
+  const [threadId, setThreadId] = useState<string | null>(_sharedThreadId);
+  const [threads, setThreads] = useState<AssistantThread[]>(_sharedThreads);
+  const [messages, setMessages] = useState<AssistantMessage[]>(_sharedMessages);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [answer, setAnswer] = useState<{
     answer: string;
@@ -3990,11 +4202,17 @@ function CrmAssistant({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [streamingId, setStreamingId] = useState<string | null>(null);
-  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; size: number; dataUrl: string }>>([]);
+  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; size: number; dataUrl: string }>>(_sharedAttachedFiles);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { _sharedMessages = messages; }, [messages]);
+  useEffect(() => { _sharedThreadId = threadId; }, [threadId]);
+  useEffect(() => { _sharedDraft = draft; }, [draft]);
+  useEffect(() => { _sharedThreads = threads; }, [threads]);
+  useEffect(() => { _sharedAttachedFiles = attachedFiles; }, [attachedFiles]);
 
   const handleAttach = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -4024,16 +4242,19 @@ function CrmAssistant({
     setError(null);
     try {
       const response = await fetch(`/api/assistant/threads/${id}`);
-      const payload = await response.json();
+      const payload = await readResponseBody(response) as {
+        error?: string;
+        messages?: Array<{
+          id: string;
+          role: "user" | "assistant";
+          content: string;
+          evidence?: AssistantEvidence[];
+          uncertainty?: string;
+        }>;
+      };
       if (!response.ok) throw new Error(payload.error || "Could not load chat.");
       setThreadId(id);
-      setMessages((payload.messages ?? []).map((entry: {
-        id: string;
-        role: "user" | "assistant";
-        content: string;
-        evidence?: AssistantEvidence[];
-        uncertainty?: string;
-      }) => entry.role === "assistant"
+      setMessages((payload.messages ?? []).map((entry) => entry.role === "assistant"
         ? { ...entry, evidence: entry.evidence ?? [] }
         : entry));
     } catch (loadError) {
@@ -4048,7 +4269,7 @@ function CrmAssistant({
     let cancelled = false;
     void fetch("/api/assistant/threads")
       .then(async (response) => {
-        const payload = await response.json();
+        const payload = await readResponseBody(response);
         if (!response.ok) throw new Error(payload.error || "Could not load chat history.");
         if (cancelled) return;
         setThreads(payload);
@@ -4123,7 +4344,13 @@ function CrmAssistant({
           files: files.length > 0 ? files : undefined,
         }),
       });
-      const payload = await response.json();
+      const payload = await readResponseBody(response) as {
+        error?: string;
+        threadId?: string;
+        answer?: string;
+        evidence?: AssistantEvidence[];
+        uncertainty?: string;
+      };
       if (!response.ok) throw new Error(payload.error || "The assistant could not answer.");
       setThreadId(payload.threadId);
       setThreads((current) => {
@@ -4204,7 +4431,7 @@ function CrmAssistant({
         </div>
       </header>
 
-      <div className="crm-assistant-body">
+      <div className="crm-assistant-body" ref={scrollRef}>
         {historyLoading ? (
           <div className="crm-assistant-empty crm-assistant-loading" role="status">Loading conversation...</div>
         ) : messages.length === 0 ? (
@@ -4214,7 +4441,7 @@ function CrmAssistant({
             <p>Ask about pipeline risk, account history, open cases, offers, or forecast changes. Answers include the CRM evidence used.</p>
           </div>
         ) : (
-          <div className="crm-conversation" ref={scrollRef} aria-live="polite">
+          <div className="crm-conversation" aria-live="polite">
             {messages.map((entry) => entry.role === "user" ? (
               <div className="crm-message crm-message--user" key={entry.id}>{entry.content}</div>
             ) : entry.role === "assistant" ? (
@@ -4386,7 +4613,7 @@ export default function App() {
   return <MainApp initialUserId={initialUserId} theme={theme} onThemeChange={setTheme} />;
 }
 
-function MainApp({
+export function MainApp({
   initialUserId,
   theme,
   onThemeChange,
@@ -4437,8 +4664,13 @@ function MainApp({
   const [, bumpAccounts] = useReducer((c) => c + 1, 0);
   const [, bumpCompetitors] = useReducer((c) => c + 1, 0);
 
+  const reloadCrm = async () => {
+    await initCrmFromApi();
+    bumpAccounts();
+  };
+
   const patch = (kind: EditKind, id: string, field: string, value: unknown) => {
-    setEdits((m) => ({ ...m, [`${kind}:${id}`]: { ...(m[`${kind}:${id}`] ?? {}), [field]: value } }));
+    setEdits((m) => ({ ...m, [`${kind}:${id}`]: { ...m[`${kind}:${id}`], [field]: value } }));
 
     // Update in-memory arrays if they are direct-mutated locally to ensure immediate responsiveness
     if (kind === "case") {
@@ -4673,6 +4905,7 @@ function MainApp({
           title: updates.title,
           stage: updates.stage ? STAGE_TO_API[updates.stage] : undefined,
           channel: updates.channel,
+          expected_close: updates.expectedClose,
           device,
           service,
           total,
@@ -4682,7 +4915,7 @@ function MainApp({
       if (!response.ok) throw new Error(result.error || "Failed to save deal");
       notify(`${deal.title} updated.`);
     } catch (error) {
-      Object.assign(deal, { title: previous.title, stage: previous.stage, apiStage: previous.apiStage, channel: previous.channel, leadValidated: previous.leadValidated });
+      Object.assign(deal, { title: previous.title, stage: previous.stage, apiStage: previous.apiStage, channel: previous.channel, leadValidated: previous.leadValidated, expectedClose: previous.expectedClose });
       replaceDealRevenue(deal, previous.device, previous.service);
       bumpAccounts();
       notify(error instanceof Error ? error.message : "Failed to save deal.");
@@ -4772,7 +5005,8 @@ function MainApp({
     if (user.role !== "sales_rep") return;
     const base = offerState[offerId] ?? seedOffers.find((o) => o.id === offerId);
     if (!base || base.status !== "sales_rep") return;
-    
+    const skipManager = !offerRequiresManagerApproval(base);
+
     fetch(`/api/offers/${offerId}/submit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -4782,16 +5016,16 @@ function MainApp({
         return r.json();
       })
       .then(() => {
-        void loadCrm();
-        notify(`${base.ref} sent for Sales Manager approval.`);
+        void reloadCrm();
+        notify(skipManager ? `${base.ref} sent for Finance approval.` : `${base.ref} sent for Sales Manager approval.`);
       })
       .catch((err) => {
         console.error(err);
         notify("Failed to submit offer.");
       });
 
-    // Optimistic local state change
-    const updated: Offer = { ...base, status: "pending_manager" };
+    const nextStatus = skipManager ? ("pending_finance" as const) : ("pending_manager" as const);
+    const updated: Offer = { ...base, status: nextStatus };
     setOfferState((m) => ({ ...m, [offerId]: updated }));
     const idx = seedOffers.findIndex((o) => o.id === offerId);
     if (idx >= 0) seedOffers[idx] = updated;
@@ -4803,7 +5037,9 @@ function MainApp({
         dealId: decisionDeal.id,
         actorId: user.id,
         kind: "offer",
-        summary: `${base.ref} submitted for Sales Manager approval.`,
+        summary: skipManager
+          ? `${base.ref} submitted for Finance approval (Sales Manager auto-approved).`
+          : `${base.ref} submitted for Sales Manager approval.`,
       });
     }
   };
@@ -4834,7 +5070,7 @@ function MainApp({
         return r.json();
       })
       .then(() => {
-        void loadCrm();
+        void reloadCrm();
         notify(`${base.ref} approved.`);
       })
       .catch((err) => {
@@ -4866,15 +5102,14 @@ function MainApp({
       approveOfferMade(offerId);
       return;
     }
-    
-    // Rejection
+
     const activeStep = offerWorkflowSteps(base).find(
       (a) =>
         (base.status === "pending_manager" && a.roleRequired === "sales_manager" && !a.decision) ||
-        (base.status === "pending_finance" && a.roleRequired === "finance" && !a.decision)
+        (base.status === "pending_finance" && a.roleRequired === "finance" && !a.decision),
     );
 
-    if (!activeStep || !activeStep.id) {
+    if (!activeStep?.id) {
       notify("No active approval step found to reject.");
       return;
     }
@@ -4889,21 +5124,15 @@ function MainApp({
         return r.json();
       })
       .then(() => {
-        void loadCrm();
-        notify(`${base.ref} rejected.`);
+        void reloadCrm();
+        notify(`${base.ref} returned to Sales Representative for revision.`);
       })
       .catch((err) => {
         console.error(err);
         notify("Failed to record decision.");
       });
 
-    const stamp = approvalTimestamp();
-    const approvals = offerWorkflowSteps(base).map((a) =>
-      a.id === activeStep.id
-        ? { ...a, decision: "rejected" as const, decidedById: user.id, note: note?.trim() || "Rejected.", decidedAt: stamp }
-        : a
-    );
-    const updated: Offer = { ...base, status: "rejected" as const, approvals };
+    const updated: Offer = { ...base, status: "sales_rep" as const, approvals: [] };
     setOfferState((m) => ({ ...m, [offerId]: updated }));
     const idx = seedOffers.findIndex((o) => o.id === offerId);
     if (idx >= 0) seedOffers[idx] = updated;
@@ -4943,7 +5172,7 @@ function MainApp({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: s }),
       })
-        .then(() => void loadCrm())
+        .then(() => void reloadCrm())
         .catch(console.error);
     },
     caseNotes, addNote: (cid, n) => setCaseNotes((m) => ({ ...m, [cid]: [n, ...(m[cid] ?? [])] })),
@@ -4972,6 +5201,7 @@ function MainApp({
   else if (screen === "offers") content = <OffersView ctx={ctx} focus={offerFocus} />;
   else if (screen === "forecast") content = <ForecastView ctx={ctx} />;
   else if (screen === "catalog") content = <CatalogView ctx={ctx} />;
+  else if (screen === "actions") content = <ActionsView ctx={ctx} />;
   else content = <CrmAssistant open fullPage onClose={() => undefined} />;
 
   const activeNav = screen === "account" ? "accounts" : screen === "deal" ? "deals" : (screen as string) === "case" ? "cases" : screen;

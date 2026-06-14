@@ -45,7 +45,7 @@ export type OfferStatus =
   | "rejected"
   | "locked";
 
-export type ApprovalRole = "sales_manager" | "finance";
+export type ApprovalRole = "sales_rep" | "sales_manager" | "finance";
 
 export type InsightType =
   | "enrichment"
@@ -128,6 +128,7 @@ export type ServiceCatalogItem = {
   id: string;
   name: string;
   serviceType: string;
+  listPrice: number;
   isThirdParty: boolean;
   retired: boolean;
 };
@@ -388,9 +389,21 @@ export const OFFER_STATUS_LABEL: Record<OfferStatus, string> = {
 };
 
 export const APPROVAL_ROLE_LABEL: Record<ApprovalRole, string> = {
+  sales_rep: "Sales Representative",
   sales_manager: "Sales Manager",
   finance: "Finance",
 };
+
+/** Map DB offer status values to frontend OfferStatus. */
+export function mapOfferStatusFromDb(status: string): OfferStatus {
+  if (status === "draft") return "sales_rep";
+  if (status === "approved") return "made";
+  return status as OfferStatus;
+}
+
+export function offerRequiresManagerApproval(offer: Offer): boolean {
+  return offer.lines.some((l) => l.discountPct >= 10);
+}
 
 export const ROLE_LABEL: Record<Role, string> = {
   sales_rep: "Sales Representative",
@@ -469,8 +482,9 @@ export let cases: CaseRecord[] = [];
 
 export function defaultOfferWorkflow(): ApprovalStep[] {
   return [
-    { stepOrder: 1, roleRequired: "sales_manager", decidedById: null, decision: null, note: null, decidedAt: null },
-    { stepOrder: 2, roleRequired: "finance", decidedById: null, decision: null, note: null, decidedAt: null },
+    { stepOrder: 1, roleRequired: "sales_rep", decidedById: null, decision: null, note: null, decidedAt: null },
+    { stepOrder: 2, roleRequired: "sales_manager", decidedById: null, decision: null, note: null, decidedAt: null },
+    { stepOrder: 3, roleRequired: "finance", decidedById: null, decision: null, note: null, decidedAt: null },
   ];
 }
 
@@ -479,13 +493,19 @@ export function approvalTimestamp(): string {
 }
 
 export function offerWorkflowSteps(offer: Offer): ApprovalStep[] {
-  const steps = offer.approvals.filter((a) => a.roleRequired === "sales_manager" || a.roleRequired === "finance");
-  return steps.length >= 2 ? steps.sort((a, b) => a.stepOrder - b.stepOrder).slice(0, 2) : defaultOfferWorkflow();
+  const steps = offer.approvals.filter(
+    (a) => a.roleRequired === "sales_rep" || a.roleRequired === "sales_manager" || a.roleRequired === "finance",
+  );
+  return steps.length >= 3 ? steps.sort((a, b) => a.stepOrder - b.stepOrder).slice(0, 3) : defaultOfferWorkflow();
 }
 
 export function approvalStepActionLabel(step: ApprovalStep): string {
   if (step.decision !== "approved") return "";
-  return step.roleRequired === "sales_manager" ? "Approved by SM" : "Approved by Finance";
+  if (step.roleRequired === "sales_rep") return "Submitted by";
+  if (step.roleRequired === "sales_manager") {
+    return step.note?.includes("Auto-approved") ? "Auto-approved" : "Approved by SM";
+  }
+  return "Approved by Finance";
 }
 
 export let offers: Offer[] = [];
@@ -844,6 +864,20 @@ export function madeOfferForDeal(dealId: string, offerLookup?: (id: string) => O
     .sort((a, b) => b.version - a.version)[0];
 }
 
+/** Latest non-rejected offer for a deal — used for forecast and in-progress pricing. */
+export function activeOfferForDeal(dealId: string, offerLookup?: (id: string) => Offer | undefined): Offer | undefined {
+  return offers
+    .map((o) => offerLookup?.(o.id) ?? o)
+    .filter((o) => o.dealId === dealId && o.status !== "rejected")
+    .sort((a, b) => b.version - a.version)[0];
+}
+
+export function dealForecastNet(deal: Deal, offerLookup?: (id: string) => Offer | undefined): number {
+  const offer = activeOfferForDeal(deal.id, offerLookup);
+  if (offer && offer.lines.length > 0) return offerGrandNet(offer);
+  return dealTotal(deal);
+}
+
 export function fmtExpectedClose(iso: string): string {
   if (!iso?.trim()) return "—";
   const d = new Date(iso);
@@ -911,6 +945,7 @@ export function catalogUnitPrice(productId: string | null, serviceId: string | n
   if (productId) return products.find((p) => p.id === productId)?.listPrice ?? 0;
   if (serviceId) {
     const service = services.find((item) => item.id === serviceId);
+    if (service && service.listPrice > 0) return service.listPrice;
     return SERVICE_LIST_PRICES[serviceId]
       ?? (service ? SERVICE_LIST_PRICES_BY_NAME[service.name.toLowerCase()] : undefined)
       ?? 0;
@@ -1078,30 +1113,37 @@ export {
 export type { DynamicForecastBreakdown, IndustryStats } from "./crm-dynamic-forecast.ts";
 
 
+// ETag from the last successful bootstrap response — used for conditional
+// GET requests (If-None-Match) so the browser can get a 304 on repeat loads.
+let _bootstrapEtag: string | null = null;
+
 export async function initCrmFromApi(): Promise<{ ok: boolean; userId: string | null; error?: string }> {
   console.log("Loading CRM data from API...");
   try {
-    const authRes = await fetch("/api/auth/users", { credentials: "include" });
-    if (!authRes.ok) throw new Error("Could not load users from PostgreSQL.");
-    const apiUsers: { id: string; role: Role }[] = await authRes.json();
-    if (apiUsers.length === 0) throw new Error("PostgreSQL is connected, but the CRM has no users.");
+    // Single RTT: /api/bootstrap resolves the session, auto-logs-in when there
+    // is no cookie, and returns all sync data in one response — replacing the
+    // previous 4-hop waterfall:
+    //   GET /api/auth/users → GET /api/auth/session
+    //   → POST /api/auth/login → GET /api/sync
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (_bootstrapEtag) headers["If-None-Match"] = _bootstrapEtag;
 
-    let sessionUserId: string | null = null;
-    const sessionRes = await fetch("/api/auth/session", { credentials: "include" });
-    if (sessionRes.ok) {
-      const session = await sessionRes.json();
-      sessionUserId = session.id ?? null;
+    const res = await fetch("/api/bootstrap", { credentials: "include", headers });
+
+    // 304 Not Modified — data unchanged since last load, nothing to hydrate.
+    if (res.status === 304) {
+      const currentUserId = defaultDemoUserId() || null;
+      return { ok: true, userId: currentUserId };
     }
 
-    const preferredId = apiUsers.find((u) => u.role === "sales_rep")?.id ?? apiUsers[0]?.id ?? null;
-    if (!sessionUserId && preferredId) {
-      const loggedIn = await loginAsUser(preferredId);
-      if (loggedIn) sessionUserId = preferredId;
-    }
+    if (!res.ok) throw new Error("Could not load CRM data from the server.");
 
-    const res = await fetch("/api/sync", { credentials: "include" });
-    if (!res.ok) throw new Error("Could not synchronize CRM data from PostgreSQL.");
+    const etag = res.headers.get("ETag");
+    if (etag) _bootstrapEtag = etag;
+
     const data = await res.json();
+
+    if (!data.userId) throw new Error("Server returned no active user. Run bun run db:setup.");
 
     users = data.users;
     accounts = data.accounts;
@@ -1117,15 +1159,15 @@ export async function initCrmFromApi(): Promise<{ ok: boolean; userId: string | 
     activities = data.activities;
     notifications = data.notifications;
 
+    // The server already set the session cookie. Pick the active persona.
     const personas = demoPersonaIds();
-    const activeId = personas.includes(sessionUserId ?? "")
-      ? sessionUserId!
+    const activeId = personas.includes(data.userId)
+      ? data.userId
       : (defaultDemoUserId() || personas[0] || null);
-    if (activeId) await loginAsUser(activeId);
 
     return { ok: true, userId: activeId };
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Could not load CRM data from PostgreSQL.";
+    const message = e instanceof Error ? e.message : "Could not load CRM data from the server.";
     console.error("Failed to load from API", e);
     return { ok: false, userId: null, error: message };
   }

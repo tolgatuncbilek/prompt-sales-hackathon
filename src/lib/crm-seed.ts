@@ -123,14 +123,14 @@ export const seedProducts: ProductCatalogItem[] = [
 ];
 
 export const seedServices: ServiceCatalogItem[] = [
-  { id: "s_fota", name: "FOTA license", serviceType: "Software license", isThirdParty: false, retired: false },
-  { id: "s_emm", name: "EMM", serviceType: "Device management platform", isThirdParty: false, retired: false },
-  { id: "s_tech_compat", name: "Technical compatibility", serviceType: "Validation", isThirdParty: false, retired: false },
-  { id: "s_mdm", name: "Secure MDM", serviceType: "Device management", isThirdParty: false, retired: false },
-  { id: "s_lifecycle", name: "Device Lifecycle Management", serviceType: "Managed service", isThirdParty: false, retired: false },
-  { id: "s_warranty", name: "Extended Warranty (3 yr)", serviceType: "Warranty", isThirdParty: false, retired: false },
-  { id: "s_repair", name: "Onsite Repair & Swap", serviceType: "Field service", isThirdParty: true, retired: false },
-  { id: "s_sim", name: "SIM Provisioning", serviceType: "Connectivity", isThirdParty: true, retired: false },
+  { id: "s_fota", name: "FOTA license", serviceType: "Software license", listPrice: 0, isThirdParty: false, retired: false },
+  { id: "s_emm", name: "EMM", serviceType: "Device management platform", listPrice: 0, isThirdParty: false, retired: false },
+  { id: "s_tech_compat", name: "Technical compatibility", serviceType: "Validation", listPrice: 0, isThirdParty: false, retired: false },
+  { id: "s_mdm", name: "Secure MDM", serviceType: "Device management", listPrice: 14, isThirdParty: false, retired: false },
+  { id: "s_lifecycle", name: "Device Lifecycle Management", serviceType: "Managed service", listPrice: 0, isThirdParty: false, retired: false },
+  { id: "s_warranty", name: "Extended Warranty (3 yr)", serviceType: "Warranty", listPrice: 0, isThirdParty: false, retired: false },
+  { id: "s_repair", name: "Onsite Repair & Swap", serviceType: "Field service", listPrice: 0, isThirdParty: true, retired: false },
+  { id: "s_sim", name: "SIM Provisioning", serviceType: "Connectivity", listPrice: 9, isThirdParty: true, retired: false },
 ];
 
 export const seedDeals: Deal[] = [

@@ -192,12 +192,40 @@ for (let i = 1; i <= 12; i++) {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  // Check if data already exists
-  const existing = await db.select({ count: sql<number>`count(*)` }).from(users);
-  if (existing[0]?.count > 0) {
-    console.log("⏭  Database already seeded — skipping.");
-    process.exit(0);
+  if (process.argv.includes("--force")) {
+    console.log("🗑  Truncating existing tables...");
+    await db.execute(sql.raw(`
+      TRUNCATE TABLE 
+        users, 
+        accounts, 
+        contacts, 
+        deals, 
+        deal_competitors, 
+        device_forecasts, 
+        service_catalog, 
+        product_catalog, 
+        service_contracts, 
+        cases, 
+        offers, 
+        offer_lines, 
+        approval_steps, 
+        activities, 
+        notifications, 
+        agent_runs, 
+        ai_insights, 
+        assistant_threads, 
+        assistant_messages 
+      CASCADE
+    `));
+  } else {
+    // Check if data already exists
+    const existing = await db.select({ count: sql<number>`count(*)` }).from(users);
+    if (existing[0]?.count > 0) {
+      console.log("⏭  Database already seeded — skipping.");
+      process.exit(0);
+    }
   }
+
 
   console.log("🌱 Seeding HMD Secure CRM...");
 
@@ -231,12 +259,12 @@ async function main() {
   // 3. SERVICE CATALOG
   // =========================================================================
   await db.insert(serviceCatalog).values([
-    { id: serviceId.mdm,          name: "HMD Secure MDM",       serviceType: "Device Management",  isThirdParty: false, retired: false, createdAt: daysAgo(90) },
-    { id: serviceId.shield,       name: "HMD Secure Shield",    serviceType: "Endpoint Security",  isThirdParty: false, retired: false, createdAt: daysAgo(90) },
-    { id: serviceId.cloudguard,   name: "CloudGuard Protect",   serviceType: "Cloud Security",     isThirdParty: true,  retired: false, createdAt: daysAgo(90) },
-    { id: serviceId.fieldSupport, name: "HMD Field Support",    serviceType: "On-site Support",    isThirdParty: false, retired: false, createdAt: daysAgo(90) },
-    { id: serviceId.telconet,     name: "TelcoNet Connectivity", serviceType: "Connectivity",       isThirdParty: true,  retired: false, createdAt: daysAgo(90) },
-    { id: serviceId.techCompat,   name: "Technical compatibility", serviceType: "Validation",       isThirdParty: false, retired: false, createdAt: daysAgo(90) },
+    { id: serviceId.mdm,          name: "HMD Secure MDM",       serviceType: "Device Management",  listPrice: "14.00",   isThirdParty: false, retired: false, createdAt: daysAgo(90) },
+    { id: serviceId.shield,       name: "HMD Secure Shield",    serviceType: "Endpoint Security",  listPrice: "18.00",   isThirdParty: false, retired: false, createdAt: daysAgo(90) },
+    { id: serviceId.cloudguard,   name: "CloudGuard Protect",   serviceType: "Cloud Security",     listPrice: "36000.00", isThirdParty: true,  retired: false, createdAt: daysAgo(90) },
+    { id: serviceId.fieldSupport, name: "HMD Field Support",    serviceType: "On-site Support",    listPrice: "1200.00", isThirdParty: false, retired: false, createdAt: daysAgo(90) },
+    { id: serviceId.telconet,     name: "TelcoNet Connectivity", serviceType: "Connectivity",       listPrice: "4500.00", isThirdParty: true,  retired: false, createdAt: daysAgo(90) },
+    { id: serviceId.techCompat,   name: "Technical compatibility", serviceType: "Validation",       listPrice: "0.00",    isThirdParty: false, retired: false, createdAt: daysAgo(90) },
   ]);
   console.log("  ✓ Service catalog");
 
@@ -662,10 +690,10 @@ async function main() {
       justification: "Pilot pricing for Securitas Finland — competitive replacement for aging fleet.",
       lockedAt: daysAgo(12), createdAt: daysAgo(20),
     },
-    // o5 — rejected
+    // o5 — returned to sales rep after rejection
     {
       id: offerId.o5, dealId: dealId.d3, createdBy: userId.maria,
-      version: 1, status: "rejected", discountPct: "25",
+      version: 1, status: "draft", discountPct: "25",
       justification: "NHS public sector pricing — matching competitor's 25% discount.",
       lockedAt: null, createdAt: daysAgo(30),
     },
@@ -710,20 +738,22 @@ async function main() {
   // 11. APPROVAL STEPS
   // =========================================================================
   await db.insert(approvalSteps).values([
-    // o2 — pending_manager: step 1 pending, step 2 not yet
-    { id: approvalId.a1, offerId: offerId.o2, stepOrder: 1, roleRequired: "sales_manager", decidedBy: null,         decision: null,       note: null, decidedAt: null },
-    { id: approvalId.a2, offerId: offerId.o2, stepOrder: 2, roleRequired: "finance",       decidedBy: null,         decision: null,       note: null, decidedAt: null },
-    // o3 — pending_finance: step 1 approved, step 2 pending
-    { id: approvalId.a3, offerId: offerId.o3, stepOrder: 1, roleRequired: "sales_manager", decidedBy: userId.anssi, decision: "approved", note: "Volume pricing looks reasonable for Kone.", decidedAt: daysAgo(5) },
-    { id: approvalId.a4, offerId: offerId.o3, stepOrder: 2, roleRequired: "finance",       decidedBy: null,         decision: null,       note: null, decidedAt: null },
-    // o4 — approved: both steps approved
-    { id: approvalId.a5, offerId: offerId.o4, stepOrder: 1, roleRequired: "sales_manager", decidedBy: userId.anssi, decision: "approved", note: "Pilot pricing approved for strategic account.", decidedAt: daysAgo(15) },
-    { id: approvalId.a6, offerId: offerId.o4, stepOrder: 2, roleRequired: "finance",       decidedBy: userId.laura, decision: "approved", note: "Margins acceptable at 5% discount.", decidedAt: daysAgo(12) },
-    // o5 — rejected: step 1 rejected
-    { id: approvalId.a7, offerId: offerId.o5, stepOrder: 1, roleRequired: "sales_manager", decidedBy: userId.anssi, decision: "rejected", note: "25% discount exceeds maximum threshold. Resubmit at 15% or below with stronger volume commitment.", decidedAt: daysAgo(28) },
-    // o6 — locked: both steps approved
-    { id: approvalId.a8, offerId: offerId.o6, stepOrder: 1, roleRequired: "sales_manager", decidedBy: userId.anssi, decision: "approved", note: "Standard pricing, no discount.", decidedAt: daysAgo(30) },
-    { id: approvalId.a9, offerId: offerId.o6, stepOrder: 2, roleRequired: "finance",       decidedBy: userId.laura, decision: "approved", note: null, decidedAt: daysAgo(22) },
+    // o2 — pending_manager: rep submitted, SM pending, finance waiting
+    { id: approvalId.a1, offerId: offerId.o2, stepOrder: 1, roleRequired: "sales_rep",     decidedBy: userId.janne, decision: "approved", note: null, decidedAt: daysAgo(5) },
+    { id: approvalId.a2, offerId: offerId.o2, stepOrder: 2, roleRequired: "sales_manager", decidedBy: null,         decision: null,       note: null, decidedAt: null },
+    { id: approvalId.a3, offerId: offerId.o2, stepOrder: 3, roleRequired: "finance",       decidedBy: null,         decision: null,       note: null, decidedAt: null },
+    // o3 — pending_finance: rep + SM approved, finance pending
+    { id: approvalId.a4, offerId: offerId.o3, stepOrder: 1, roleRequired: "sales_rep",     decidedBy: userId.maria, decision: "approved", note: null, decidedAt: daysAgo(7) },
+    { id: approvalId.a5, offerId: offerId.o3, stepOrder: 2, roleRequired: "sales_manager", decidedBy: userId.anssi, decision: "approved", note: "Volume pricing looks reasonable for Kone.", decidedAt: daysAgo(5) },
+    { id: approvalId.a6, offerId: offerId.o3, stepOrder: 3, roleRequired: "finance",       decidedBy: null,         decision: null,       note: null, decidedAt: null },
+    // o4 — approved: all three stages complete
+    { id: approvalId.a7, offerId: offerId.o4, stepOrder: 1, roleRequired: "sales_rep",     decidedBy: userId.janne, decision: "approved", note: null, decidedAt: daysAgo(20) },
+    { id: approvalId.a8, offerId: offerId.o4, stepOrder: 2, roleRequired: "sales_manager", decidedBy: userId.anssi, decision: "approved", note: "Pilot pricing approved for strategic account.", decidedAt: daysAgo(15) },
+    { id: approvalId.a9, offerId: offerId.o4, stepOrder: 3, roleRequired: "finance",       decidedBy: userId.laura, decision: "approved", note: "Margins acceptable at 5% discount.", decidedAt: daysAgo(12) },
+    // o6 — locked: all three stages complete
+    { id: approvalId.a10, offerId: offerId.o6, stepOrder: 1, roleRequired: "sales_rep",     decidedBy: userId.maria, decision: "approved", note: null, decidedAt: daysAgo(35) },
+    { id: approvalId.a11, offerId: offerId.o6, stepOrder: 2, roleRequired: "sales_manager", decidedBy: userId.anssi, decision: "approved", note: "Standard pricing, no discount.", decidedAt: daysAgo(30) },
+    { id: approvalId.a12, offerId: offerId.o6, stepOrder: 3, roleRequired: "finance",       decidedBy: userId.laura, decision: "approved", note: null, decidedAt: daysAgo(22) },
   ]);
   console.log("  ✓ Approval steps");
 
@@ -787,9 +817,11 @@ async function main() {
         { url: "https://www.deutschebahn.com/en/procurement-portal", title: "DB Procurement Portal", snippet: "Open tenders for mobile field solutions..." },
         { url: "https://www.handelsblatt.com/unternehmen/industrie/deutsche-bahn-digitalisierung", title: "Handelsblatt — DB Digitalization", snippet: "EUR 12B investment in digital infrastructure..." },
       ]),
+      draftEmail: "Hi Klaus,\n\nI understand Deutsche Bahn's maintenance division has a procurement window closing on July 15. I'd love to schedule a quick 15-minute technical demo before June 30 to showcase how HMD Secure Shield can be bundled with your next rugged device order. Our solution would provide a seamless replacement for Motorola Solutions, which I believe is expiring in Q3.\n\nLet me know if you have any availability next week.\n\nBest regards,\nJanne",
       status: "pending_review", reviewedBy: null, reviewedAt: null,
       createdAt: daysAgo(3),
     },
+
     // in3 — risk_flag for stale Danish Defence deal
     {
       id: insightId.in3, agentRunId: agentRunId.ar3, accountId: accountId.danishDefence,
