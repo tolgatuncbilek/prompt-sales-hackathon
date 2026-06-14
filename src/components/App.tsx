@@ -3918,6 +3918,8 @@ function ActionsView({ ctx }: { ctx: AppCtx }) {
       const res = await fetch("/api/insights/refresh-insights", {
         method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
       });
       const payload = await res.clone().json().catch(async () => ({ error: await res.text() }));
       if (!res.ok) {
