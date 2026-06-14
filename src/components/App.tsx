@@ -1396,8 +1396,8 @@ function ApprovalCard({ offer, ctx }: { offer: Offer; ctx: AppCtx }) {
       {offer.justification && (
         <div className="approval-just"><strong>Justification</strong><p>{offer.justification}</p></div>
       )}
-      {smStep?.decision === "approved" && (
-        <p className="approval-prior"><Icon name="check" />Approved by Sales Manager {userName(smStep.decidedById)} — {smStep.decidedAt}</p>
+      {offer.smStep?.decision === "approved" && (
+        <p className="approval-prior"><Icon name="check" />Approved by Sales Manager {userName(offer.smStep.decidedById)} — {offer.smStep.decidedAt}</p>
       )}
       {((ctx.user.role === "sales_manager" && offer.status === "pending_manager") ||
         (ctx.user.role === "finance" && offer.status === "pending_finance")) && (
