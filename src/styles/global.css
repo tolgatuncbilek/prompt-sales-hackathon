@@ -1723,3 +1723,100 @@ tbody tr:hover .row-open { color: var(--ink-2); }
   height: auto;
   min-height: 36px;
 }
+
+/* Dynamic forecasting */
+.dynamic-forecast {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  background: var(--field);
+}
+.dynamic-forecast-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.dynamic-forecast-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.dynamic-forecast-pct {
+  display: block;
+  font-size: 22px;
+  line-height: 1.1;
+  color: var(--accent-ink);
+}
+.dynamic-forecast-fixed {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+}
+.dynamic-forecast-value {
+  text-align: right;
+  font-size: 11px;
+}
+.dynamic-forecast-value strong {
+  display: block;
+  font-size: 14px;
+}
+.dynamic-forecast-summary {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+.dynamic-forecast-details {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.dynamic-forecast-details li + li { margin-top: 2px; }
+.dynamic-forecast-benchmark {
+  margin: 8px 0 0;
+  font-size: 10px;
+}
+.deal-card-forecast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+}
+.deal-card-forecast-fixed { color: var(--ink-3); }
+.deal-card-forecast-dynamic {
+  font-weight: 650;
+  color: var(--accent-ink);
+}
+.industry-benchmarks {
+  margin-bottom: 16px;
+  padding: 10px 14px;
+}
+.industry-benchmarks summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink-2);
+}
+.industry-benchmarks-note {
+  margin: 8px 0 0;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.competitor-form { margin-top: 12px; }
+.competitor-form-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.competitor-form-row .field--grow { flex: 1 1 180px; }
+.competitor-list small { display: block; margin-top: 2px; }

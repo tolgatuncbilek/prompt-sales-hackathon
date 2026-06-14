@@ -245,6 +245,14 @@ export type Notification = {
   link?: { screen: string; id?: string };
 };
 
+export type DealCompetitor = {
+  id: string;
+  dealId: string;
+  name: string;
+  netTotal: number | null;
+  createdAt: string;
+};
+
 // ---------------------------------------------------------------------------
 // Reference data
 // ---------------------------------------------------------------------------
@@ -476,6 +484,7 @@ export function approvalStepActionLabel(step: ApprovalStep): string {
 }
 
 export let offers: Offer[] = [];
+export let dealCompetitors: DealCompetitor[] = [];
 export let activities: Activity[] = [];
 export let aiInsights: AiInsight[] = [];
 export let notifications: Notification[] = [];
@@ -580,6 +589,9 @@ export function serviceContractsForDeal(dealId: string): ServiceContract[] {
 }
 export function offersForDeal(dealId: string): Offer[] {
   return offers.filter((o) => o.dealId === dealId);
+}
+export function competitorsForDeal(dealId: string): DealCompetitor[] {
+  return dealCompetitors.filter((c) => c.dealId === dealId);
 }
 export function casesForDeal(dealId: string): CaseRecord[] {
   return cases.filter((c) => c.dealId === dealId);
@@ -1045,6 +1057,16 @@ export {
 } from "./crm-forecast.ts";
 export type { Granularity, Series, RegionSeries, StageProbs, LadderRung } from "./crm-forecast.ts";
 
+export {
+  dynamicForecast,
+  dynamicWeightedTotal,
+  industryDealWinRate,
+  industryServiceCaseWinRate,
+  industryStatsList,
+  industryForDeal,
+} from "./crm-dynamic-forecast.ts";
+export type { DynamicForecastBreakdown, IndustryStats } from "./crm-dynamic-forecast.ts";
+
 
 export async function initCrmFromApi(): Promise<{ ok: boolean; userId: string | null; error?: string }> {
   console.log("Loading CRM data from API...");
@@ -1080,6 +1102,7 @@ export async function initCrmFromApi(): Promise<{ ok: boolean; userId: string | 
     serviceContracts = data.serviceContracts;
     cases = data.cases;
     offers = data.offers;
+    dealCompetitors = data.dealCompetitors ?? [];
     aiInsights = data.aiInsights;
     activities = data.activities;
     notifications = data.notifications;

@@ -24,6 +24,7 @@ import {
   agentRuns,
   aiInsights,
   notifications,
+  dealCompetitors,
 } from "./schema/index.js";
 import { sql } from "drizzle-orm";
 
@@ -123,7 +124,7 @@ for (let i = 1; i <= 12; i++) {
 
 // Cases
 const caseId: Record<string, string> = {};
-for (let i = 1; i <= 10; i++) {
+for (let i = 1; i <= 12; i++) {
   caseId[`cs${i}`] = crypto.randomUUID();
 }
 
@@ -177,6 +178,12 @@ for (let i = 1; i <= 60; i++) {
 const notifId: Record<string, string> = {};
 for (let i = 1; i <= 10; i++) {
   notifId[`n${i}`] = crypto.randomUUID();
+}
+
+// Deal competitors
+const competitorId: Record<string, string> = {};
+for (let i = 1; i <= 12; i++) {
+  competitorId[`cp${i}`] = crypto.randomUUID();
 }
 
 // ---------------------------------------------------------------------------
@@ -386,6 +393,23 @@ async function main() {
   console.log("  ✓ Deals");
 
   // =========================================================================
+  // 6b. DEAL COMPETITORS
+  // =========================================================================
+  await db.insert(dealCompetitors).values([
+    { id: competitorId.cp1, dealId: dealId.d4, name: "Motorola Solutions", netTotal: "2150000.00", createdAt: daysAgo(20) },
+    { id: competitorId.cp2, dealId: dealId.d4, name: "Zebra Technologies", netTotal: "2280000.00", createdAt: daysAgo(18) },
+    { id: competitorId.cp3, dealId: dealId.d5, name: "Honeywell", netTotal: "980000.00", createdAt: daysAgo(15) },
+    { id: competitorId.cp4, dealId: dealId.d5, name: "Panasonic Toughbook", netTotal: null, createdAt: daysAgo(14) },
+    { id: competitorId.cp5, dealId: dealId.d3, name: "Samsung Knox", netTotal: "620000.00", createdAt: daysAgo(45) },
+    { id: competitorId.cp6, dealId: dealId.d9, name: "Getac", netTotal: "415000.00", createdAt: daysAgo(10) },
+    { id: competitorId.cp7, dealId: dealId.d7, name: "Datalogic", netTotal: null, createdAt: daysAgo(8) },
+    { id: competitorId.cp8, dealId: dealId.d8, name: "Cisco IoT", netTotal: "175000.00", createdAt: daysAgo(22) },
+    { id: competitorId.cp9, dealId: dealId.d6, name: "Bittium", netTotal: "540000.00", createdAt: daysAgo(30) },
+    { id: competitorId.cp10, dealId: dealId.d10, name: "G4S Finland (incumbent)", netTotal: "890000.00", createdAt: daysAgo(6) },
+  ]);
+  console.log("  ✓ Deal competitors");
+
+  // =========================================================================
   // 7. DEVICE FORECASTS — 3 periods per active deal (9 active deals)
   // =========================================================================
   const forecastRows = [
@@ -586,6 +610,21 @@ async function main() {
       title: "Device retirement process",
       status: "closed", priority: "low", escalated: false, thirdPartyRef: null,
       slaDeadline: null, createdAt: daysAgo(30), updatedAt: daysAgo(14),
+    },
+    // Healthcare — technical compatibility cases (higher resolution rate in hospital sector)
+    {
+      id: caseId.cs11, accountId: accountId.nhs, serviceId: serviceId.shield,
+      ownerUserId: userId.sofia, contactId: contactId.c7,
+      title: "Clinical app compatibility validation",
+      status: "resolved", priority: "high", escalated: false, thirdPartyRef: null,
+      slaDeadline: null, createdAt: daysAgo(25), updatedAt: daysAgo(10),
+    },
+    {
+      id: caseId.cs12, accountId: accountId.nhs, serviceId: serviceId.mdm,
+      ownerUserId: userId.sofia, contactId: contactId.c8,
+      title: "EMR integration — device profile mismatch",
+      status: "open", priority: "medium", escalated: false, thirdPartyRef: null,
+      slaDeadline: daysFromNow(6), createdAt: daysAgo(3), updatedAt: daysAgo(2),
     },
   ]);
   console.log("  ✓ Cases");

@@ -1,4 +1,4 @@
-import { useEffect, useId, useReducer, useRef, useState } from "react";
+import { useEffect, useId, useReducer, useRef, useState, type FormEvent } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { marked } from "marked";
@@ -98,6 +98,10 @@ import {
   demoPersonaIds,
   loginAsUser,
   defaultOfferWorkflow,
+  competitorsForDeal,
+  dealCompetitors,
+  dynamicForecast,
+  industryStatsList,
   forecastByPeriod,
   rollUp,
   sumRows,
@@ -908,11 +912,22 @@ function OpenButton({ onClick, label }: { onClick: () => void; label: string }) 
   );
 }
 
-const REP_OPTIONS: Opt[] = users.filter((u) => u.role === "sales_rep").map((u) => ({ value: u.id, label: u.name }));
-const TAM_OPTIONS: Opt[] = users.filter((u) => u.role === "tam").map((u) => ({ value: u.id, label: u.name }));
+function repOptions(): Opt[] {
+  return users.filter((u) => u.role === "sales_rep").map((u) => ({ value: u.id, label: u.name }));
+}
+
+function tamOptions(): Opt[] {
+  return users.filter((u) => u.role === "tam").map((u) => ({ value: u.id, label: u.name }));
+}
+
+function serviceOptions(includeRetired = false): Opt[] {
+  return services
+    .filter((s) => includeRetired || !s.retired)
+    .map((s) => ({ value: s.id, label: s.name }));
+}
+
 const PRIORITY_OPTIONS: Opt[] = (["critical", "high", "medium", "low"] as CasePriority[]).map((p) => ({ value: p, label: PRIORITY_LABEL[p] }));
 const CASE_STATUS_OPTIONS: Opt[] = (["open", "in_progress", "escalated", "resolved", "closed"] as CaseStatus[]).map((s) => ({ value: s, label: CASE_STATUS_LABEL[s] }));
-const SERVICE_OPTIONS: Opt[] = services.map((s) => ({ value: s.id, label: s.name }));
 const STATUS_OPTIONS: Opt[] = STATUSES.map((s) => ({ value: s, label: STAGE_META[s].label }));
 const RETIRED_OPTIONS: Opt[] = [{ value: "active", label: "Active" }, { value: "retired", label: "Retired" }];
 const SOURCE_OPTIONS: Opt[] = [{ value: "internal", label: "Internal" }, { value: "third", label: "Third party" }];
@@ -1457,7 +1472,7 @@ function AccountsView({ ctx }: { ctx: AppCtx }) {
                     </span>
                   </th>
                   <td><CellText value={a.industry} onCommit={(v) => ctx.patch("account", a.id, "industry", v)} /></td>
-                  <td><CellSelect value={a.ownerId} options={REP_OPTIONS} onCommit={(v) => ctx.patch("account", a.id, "ownerId", v)} /></td>
+                  <td><CellSelect value={a.ownerId} options={repOptions()} onCommit={(v) => ctx.patch("account", a.id, "ownerId", v)} /></td>
                   <td className="numeric numeric--strong">{fmtEur(pipeline)}</td>
                   <td>{openCases > 0 ? <span className="t-warn">{openCases}</span> : "—"}</td>
                   <td>{worst ? <RiskTag deal={worst} /> : <span className="risk risk--on_track"><span className="risk-dot" />Healthy</span>}</td>
@@ -2257,8 +2272,9 @@ function CreateCaseModal({ deal, ctx, onClose }: { deal: Deal; ctx: AppCtx; onCl
             <div className="field"><span className="field-label">Service</span>
               <CustomSelect
                 value={serviceId}
-                options={SERVICE_OPTIONS}
+                options={serviceOptions()}
                 onChange={setServiceId}
+                placeholder="Select service"
               />
             </div>
           </div>
@@ -2272,6 +2288,137 @@ function CreateCaseModal({ deal, ctx, onClose }: { deal: Deal; ctx: AppCtx; onCl
         </form>
       </div>
     </div>
+  );
+}
+
+function fmtPct(n: number): string {
+  return `${Math.round(n * 100)}%`;
+}
+
+function DynamicForecastPanel({ deal, ctx }: { deal: Deal; ctx: AppCtx }) {
+  const competitors = competitorsForDeal(deal.id);
+  const resolveOffer = (id: string) => ctx.offerState[id] ?? seedOffers.find((o) => o.id === id);
+  const forecast = dynamicForecast(deal, competitors, resolveOffer);
+  const industryStats = industryStatsList().find((s) => s.industry === forecast.industry);
+
+  return (
+    <div className="dynamic-forecast">
+      <div className="dynamic-forecast-head">
+        <div>
+          <span className="dynamic-forecast-label">Dynamic forecast</span>
+          <strong className="dynamic-forecast-pct">{fmtPct(forecast.probability)}</strong>
+          <span className="muted dynamic-forecast-fixed">Fixed ladder: {fmtPct(forecast.fixedProbability)}</span>
+        </div>
+        <div className="dynamic-forecast-value">
+          <span className="muted">Weighted value</span>
+          <strong className="numeric">{fmtEur(forecast.weightedValue)}</strong>
+        </div>
+      </div>
+      <p className="dynamic-forecast-summary">{forecast.summary}</p>
+      <ul className="dynamic-forecast-details">
+        {forecast.detailLines.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+      {industryStats && (
+        <p className="dynamic-forecast-benchmark muted">
+          {forecast.industry}: {fmtPct(industryStats.dealWinRate)} deal win rate · {fmtPct(industryStats.serviceCaseWinRate)} service-case resolution
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CompetitorsSection({ deal, ctx }: { deal: Deal; ctx: AppCtx }) {
+  const competitors = competitorsForDeal(deal.id);
+  const [name, setName] = useState("");
+  const [netTotal, setNetTotal] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      const parsed = netTotal.trim() ? Number(netTotal) : null;
+      if (parsed != null && (!Number.isFinite(parsed) || parsed < 0)) {
+        ctx.notify("Net total must be a non-negative number.");
+        return;
+      }
+      await ctx.addCompetitor(deal.id, name.trim(), parsed);
+      setName("");
+      setNetTotal("");
+      ctx.notify("Competitor added.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <section>
+      <SectionHead title="Competitors" count={competitors.length} />
+      {competitors.length ? (
+        <ul className="stack-list competitor-list">
+          {competitors.map((c) => (
+            <li key={c.id}>
+              <span className="row-main">
+                <strong>{c.name}</strong>
+                <small>{c.netTotal != null ? `Net offer ${fmtEurExact(c.netTotal)}` : "Net offer not recorded"}</small>
+              </span>
+              <span className="row-side">
+                <button className="btn btn--ghost btn--sm" type="button" onClick={() => void ctx.removeCompetitor(deal.id, c.id)}>Remove</button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <Empty>No competitors recorded — add vendors bidding against this deal.</Empty>
+      )}
+      <form className="competitor-form" onSubmit={(e) => void submit(e)}>
+        <div className="competitor-form-row">
+          <label className="field field--grow">
+            <span className="field-label">Competitor name</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Motorola Solutions" required />
+          </label>
+          <label className="field">
+            <span className="field-label">Net total (optional)</span>
+            <input value={netTotal} onChange={(e) => setNetTotal(e.target.value)} placeholder="€" inputMode="decimal" />
+          </label>
+          <button className="btn btn--secondary" type="submit" disabled={submitting || !name.trim()}><Icon name="plus" />Add</button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function IndustryBenchmarks() {
+  const stats = industryStatsList().filter((s) => s.dealTotal > 0 || s.serviceCasesTotal > 0);
+  if (!stats.length) return null;
+  return (
+    <details className="industry-benchmarks card-edge">
+      <summary>Industry win benchmarks</summary>
+      <div className="table-wrap">
+        <table className="compact">
+          <thead>
+            <tr>
+              <th>Industry</th>
+              <th className="numeric">Deal win rate</th>
+              <th className="numeric">Service case resolution</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.map((s) => (
+              <tr key={s.industry}>
+                <th scope="row">{s.industry}</th>
+                <td className="numeric">{fmtPct(s.dealWinRate)}<small className="muted"> ({s.dealWon}/{s.dealTotal})</small></td>
+                <td className="numeric">{fmtPct(s.serviceCaseWinRate)}<small className="muted"> ({s.serviceCasesResolved}/{s.serviceCasesTotal})</small></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted industry-benchmarks-note">Deal win rate = closed deals ÷ all deals in the industry. Service resolution = resolved or closed cases ÷ all cases in the industry.</p>
+    </details>
   );
 }
 
@@ -2384,7 +2531,10 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
               <InlineStage deal={deal} ctx={ctx} />
               <RiskTag deal={deal} />
             </div>
+            {(isOpen(deal) || deal.apiStage === "lost") && <DynamicForecastPanel deal={deal} ctx={ctx} />}
           </section>
+
+          <CompetitorsSection deal={deal} ctx={ctx} />
 
           <section>
             <SectionHead title="Offers" count={dealOffers.length} />
@@ -2576,6 +2726,8 @@ function DealsView({ ctx }: { ctx: AppCtx }) {
         </div>
       </div>
 
+      <IndustryBenchmarks />
+
       {mode === "table"
         ? <DealTable deals={open} ctx={ctx} />
         : <DealBoard deals={filtered} ctx={ctx} />}
@@ -2607,11 +2759,12 @@ function DealTable({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
   return (
     <div className="table-wrap card-edge">
       <table>
-        <thead><tr><th>Deal</th><th>Status</th><th>Signal</th><th>Owner</th><th>Expected close</th><th className="numeric">Next qtr</th><th className="numeric">3-yr total</th><th className="numeric">GM</th><th aria-label="Open" /></tr></thead>
+        <thead><tr><th>Deal</th><th>Status</th><th>Signal</th><th>Owner</th><th>Expected close</th><th className="numeric">Dynamic</th><th className="numeric">Next qtr</th><th className="numeric">3-yr total</th><th className="numeric">GM</th><th aria-label="Open" /></tr></thead>
         <tbody>
           {deals.map((base) => {
             const d = liveDeal(ctx, ctx.eff("deal", base));
             const acc = accountById(d.accountId)!;
+            const dyn = dynamicForecast(d, competitorsForDeal(d.id), (id) => ctx.offerState[id] ?? seedOffers.find((o) => o.id === id));
             return (
               <tr key={d.id} className="row-click" onClick={() => ctx.openDeal(d.id)}>
                 <th scope="row">
@@ -2620,8 +2773,9 @@ function DealTable({ deals, ctx }: { deals: Deal[]; ctx: AppCtx }) {
                 </th>
                 <td className="cell-edit"><InlineStage deal={d} ctx={ctx} /></td>
                 <td><span className="signal-cell"><RiskTag deal={d} /><small className="activity-hint">{activityHint(d)}</small></span></td>
-                <td><CellSelect value={d.ownerId} options={REP_OPTIONS} onCommit={(v) => ctx.patch("deal", d.id, "ownerId", v)} /></td>
+                <td><CellSelect value={d.ownerId} options={repOptions()} onCommit={(v) => ctx.patch("deal", d.id, "ownerId", v)} /></td>
                 <td className={isOverdue(d) ? "t-danger" : ""}><CellDate value={d.expectedClose} onCommit={(v) => ctx.patch("deal", d.id, "expectedClose", v)} /></td>
+                <td className="numeric">{d.stage === "closed" && d.apiStage !== "lost" ? "100%" : d.apiStage === "lost" ? "0%" : fmtPct(dyn.probability)}</td>
                 <td className="numeric">{fmtEur(nextQuarterValue(d))}</td>
                 <td className="numeric numeric--strong">{fmtEur(dealTotal(d))}</td>
                 <td className="numeric">{fmtEur(dealMeasureTotal(d, "gm"))}</td>
@@ -2639,6 +2793,9 @@ function DealCard({ deal, ctx, dragId, setDragId, setOver, draggable }: {
   deal: Deal; ctx: AppCtx; dragId: string | null; setDragId: (v: string | null) => void; setOver: (v: string | null) => void; draggable: boolean;
 }) {
   const acc = accountById(deal.accountId)!;
+  const competitors = competitorsForDeal(deal.id);
+  const resolveOffer = (id: string) => ctx.offerState[id] ?? seedOffers.find((o) => o.id === id);
+  const dyn = dynamicForecast(deal, competitors, resolveOffer);
   return (
     <article
       className={cx("deal-card", !draggable && "deal-card--static", dragId === deal.id && "deal-card--drag")}
@@ -2651,6 +2808,12 @@ function DealCard({ deal, ctx, dragId, setDragId, setOver, draggable }: {
         <button className="deal-card-open" onClick={() => ctx.openDeal(deal.id)} type="button"><strong>{deal.title}</strong><small>{acc.name} · {deal.channel === "direct" ? "Direct" : "Reseller"}{deal.leadValidated ? " · Validated" : ""}</small></button>
       </div>
       <div className="deal-card-figs"><span className="numeric numeric--strong">{fmtEur(dealTotal(deal))}</span><RiskTag deal={deal} /></div>
+      {deal.stage !== "closed" && (
+        <div className="deal-card-forecast">
+          <span className="deal-card-forecast-fixed">{STAGE_META[deal.stage].csv}</span>
+          <span className="deal-card-forecast-dynamic" title={dyn.summary}>Dynamic {fmtPct(dyn.probability)}</span>
+        </div>
+      )}
       <div className="deal-card-foot">
         <span className="board-owner"><Avatar name={userName(deal.ownerId)} size="xs" />{userName(deal.ownerId)}</span>
         <span className="board-close"><Icon name="clock" />{fmtExpectedClose(deal.expectedClose)}</span>
@@ -2713,8 +2876,8 @@ function CaseTable({ cases, ctx, compact }: { cases: CaseRecord[]; ctx: AppCtx; 
                 <th scope="row"><CellText value={c.title} onCommit={(v) => ctx.patch("case", c.id, "title", v)} /><small className="muted">{c.ref} · {accountById(c.accountId)!.name}{c.escalated ? " · escalated" : ""}</small></th>
                 <td><CellSelect value={c.priority} options={PRIORITY_OPTIONS} onCommit={(v) => ctx.patch("case", c.id, "priority", v)} /></td>
                 <td><CellSelect value={c.status} options={CASE_STATUS_OPTIONS} onCommit={(v) => ctx.patch("case", c.id, "status", v)} /></td>
-                {!compact && <td><CellSelect value={c.serviceId ?? ""} options={SERVICE_OPTIONS} onCommit={(v) => ctx.patch("case", c.id, "serviceId", v)} /></td>}
-                <td><CellSelect value={c.ownerId} options={TAM_OPTIONS} onCommit={(v) => ctx.patch("case", c.id, "ownerId", v)} /></td>
+                {!compact && <td><CellSelect value={c.serviceId ?? ""} options={serviceOptions()} onCommit={(v) => ctx.patch("case", c.id, "serviceId", v)} /></td>}
+                <td><CellSelect value={c.ownerId} options={tamOptions()} onCommit={(v) => ctx.patch("case", c.id, "ownerId", v)} /></td>
                 <td>{caseAgeDays(c)}d</td>
                 <td><span className={cx("sla", `sla--${sla.state}`)}>{sla.state === "breached" && <Icon name="alert" />}{sla.label}</span></td>
                 <td><OpenButton label={`Open ${c.ref}`} onClick={() => ctx.openCase(c.id)} /></td>
@@ -4103,6 +4266,7 @@ function MainApp({
   const [readNotifs, setReadNotifs] = useState<Set<string>>(new Set(seedNotifications.filter((n) => n.read).map((n) => n.id)));
   const [edits, setEdits] = useState<Record<string, Record<string, unknown>>>({});
   const [, bumpAccounts] = useReducer((c) => c + 1, 0);
+  const [, bumpCompetitors] = useReducer((c) => c + 1, 0);
 
   const patch = (kind: EditKind, id: string, field: string, value: unknown) =>
     setEdits((m) => ({ ...m, [`${kind}:${id}`]: { ...(m[`${kind}:${id}`] ?? {}), [field]: value } }));
@@ -4141,6 +4305,59 @@ function MainApp({
       });
     }
     bumpAccounts();
+  };
+  const addCompetitor = async (dealId: string, name: string, netTotal: number | null) => {
+    const payload = { name, net_total: netTotal };
+    let response = await fetch(`/api/deals/${dealId}/competitors`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (response.status === 401) {
+      await loginAsUser(user.id);
+      response = await fetch(`/api/deals/${dealId}/competitors`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    }
+    if (response.ok) {
+      const row = await response.json();
+      dealCompetitors.unshift({
+        id: row.id,
+        dealId,
+        name: row.name,
+        netTotal: row.netTotal != null ? Number(row.netTotal) : null,
+        createdAt: row.createdAt ?? new Date().toISOString(),
+      });
+    } else {
+      dealCompetitors.unshift({
+        id: crypto.randomUUID(),
+        dealId,
+        name,
+        netTotal,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    bumpCompetitors();
+  };
+  const removeCompetitor = async (dealId: string, competitorId: string) => {
+    let response = await fetch(`/api/deals/${dealId}/competitors/${competitorId}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    if (response.status === 401) {
+      await loginAsUser(user.id);
+      response = await fetch(`/api/deals/${dealId}/competitors/${competitorId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+    }
+    const idx = dealCompetitors.findIndex((c) => c.id === competitorId);
+    if (idx >= 0) dealCompetitors.splice(idx, 1);
+    bumpCompetitors();
   };
   const updateDeal = async (
     deal: Deal,
@@ -4415,7 +4632,7 @@ function MainApp({
     offerState, decideOffer, submitOfferForApproval, approveOfferMade, addOffer, updateOffer, addCase,
     insightStatus, setInsight: (id, s) => setInsightStatus((m) => ({ ...m, [id]: s })),
     caseNotes, addNote: (cid, n) => setCaseNotes((m) => ({ ...m, [cid]: [n, ...(m[cid] ?? [])] })),
-    patch, eff, addAccount, addDeal, updateDeal, logActivity,
+    patch, eff, addAccount, addDeal, addCompetitor, removeCompetitor, updateDeal, logActivity,
   };
 
   const myNotifs = seedNotifications.filter((n) => n.userId === userId);
