@@ -394,7 +394,7 @@ export function demoPersonaIds(): string[] {
     pick("sales_rep"),
     pick("sales_manager"),
     pick("tam"),
-    pick("admin") ?? pick("finance"),
+    pick("finance") ?? pick("admin"),
   ].filter((id): id is string => Boolean(id));
   return ids.length > 0 ? ids : users.slice(0, 4).map((u) => u.id);
 }

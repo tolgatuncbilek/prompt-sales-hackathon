@@ -2992,14 +2992,146 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
 // Catalog (Finance maintains)
 // ===========================================================================
 
+function NewCatalogEntryModal({
+  kind,
+  ctx,
+  onCreated,
+  onClose,
+}: {
+  kind: "product" | "service";
+  ctx: AppCtx;
+  onCreated: () => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("");
+  const [price, setPrice] = useState("");
+  const [source, setSource] = useState<"internal" | "third">("internal");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    nameRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !submitting) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, submitting]);
+
+  const submit = async () => {
+    const trimmedName = name.trim();
+    const trimmedCategory = category.trim();
+    const listPrice = Number(price);
+    if (!trimmedName || !trimmedCategory) return;
+    if (kind === "product" && (!Number.isFinite(listPrice) || listPrice < 0)) {
+      setError("List price must be a non-negative number.");
+      return;
+    }
+
+    const path = kind === "product" ? "products" : "services";
+    const payload = kind === "product"
+      ? { name: trimmedName, category: trimmedCategory, list_price: listPrice }
+      : { name: trimmedName, service_type: trimmedCategory, is_third_party: source === "third" };
+
+    setSubmitting(true);
+    setError("");
+    try {
+      const request = () => fetch(`/api/catalogs/${path}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      let response = await request();
+      if (response.status === 401) {
+        await loginAsUser(ctx.user.id);
+        response = await request();
+      }
+      const saved = await response.json();
+      if (!response.ok) throw new Error(saved.error || `Failed to create ${kind}.`);
+
+      if (kind === "product") {
+        products.push({
+          id: saved.id,
+          name: saved.name,
+          category: saved.category,
+          listPrice: Number(saved.listPrice),
+          retired: saved.retired,
+        });
+      } else {
+        services.push({
+          id: saved.id,
+          name: saved.name,
+          serviceType: saved.serviceType,
+          isThirdParty: saved.isThirdParty,
+          retired: saved.retired,
+        });
+      }
+      onCreated();
+      ctx.notify(`${trimmedName} added to the ${kind === "product" ? "product" : "service"} catalog.`);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to create ${kind}.`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="modal-scrim" role="dialog" aria-modal="true" aria-labelledby="new-catalog-entry-title" onClick={() => { if (!submitting) onClose(); }}>
+      <div className="modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <h2 id="new-catalog-entry-title">New {kind}</h2>
+            <p className="modal-context">Add an active entry to the shared catalog.</p>
+          </div>
+          <button className="icon-btn" aria-label="Close" onClick={onClose} disabled={submitting} type="button"><Icon name="close" /></button>
+        </div>
+        <form className="modal-body" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+          <label className="field">
+            <span className="field-label">{kind === "product" ? "Product" : "Service"} name</span>
+            <input ref={nameRef} value={name} onChange={(event) => setName(event.target.value)} required maxLength={255} />
+          </label>
+          <label className="field">
+            <span className="field-label">{kind === "product" ? "Category" : "Service type"}</span>
+            <input value={category} onChange={(event) => setCategory(event.target.value)} required maxLength={255} />
+          </label>
+          {kind === "product" ? (
+            <label className="field">
+              <span className="field-label">List price</span>
+              <input type="number" min="0" step="0.01" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} required />
+            </label>
+          ) : (
+            <div className="field">
+              <span className="field-label">Source</span>
+              <CustomSelect value={source} options={SOURCE_OPTIONS} onChange={(value) => setSource(value as "internal" | "third")} />
+            </div>
+          )}
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <div className="modal-foot">
+            <button className="btn btn--ghost" type="button" onClick={onClose} disabled={submitting}>Cancel</button>
+            <button className="btn btn--primary" type="submit" disabled={submitting || !name.trim() || !category.trim() || (kind === "product" && price === "")}>
+              {submitting ? "Adding…" : `Add ${kind}`}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function CatalogView({ ctx }: { ctx: AppCtx }) {
   const [tab, setTab] = useState<"products" | "services">("products");
+  const [creating, setCreating] = useState(false);
+  const [, refresh] = useState(0);
   const canEdit = ctx.user.role === "finance";
 
   return (
     <>
       <PageHead title="Catalog" actions={
-        canEdit ? <button className="btn btn--primary" onClick={() => ctx.notify(`Add a new ${tab === "products" ? "product" : "service"} — no developer needed.`)} type="button"><Icon name="plus" />New {tab === "products" ? "product" : "service"}</button> : undefined
+        canEdit ? <button className="btn btn--primary" onClick={() => setCreating(true)} type="button"><Icon name="plus" />New {tab === "products" ? "product" : "service"}</button> : undefined
       } />
       {!canEdit && <p className="ro-banner"><Icon name="lock" />Read-only. Only Finance can add, update, or retire catalog entries.</p>}
       <div className="toolbar">
@@ -3053,6 +3185,14 @@ function CatalogView({ ctx }: { ctx: AppCtx }) {
             </tbody>
           </table>
         </div>
+      )}
+      {creating && (
+        <NewCatalogEntryModal
+          kind={tab === "products" ? "product" : "service"}
+          ctx={ctx}
+          onCreated={() => refresh((value) => value + 1)}
+          onClose={() => setCreating(false)}
+        />
       )}
     </>
   );

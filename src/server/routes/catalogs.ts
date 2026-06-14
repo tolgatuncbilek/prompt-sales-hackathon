@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, ne } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { productCatalog, serviceCatalog } from '../../db/schema/index.js';
 import type { AuthVariables } from '../middleware/auth.js';
@@ -26,13 +26,20 @@ app.get('/products', async (c) => {
 /** POST /products — create product (finance only) */
 app.post('/products', requireRole('finance'), async (c) => {
   const body = await c.req.json();
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const category = typeof body.category === 'string' ? body.category.trim() : '';
+  const listPrice = Number(body.list_price);
+
+  if (!name || !category || !Number.isFinite(listPrice) || listPrice < 0) {
+    return c.json({ error: 'Name, category, and a non-negative list price are required', status: 400 }, 400);
+  }
 
   const [product] = await db
     .insert(productCatalog)
     .values({
-      name: body.name,
-      category: body.category ?? null,
-      listPrice: body.list_price ? String(body.list_price) : '0',
+      name,
+      category,
+      listPrice: String(listPrice),
       retired: false,
     })
     .returning();
@@ -88,12 +95,18 @@ app.get('/services', async (c) => {
 /** POST /services — create service (finance only) */
 app.post('/services', requireRole('finance'), async (c) => {
   const body = await c.req.json();
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const serviceType = typeof body.service_type === 'string' ? body.service_type.trim() : '';
+
+  if (!name || !serviceType || (body.is_third_party !== undefined && typeof body.is_third_party !== 'boolean')) {
+    return c.json({ error: 'Name, service type, and a valid source are required', status: 400 }, 400);
+  }
 
   const [service] = await db
     .insert(serviceCatalog)
     .values({
-      name: body.name,
-      serviceType: body.service_type ?? null,
+      name,
+      serviceType,
       isThirdParty: body.is_third_party ?? false,
       retired: false,
     })

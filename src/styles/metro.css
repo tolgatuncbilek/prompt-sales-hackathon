@@ -326,30 +326,30 @@ input {
 .kpi {
   min-height: 126px;
   padding: 20px;
-  border: 0;
+  border: 1px solid #4a4a4a;
   background: #111;
 }
 
 .kpi:nth-child(4n + 1) {
-  background: #0078d7;
+  border-color: #285c80;
 }
 
 .kpi:nth-child(4n + 2) {
-  background: #008c95;
+  border-color: #2a666a;
 }
 
 .kpi:nth-child(4n + 3) {
-  background: #107c10;
+  border-color: #356235;
 }
 
 .kpi:nth-child(4n + 4) {
-  background: #5c2d91;
+  border-color: #584069;
 }
 
 .kpi-label,
 .kpi-hint,
 .kpi .muted {
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--ink-2);
 }
 
 .kpi strong,
