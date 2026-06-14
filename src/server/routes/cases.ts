@@ -107,6 +107,8 @@ app.patch('/:id', async (c) => {
   }
 
   const updates: Record<string, unknown> = {};
+  if (body.title !== undefined) updates.title = body.title;
+  if (body.service_id !== undefined) updates.serviceId = body.service_id || null;
   if (body.status !== undefined) updates.status = body.status;
   if (body.priority !== undefined) updates.priority = body.priority;
   if (body.escalated !== undefined) updates.escalated = body.escalated;

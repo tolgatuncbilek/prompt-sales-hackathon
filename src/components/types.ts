@@ -24,7 +24,16 @@ export type AppCtx = {
   openOffers: (id?: string) => void;
   openCase: (id: string) => void;
   notify: (msg: string) => void;
-  logActivity: (input: { accountId: string; dealId?: string | null; kind: ActivityKind; summary: string }) => void;
+  logActivity: (input: {
+    accountId: string;
+    dealId?: string | null;
+    kind: ActivityKind;
+    summary: string;
+    payload?: any;
+    entityType?: string;
+    entityId?: string;
+    eventType?: string;
+  }) => void;
   // mutable state
   dealStage: Record<string, Stage>;
   dealLeadValidated: Record<string, boolean>;
