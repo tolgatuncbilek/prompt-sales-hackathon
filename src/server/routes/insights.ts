@@ -250,6 +250,83 @@ Output ONLY a valid JSON object matching this schema:
 }
 `;
 
+type GeneratedInsight = {
+  id: string;
+  accountId: string;
+  dealId: string | null;
+  caseId: string | null;
+  type: 'enrichment' | 'next_action' | 'risk_flag';
+  headline: string;
+  body: string;
+  confidence: number;
+  evidence: string[];
+  sources: Array<{ title: string; detail: string }>;
+  draftEmail?: string;
+  status: 'pending_review';
+};
+
+function normalizeGeneratedInsights(insights: unknown): GeneratedInsight[] {
+  if (!Array.isArray(insights)) return [];
+
+  return insights
+    .map((i: any) => ({
+      id: `local-${crypto.randomUUID()}`,
+      accountId: i.accountId,
+      dealId: i.dealId || null,
+      caseId: i.caseId || null,
+      type: i.type,
+      headline: i.headline,
+      body: i.body,
+      confidence: Number(i.confidence || 0.8),
+      evidence: Array.isArray(i.evidence) ? i.evidence : [],
+      sources: Array.isArray(i.sources) ? i.sources : [],
+      draftEmail: typeof i.draftEmail === 'string' ? i.draftEmail : undefined,
+      status: 'pending_review' as const,
+    }))
+    .filter((i) => i.accountId && i.headline && i.body && ['enrichment', 'next_action', 'risk_flag'].includes(i.type));
+}
+
+function ensureNextActionInsights(
+  generated: GeneratedInsight[],
+  userAccounts: { id: string; name: string; domain: string | null; industry: string | null }[],
+  allDeals: { id: string; accountId: string; title: string; stage: string; updatedAt: Date | null }[],
+  allCases: { id: string; accountId: string; status: string; priority: string; slaDeadline: Date | null }[],
+): GeneratedInsight[] {
+  const nextActions = generated.filter((insight) => insight.type === 'next_action');
+  if (nextActions.length > 0) {
+    return nextActions.slice(0, 2);
+  }
+
+  const fallback: GeneratedInsight[] = [];
+  for (const account of userAccounts) {
+    const accountDeals = allDeals.filter((deal) => deal.accountId === account.id);
+    const accountCases = allCases.filter((item) => item.accountId === account.id);
+    const accountInsights = generateStubInsights(account, accountDeals, accountCases)
+      .filter((stub) => stub.insight_type === 'next_action')
+      .slice(0, 1)
+      .map((stub) => {
+        const headline = stub.body.split(/(?<=[.!?])\s+/)[0] || stub.body;
+        return {
+          id: `local-${crypto.randomUUID()}`,
+          accountId: account.id,
+          dealId: stub.deal_id,
+          caseId: stub.case_id,
+          type: 'next_action' as const,
+          headline,
+          body: stub.body,
+          confidence: stub.confidence,
+          evidence: stub.sources.map((source) => `${source.title}: ${source.snippet}`),
+          sources: stub.sources.map((source) => ({ title: source.title, detail: source.snippet })),
+          status: 'pending_review' as const,
+        };
+      });
+    fallback.push(...accountInsights);
+    if (fallback.length >= 2) break;
+  }
+
+  return fallback.slice(0, 2);
+}
+
 app.post('/refresh-insights', async (c) => {
   try {
     const user = c.get('user');
@@ -314,25 +391,12 @@ app.post('/refresh-insights', async (c) => {
       const cleaned = content.trim().replace(/^```json\s*/i, '').replace(/```$/, '').trim();
       const parsed = JSON.parse(cleaned);
 
-      const raw = (parsed.insights || []).map((i: any) => ({
-        id: `local-${crypto.randomUUID()}`,
-        accountId: i.accountId,
-        dealId: i.dealId || null,
-        caseId: i.caseId || null,
-        type: i.type,
-        headline: i.headline,
-        body: i.body,
-        confidence: Number(i.confidence || 0.8),
-        evidence: i.evidence || [],
-        sources: i.sources || [],
-        draftEmail: i.draftEmail || undefined,
-        status: 'pending_review'
-      }));
-
-      return c.json({ insights: raw.slice(0, 2) });
+      const raw = normalizeGeneratedInsights(parsed.insights);
+      const insights = ensureNextActionInsights(raw, userAccounts, allDeals, allCases);
+      return c.json({ insights });
     } catch (error) {
       console.error("Failed to generate insights via OpenClaw, falling back to stubs:", error);
-      return c.json({ insights: generateStubResults(userAccounts, allDeals, allCases).slice(0, 2) });
+      return c.json({ insights: generateStubResults(userAccounts, allDeals, allCases).filter((i) => i.type === 'next_action').slice(0, 2) });
     }
   } catch (error) {
     console.error("Failed to generate insights:", error);
