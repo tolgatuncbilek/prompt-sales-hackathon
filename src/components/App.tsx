@@ -4349,7 +4349,7 @@ export default function App() {
   return <MainApp initialUserId={initialUserId} theme={theme} onThemeChange={setTheme} />;
 }
 
-function MainApp({
+export function MainApp({
   initialUserId,
   theme,
   onThemeChange,
@@ -4401,7 +4401,7 @@ function MainApp({
   const [, bumpCompetitors] = useReducer((c) => c + 1, 0);
 
   const patch = (kind: EditKind, id: string, field: string, value: unknown) => {
-    setEdits((m) => ({ ...m, [`${kind}:${id}`]: { ...(m[`${kind}:${id}`] ?? {}), [field]: value } }));
+    setEdits((m) => ({ ...m, [`${kind}:${id}`]: { ...m[`${kind}:${id}`], [field]: value } }));
 
     // Update in-memory arrays if they are direct-mutated locally to ensure immediate responsiveness
     if (kind === "case") {

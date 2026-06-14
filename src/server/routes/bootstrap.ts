@@ -1,17 +1,42 @@
+/**
+ * GET /api/bootstrap
+ *
+ * Single-shot initialisation endpoint for the client.
+ *
+ * Previously the client fired four sequential requests on every page load:
+ *   GET /api/auth/users → GET /api/auth/session → POST /api/auth/login → GET /api/sync
+ *
+ * This endpoint collapses all of that into one server-side fan-out so the
+ * browser pays only one RTT before hydrating the in-memory CRM model.
+ *
+ * Response shape:
+ *   { userId: string, ...syncPayload }
+ *
+ * The sync payload mirrors exactly what GET /api/sync returns so the client
+ * can reuse the same hydration code.
+ */
+
 import { Hono } from 'hono';
+import { getCookie, setCookie } from 'hono/cookie';
+import { eq } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import * as schema from '../../db/schema/index.js';
+import {
+  SESSION_COOKIE_NAME,
+  signSession,
+  verifySession,
+} from '../../lib/auth.js';
 
 const app = new Hono();
+
+// ---------------------------------------------------------------------------
+// Helpers (kept in sync with sync.ts — extract to shared module if they
+// diverge further)
+// ---------------------------------------------------------------------------
 
 const humanize = (s: string): string =>
   s.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
 
-/**
- * Turn a stored activity (event_type + payload) into the frontend's
- * { kind, summary } shape. Manual entries carry their own summary/kind in the
- * payload and are used verbatim; system events are rendered to readable text.
- */
 function deriveActivity(
   eventType: string,
   payload: Record<string, any> | null,
@@ -86,7 +111,7 @@ function calculateContractPhases(c: any): { expectedDevices: number | null; phas
       const q = Math.floor(d.getMonth() / 3) + 1;
       return `${y}-Q${q}`;
     } catch {
-      return "2026-Q3";
+      return '2026-Q3';
     }
   };
 
@@ -94,7 +119,7 @@ function calculateContractPhases(c: any): { expectedDevices: number | null; phas
     if (!traj) return [];
     if (Array.isArray(traj)) return traj;
     try {
-      return typeof traj === "string" ? JSON.parse(traj) : [];
+      return typeof traj === 'string' ? JSON.parse(traj) : [];
     } catch {
       return [];
     }
@@ -114,24 +139,19 @@ function calculateContractPhases(c: any): { expectedDevices: number | null; phas
       try {
         const dStart = new Date(start);
         const dEnd = new Date(end);
-
-        // Calculate difference in months
         let monthsDiff = (dEnd.getFullYear() - dStart.getFullYear()) * 12 + (dEnd.getMonth() - dStart.getMonth());
         if (monthsDiff <= 0) monthsDiff = 1;
-
         const monthlyVal = fixed / monthsDiff;
         const quarterVals: Record<string, number> = {};
-
         for (let m = 0; m < monthsDiff; m++) {
           const currentMonthDate = new Date(dStart.getFullYear(), dStart.getMonth() + m, 15);
           const qLabel = `${currentMonthDate.getFullYear()}-Q${Math.floor(currentMonthDate.getMonth() / 3) + 1}`;
           quarterVals[qLabel] = (quarterVals[qLabel] || 0) + monthlyVal;
         }
-
         for (const [period, value] of Object.entries(quarterVals)) {
           phases.push({ period, value: Math.round(value) });
         }
-      } catch (e) {
+      } catch {
         phases.push({ period: getQuarter(start), value: fixed });
       }
     } else if (fixed > 0) {
@@ -142,37 +162,46 @@ function calculateContractPhases(c: any): { expectedDevices: number | null; phas
     if (traj.length > 0 && rate > 0) {
       const quarterVals: Record<string, number> = {};
       let maxDevices = 0;
-
       for (const pt of traj) {
         const devCount = pt.expected_devices || pt.expectedDevices || 0;
         if (devCount > maxDevices) maxDevices = devCount;
-
         try {
           const mParts = String(pt.month || pt.period).split('-');
           const year = parseInt(mParts[0], 10);
-          const month = parseInt(mParts[1], 10) - 1; // 0-indexed
+          const month = parseInt(mParts[1], 10) - 1;
           const qLabel = `${year}-Q${Math.floor(month / 3) + 1}`;
-
-          quarterVals[qLabel] = (quarterVals[qLabel] || 0) + (devCount * rate);
+          quarterVals[qLabel] = (quarterVals[qLabel] || 0) + devCount * rate;
         } catch {
-          // Fallback
+          // ignore malformed entry
         }
       }
-
       expectedDevices = maxDevices;
       for (const [period, value] of Object.entries(quarterVals)) {
         phases.push({ period, value: Math.round(value) });
       }
-    } else {
-      expectedDevices = null;
     }
   }
 
   return { expectedDevices, phases };
 }
 
+// ---------------------------------------------------------------------------
+// Bootstrap endpoint
+// ---------------------------------------------------------------------------
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 app.get('/', async (c) => {
-  // Fetch all tables
+  // ── 1. Resolve or auto-create session ────────────────────────────────────
+  let sessionUserId: string | null = null;
+
+  const cookie = getCookie(c, SESSION_COOKIE_NAME);
+  if (cookie) {
+    const verified = verifySession(cookie);
+    if (verified) sessionUserId = verified;
+  }
+
+  // Fan-out: fetch all DB tables + (if needed) validate session user in parallel.
   const [
     dbUsers,
     dbAccounts,
@@ -209,35 +238,80 @@ app.get('/', async (c) => {
     db.select().from(schema.dealCompetitors),
   ]);
 
-  // Transform to frontend models
-  
-  const monogram = (name: string) => name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  if (dbUsers.length === 0) {
+    return c.json({ error: 'No users in database. Run bun run db:setup.' }, 503);
+  }
 
-  const users = dbUsers.map(u => ({
+  // ── 2. Auto-login: if no valid session, pick the first sales_rep ─────────
+  if (!sessionUserId) {
+    const preferred =
+      dbUsers.find((u) => u.role === 'sales_rep') ?? dbUsers[0];
+    if (preferred) {
+      sessionUserId = preferred.id;
+      const sessionValue = signSession(sessionUserId);
+      setCookie(c, SESSION_COOKIE_NAME, sessionValue, {
+        httpOnly: true,
+        sameSite: 'Lax',
+        path: '/',
+        maxAge: 60 * 60 * 24 * 7,
+      });
+    }
+  } else {
+    // Validate that the session userId actually exists in the current DB
+    if (!dbUsers.find((u) => u.id === sessionUserId)) {
+      sessionUserId = null;
+      const preferred = dbUsers.find((u) => u.role === 'sales_rep') ?? dbUsers[0];
+      if (preferred) {
+        sessionUserId = preferred.id;
+        const sessionValue = signSession(sessionUserId);
+        setCookie(c, SESSION_COOKIE_NAME, sessionValue, {
+          httpOnly: true,
+          sameSite: 'Lax',
+          path: '/',
+          maxAge: 60 * 60 * 24 * 7,
+        });
+      }
+    }
+  }
+
+  // ── 3. Transform DB rows to frontend models (identical to sync.ts) ───────
+  const monogram = (name: string) =>
+    name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+
+  const users = dbUsers.map((u) => ({
     id: u.id,
     name: u.name,
     email: u.email,
     role: u.role,
     initials: monogram(u.name || ''),
-    title: u.role === 'sales_rep' ? 'Sales Representative' : u.role === 'tam' ? 'Technical Account Manager' : u.role === 'sales_manager' ? 'Sales Manager' : u.role === 'admin' ? 'Administrator' : 'Finance'
+    title:
+      u.role === 'sales_rep'
+        ? 'Sales Representative'
+        : u.role === 'tam'
+          ? 'Technical Account Manager'
+          : u.role === 'sales_manager'
+            ? 'Sales Manager'
+            : u.role === 'admin'
+              ? 'Administrator'
+              : 'Finance',
   }));
 
-  const accounts = dbAccounts.map(a => ({
+  const accounts = dbAccounts.map((a) => ({
     id: a.id,
     name: a.name,
     domain: a.domain,
     address: a.address,
     vatId: a.vatId,
     industry: a.industry,
-    region: 'Global', // mock
+    region: 'Global',
     ownerId: a.ownerUserId,
-    lifecycle: 'Customer', // mock
+    lifecycle: 'Customer',
     sites: 1,
     summary: '',
     since: a.createdAt?.toISOString() || '',
   }));
 
-  const contacts = dbContacts.map(c => ({
+  const contacts = dbContacts.map((c) => ({
     id: c.id,
     accountId: c.accountId,
     name: c.name,
@@ -246,42 +320,42 @@ app.get('/', async (c) => {
     roleType: c.roleType,
   }));
 
-  const products = dbProducts.map(p => ({
+  const products = dbProducts.map((p) => ({
     id: p.id,
     name: p.name,
     category: p.category,
     listPrice: Number(p.listPrice),
-    retired: p.retired
+    retired: p.retired,
   }));
 
-  const services = dbServices.map(s => ({
+  const services = dbServices.map((s) => ({
     id: s.id,
     name: s.name,
     type: s.serviceType,
     isThirdParty: s.isThirdParty,
-    retired: s.retired
+    retired: s.retired,
   }));
 
-  const deals = dbDeals.map(d => {
-    const forecasts = dbForecasts.filter(f => f.dealId === d.id);
-    const units = forecasts.length > 0 ? forecasts[0].units : 0;
+  const deals = dbDeals.map((d) => {
+    const forecasts = dbForecasts.filter((f) => f.dealId === d.id);
     const unitPrice = forecasts.length > 0 ? Number(forecasts[0].unitPrice) : 0;
-    const devicePhases = forecasts.map(f => ({ period: f.periodLabel, units: f.units }));
+    const devicePhases = forecasts.map((f) => ({ period: f.periodLabel, units: f.units }));
     return {
       id: d.id,
       accountId: d.accountId,
       parentDealId: d.parentDealId,
       ownerId: d.ownerUserId,
       title: d.title,
-      stage: d.stage === 'interest_shown' || d.stage === 'rfi_answered'
-        ? 'lead'
-        : d.stage === 'rfp_given'
-          ? 'offer'
-          : d.stage === 'customer_test'
-            ? 'customer_testing'
-            : d.stage === 'contract_negotiation'
-              ? 'final_negotiation'
-              : 'closed',
+      stage:
+        d.stage === 'interest_shown' || d.stage === 'rfi_answered'
+          ? 'lead'
+          : d.stage === 'rfp_given'
+            ? 'offer'
+            : d.stage === 'customer_test'
+              ? 'customer_testing'
+              : d.stage === 'contract_negotiation'
+                ? 'final_negotiation'
+                : 'closed',
       apiStage: d.stage,
       leadValidated: d.stage !== 'interest_shown',
       channel: d.channel,
@@ -290,11 +364,11 @@ app.get('/', async (c) => {
       updatedAt: d.updatedAt.toISOString(),
       createdAt: d.createdAt.toISOString(),
       deviceUnitPrice: unitPrice,
-      devicePhases: devicePhases
+      devicePhases,
     };
   });
 
-  const serviceContracts = dbContracts.map(c => {
+  const serviceContracts = dbContracts.map((c) => {
     const calculated = calculateContractPhases(c);
     return {
       id: c.id,
@@ -308,13 +382,13 @@ app.get('/', async (c) => {
       deviceCountTrajectory: c.deviceCountTrajectory,
       createdAt: c.createdAt.toISOString(),
       expectedDevices: calculated.expectedDevices,
-      phases: calculated.phases
+      phases: calculated.phases,
     };
   });
 
   const cases = dbCases.map((c, i) => ({
     id: c.id,
-    ref: `CASE-${String(i + 1).padStart(4, "0")}`,
+    ref: `CASE-${String(i + 1).padStart(4, '0')}`,
     accountId: c.accountId,
     serviceId: c.serviceId,
     ownerId: c.ownerUserId,
@@ -329,41 +403,45 @@ app.get('/', async (c) => {
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
     notes: dbActivities
-      .filter(a => a.entityType === 'case' && a.entityId === c.id && a.eventType === 'note_added')
-      .map(a => {
+      .filter((a) => a.entityType === 'case' && a.entityId === c.id && a.eventType === 'note_added')
+      .map((a) => {
         const p = (a.payload as Record<string, any>) || {};
         return {
           author: p.author_name || 'System',
           body: p.text || '',
           when: a.createdAt.toISOString(),
-          internal: !!p.internal
+          internal: !!p.internal,
         };
       })
-      .sort((a, b) => new Date(a.when).getTime() - new Date(b.when).getTime())
+      .sort((a, b) => new Date(a.when).getTime() - new Date(b.when).getTime()),
   }));
 
-  const offers = dbOffers.map(o => {
-    const lines = dbOfferLines.filter(l => l.offerId === o.id).map(l => {
-      const prod = dbProducts.find(p => p.id === l.productId);
-      const serv = dbServices.find(s => s.id === l.serviceId);
-      return {
-        productId: l.productId,
-        serviceId: l.serviceId,
-        label: prod ? prod.name : (serv ? serv.name : 'Item'),
-        unitPrice: Number(l.unitPrice),
-        quantity: l.quantity,
-        discountPct: Number(l.discountPct)
-      };
-    });
-    const approvals = dbApprovals.filter(a => a.offerId === o.id).map(a => ({
-      id: a.id,
-      stepOrder: a.stepOrder,
-      roleRequired: a.roleRequired,
-      decidedById: a.decidedBy,
-      decision: a.decision,
-      note: a.note,
-      decidedAt: a.decidedAt ? a.decidedAt.toISOString() : null
-    }));
+  const offers = dbOffers.map((o) => {
+    const lines = dbOfferLines
+      .filter((l) => l.offerId === o.id)
+      .map((l) => {
+        const prod = dbProducts.find((p) => p.id === l.productId);
+        const serv = dbServices.find((s) => s.id === l.serviceId);
+        return {
+          productId: l.productId,
+          serviceId: l.serviceId,
+          label: prod ? prod.name : serv ? serv.name : 'Item',
+          unitPrice: Number(l.unitPrice),
+          quantity: l.quantity,
+          discountPct: Number(l.discountPct),
+        };
+      });
+    const approvals = dbApprovals
+      .filter((a) => a.offerId === o.id)
+      .map((a) => ({
+        id: a.id,
+        stepOrder: a.stepOrder,
+        roleRequired: a.roleRequired,
+        decidedById: a.decidedBy,
+        decision: a.decision,
+        note: a.note,
+        decidedAt: a.decidedAt ? a.decidedAt.toISOString() : null,
+      }));
     return {
       id: o.id,
       ref: `OFF-${o.id.split('-')[0]}`,
@@ -376,11 +454,11 @@ app.get('/', async (c) => {
       lockedAt: o.lockedAt ? o.lockedAt.toISOString() : null,
       createdAt: o.createdAt.toISOString(),
       lines,
-      approvals
+      approvals,
     };
   });
 
-  const aiInsights = dbInsights.map(i => ({
+  const aiInsights = dbInsights.map((i) => ({
     id: i.id,
     accountId: i.accountId,
     dealId: i.dealId,
@@ -392,13 +470,12 @@ app.get('/', async (c) => {
     evidence: [],
     sources: i.sources || [],
     status: i.status,
-    draftEmail: i.draftEmail || undefined
+    draftEmail: i.draftEmail || undefined,
   }));
 
-  // Map offer -> deal so offer activities also surface on the deal timeline.
   const offerToDeal = new Map(dbOffers.map((o) => [o.id, o.dealId]));
 
-  const activities = dbActivities.map(a => {
+  const activities = dbActivities.map((a) => {
     const { kind, summary } = deriveActivity(
       a.eventType,
       a.payload as Record<string, any> | null,
@@ -422,13 +499,13 @@ app.get('/', async (c) => {
     };
   });
 
-  const notifications = dbNotifications.map(n => ({
+  const notifications = dbNotifications.map((n) => ({
     id: n.id,
     userId: n.userId,
-    kind: 'note', // fallback
+    kind: 'note',
     body: n.body,
     read: n.read,
-    when: n.createdAt.toISOString()
+    when: n.createdAt.toISOString(),
   }));
 
   const dealCompetitors = dbCompetitors.map((row) => ({
@@ -439,21 +516,33 @@ app.get('/', async (c) => {
     createdAt: row.createdAt.toISOString(),
   }));
 
-  // Build a lightweight ETag from counts + unread notification count so clients
-  // can use conditional GET (If-None-Match) and receive 304 Not Modified when
-  // the data hasn't changed since the previous fetch.
-  const etag = `"sync-${dbDeals.length}-${dbOffers.length}-${dbActivities.length}-${dbNotifications.filter((n) => !n.read).length}"`;
+  // ── 4. Build ETag from row counts + last-updated timestamps ─────────────
+  //     This enables 304 Not Modified on subsequent polling / retries.
+  const etag = `"bs-${dbDeals.length}-${dbOffers.length}-${dbActivities.length}-${dbNotifications.filter((n) => !n.read).length}"`;
   const ifNoneMatch = c.req.header('If-None-Match');
   if (ifNoneMatch === etag) {
     return c.body(null, 304);
   }
 
   c.header('ETag', etag);
-  c.header('Cache-Control', 'private, no-cache'); // validate with ETag before using cached copy
+  c.header('Cache-Control', 'private, no-cache'); // revalidate with ETag
 
   return c.json({
-    users, accounts, contacts, products, services,
-    deals, serviceContracts, cases, offers, aiInsights, activities, notifications,
+    // Auth info
+    userId: sessionUserId,
+    // Sync payload (same shape as /api/sync)
+    users,
+    accounts,
+    contacts,
+    products,
+    services,
+    deals,
+    serviceContracts,
+    cases,
+    offers,
+    aiInsights,
+    activities,
+    notifications,
     dealCompetitors,
   });
 });

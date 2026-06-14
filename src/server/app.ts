@@ -18,6 +18,7 @@ import usersRoutes from './routes/users.js';
 import insightsRoutes from './routes/insights.js';
 import webhooksRoutes from './routes/webhooks.js';
 import syncRoutes from './routes/sync.js';
+import bootstrapRoutes from './routes/bootstrap.js';
 import assistantRoutes from './routes/assistant.js';
 
 export const app = new Hono<{ Variables: AuthVariables }>().basePath('/api');
@@ -33,6 +34,8 @@ app.get('/health', (c) => {
 // Public routes — no auth middleware
 app.route('/auth', authRoutes);
 app.route('/webhooks', webhooksRoutes);
+// Bootstrap combines auth resolution + full sync in one RTT (no session required)
+app.route('/bootstrap', bootstrapRoutes);
 
 // Protected routes — auth middleware applied
 app.use('/*', authMiddleware);

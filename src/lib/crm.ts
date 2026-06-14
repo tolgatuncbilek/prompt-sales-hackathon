@@ -1078,30 +1078,37 @@ export {
 export type { DynamicForecastBreakdown, IndustryStats } from "./crm-dynamic-forecast.ts";
 
 
+// ETag from the last successful bootstrap response — used for conditional
+// GET requests (If-None-Match) so the browser can get a 304 on repeat loads.
+let _bootstrapEtag: string | null = null;
+
 export async function initCrmFromApi(): Promise<{ ok: boolean; userId: string | null; error?: string }> {
   console.log("Loading CRM data from API...");
   try {
-    const authRes = await fetch("/api/auth/users", { credentials: "include" });
-    if (!authRes.ok) throw new Error("Could not load users from PostgreSQL.");
-    const apiUsers: { id: string; role: Role }[] = await authRes.json();
-    if (apiUsers.length === 0) throw new Error("PostgreSQL is connected, but the CRM has no users.");
+    // Single RTT: /api/bootstrap resolves the session, auto-logs-in when there
+    // is no cookie, and returns all sync data in one response — replacing the
+    // previous 4-hop waterfall:
+    //   GET /api/auth/users → GET /api/auth/session
+    //   → POST /api/auth/login → GET /api/sync
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (_bootstrapEtag) headers["If-None-Match"] = _bootstrapEtag;
 
-    let sessionUserId: string | null = null;
-    const sessionRes = await fetch("/api/auth/session", { credentials: "include" });
-    if (sessionRes.ok) {
-      const session = await sessionRes.json();
-      sessionUserId = session.id ?? null;
+    const res = await fetch("/api/bootstrap", { credentials: "include", headers });
+
+    // 304 Not Modified — data unchanged since last load, nothing to hydrate.
+    if (res.status === 304) {
+      const currentUserId = defaultDemoUserId() || null;
+      return { ok: true, userId: currentUserId };
     }
 
-    const preferredId = apiUsers.find((u) => u.role === "sales_rep")?.id ?? apiUsers[0]?.id ?? null;
-    if (!sessionUserId && preferredId) {
-      const loggedIn = await loginAsUser(preferredId);
-      if (loggedIn) sessionUserId = preferredId;
-    }
+    if (!res.ok) throw new Error("Could not load CRM data from the server.");
 
-    const res = await fetch("/api/sync", { credentials: "include" });
-    if (!res.ok) throw new Error("Could not synchronize CRM data from PostgreSQL.");
+    const etag = res.headers.get("ETag");
+    if (etag) _bootstrapEtag = etag;
+
     const data = await res.json();
+
+    if (!data.userId) throw new Error("Server returned no active user. Run bun run db:setup.");
 
     users = data.users;
     accounts = data.accounts;
@@ -1117,15 +1124,15 @@ export async function initCrmFromApi(): Promise<{ ok: boolean; userId: string | 
     activities = data.activities;
     notifications = data.notifications;
 
+    // The server already set the session cookie. Pick the active persona.
     const personas = demoPersonaIds();
-    const activeId = personas.includes(sessionUserId ?? "")
-      ? sessionUserId!
+    const activeId = personas.includes(data.userId)
+      ? data.userId
       : (defaultDemoUserId() || personas[0] || null);
-    if (activeId) await loginAsUser(activeId);
 
     return { ok: true, userId: activeId };
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Could not load CRM data from PostgreSQL.";
+    const message = e instanceof Error ? e.message : "Could not load CRM data from the server.";
     console.error("Failed to load from API", e);
     return { ok: false, userId: null, error: message };
   }
