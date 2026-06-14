@@ -47,5 +47,7 @@ export type AppCtx = {
   eff: <T extends { id: string }>(kind: EditKind, base: T) => T;
   addAccount: (account: Account) => void;
   addDeal: (deal: Deal, serviceValue: number, serviceContractId?: string | null, serviceId?: string | null) => void;
+  addCompetitor: (dealId: string, name: string, netTotal: number | null) => Promise<void>;
+  removeCompetitor: (dealId: string, competitorId: string) => Promise<void>;
   updateDeal: (deal: Deal, updates: Partial<Pick<Deal, "title" | "stage" | "apiStage" | "channel" | "leadValidated">> & { device?: number; service?: number; total?: number }) => Promise<void>;
 };

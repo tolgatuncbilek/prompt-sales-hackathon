@@ -189,6 +189,7 @@ app.get('/', async (c) => {
     dbInsights,
     dbActivities,
     dbNotifications,
+    dbCompetitors,
   ] = await Promise.all([
     db.select().from(schema.users),
     db.select().from(schema.accounts),
@@ -205,6 +206,7 @@ app.get('/', async (c) => {
     db.select().from(schema.aiInsights),
     db.select().from(schema.activities),
     db.select().from(schema.notifications),
+    db.select().from(schema.dealCompetitors),
   ]);
 
   // Transform to frontend models
@@ -310,8 +312,9 @@ app.get('/', async (c) => {
     };
   });
 
-  const cases = dbCases.map(c => ({
+  const cases = dbCases.map((c, i) => ({
     id: c.id,
+    ref: `CASE-${String(i + 1).padStart(4, "0")}`,
     accountId: c.accountId,
     serviceId: c.serviceId,
     ownerId: c.ownerUserId,
@@ -416,9 +419,18 @@ app.get('/', async (c) => {
     when: n.createdAt.toISOString()
   }));
 
+  const dealCompetitors = dbCompetitors.map((row) => ({
+    id: row.id,
+    dealId: row.dealId,
+    name: row.name,
+    netTotal: row.netTotal != null ? Number(row.netTotal) : null,
+    createdAt: row.createdAt.toISOString(),
+  }));
+
   return c.json({
     users, accounts, contacts, products, services,
-    deals, serviceContracts, cases, offers, aiInsights, activities, notifications
+    deals, serviceContracts, cases, offers, aiInsights, activities, notifications,
+    dealCompetitors,
   });
 });
 
