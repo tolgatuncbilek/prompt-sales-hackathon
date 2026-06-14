@@ -515,6 +515,9 @@ table td {
   background: var(--accent);
   color: #000;
 }
+.role-menu-item.is-active .role-title {
+  color: #000 !important;
+}
 
 .crm-assistant {
   background: #090909;

@@ -258,8 +258,19 @@ function monogram(name: string): string {
 // Shared presentational components
 // ===========================================================================
 
-function Avatar({ name, size }: { name: string; size?: "xs" | "sm" }) {
-  return <span className={cx("avatar", size === "xs" && "avatar--xs")} aria-hidden="true">{monogram(name)}</span>;
+function Avatar({ name, size, role }: { name: string; size?: "xs" | "sm"; role?: Role }) {
+  return (
+    <span
+      className={cx(
+        "avatar",
+        size === "xs" && "avatar--xs",
+        role && `avatar--${role.replace("_", "-")}`
+      )}
+      aria-hidden="true"
+    >
+      {monogram(name)}
+    </span>
+  );
 }
 
 function UserSwitcher({ userId, onChange }: { userId: string; onChange: (id: string) => void | Promise<void> }) {
@@ -291,10 +302,10 @@ function UserSwitcher({ userId, onChange }: { userId: string; onChange: (id: str
         aria-haspopup="listbox"
         onClick={() => setOpen((v) => !v)}
       >
-        <Avatar name={user.name} />
+        <Avatar name={user.name} role={user.role} />
         <span className="role-btn-text">
           <span className="role-name">{user.name}</span>
-          <span className="role-title">{ROLE_LABEL[user.role]}</span>
+          <span className={cx("role-title", `role-title--${user.role.replace("_", "-")}`)}>{ROLE_LABEL[user.role]}</span>
         </span>
         <Icon name="chevronDown" />
       </button>
@@ -309,10 +320,10 @@ function UserSwitcher({ userId, onChange }: { userId: string; onChange: (id: str
                 aria-selected={u.id === userId}
                 onClick={() => { void Promise.resolve(onChange(u.id)).then(() => setOpen(false)); }}
               >
-                <Avatar name={u.name} size="xs" />
+                <Avatar name={u.name} size="xs" role={u.role} />
                 <span className="role-menu-copy">
                   <strong>{u.name}</strong>
-                  <small>{ROLE_LABEL[u.role]}</small>
+                  <small className={cx("role-title", `role-title--${u.role.replace("_", "-")}`)}>{ROLE_LABEL[u.role]}</small>
                 </span>
                 {u.id === userId && <Icon name="check" />}
               </button>

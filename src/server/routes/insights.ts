@@ -289,7 +289,7 @@ app.post('/generate', async (c) => {
           { role: 'user', content: `Analyze this CRM data and generate insights:\n${JSON.stringify(promptData)}` }
         ]
       }),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(90000),
     });
 
     if (!response.ok) {
