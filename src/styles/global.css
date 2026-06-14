@@ -1730,7 +1730,9 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 /* Dropdown listbox overlay styling */
 .custom-select-dropdown {
   position: fixed;
-  z-index: 90;
+  /* Above .modal-overlay (z-index 300); the dropdown is portaled to <body>,
+     so it must outrank the modal to avoid rendering behind it. */
+  z-index: 400;
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--r-control);
