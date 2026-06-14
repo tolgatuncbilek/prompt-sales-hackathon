@@ -211,6 +211,23 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
 .role-menu-item .icon { width: 14px; height: 14px; color: var(--green); flex-shrink: 0; }
 
 .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+.nav-divider { border: none; border-top: 1px solid var(--rule); margin: 6px 0; }
+.nav-group { display: flex; flex-direction: column; }
+.nav-group--has-children > .nav .icon:last-child { margin-left: auto; width: 12px; height: 12px; transition: transform var(--t-fast); }
+.nav-group--open > .nav .icon:last-child { transform: rotate(90deg); }
+.nav-children { display: flex; flex-direction: column; gap: 2px; overflow: hidden; max-height: 0; transition: max-height 0.2s ease; }
+.nav-group--open > .nav-children { max-height: 200px; padding-top: 2px; padding-bottom: 2px; }
+.nav--child { padding-left: 28px; font-size: 12px; }
+.nav--group-header { display: flex; align-items: center; padding: 0; overflow: hidden; }
+.nav-group-label { flex: 1; display: flex; align-items: center; gap: 9px; min-height: 34px; padding: 0 4px 0 8px; border: 0; background: transparent; color: inherit; font-size: 12.5px; font-weight: 500; text-align: left; cursor: pointer; }
+.nav-group-toggle { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 28px; min-height: 34px; border: 0; background: transparent; color: var(--ink-3); cursor: pointer; transition: color var(--t-fast); }
+.nav-group-toggle .icon { width: 12px; height: 12px; transition: transform var(--t-fast); }
+.nav-group--open > .nav--group-header .nav-group-toggle .icon { transform: rotate(90deg); }
+.nav-group-toggle:hover { color: var(--ink-2); }
+.nav--group-header:hover { background: var(--surface); color: var(--ink); }
+.nav--group-header.nav--active { background: var(--raised); color: var(--ink); font-weight: 600; box-shadow: var(--ring-top); }
+.nav--group-header.nav--active::before { content: ""; position: absolute; left: -4px; top: 50%; height: 16px; width: 3px; border-radius: var(--r-pill); background: var(--accent); transform: translateY(-50%); box-shadow: 0 0 8px rgba(47, 212, 198, 0.55); }
+.nav--group-header.nav--active .nav-group-label .icon:first-child { color: var(--accent); }
 
 .nav {
   position: relative; min-height: 34px; display: flex; align-items: center; gap: 9px; padding: 0 8px;

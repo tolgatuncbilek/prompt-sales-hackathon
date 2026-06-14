@@ -4468,14 +4468,18 @@ env = { DATABASE_URL = "provided-by-your-CRM-admin" }`;
 // App shell
 // ===========================================================================
 
-const NAV: { screen: Screen; label: string; icon: string }[] = [
+type NavItem = { screen: Screen; label: string; icon: string } | { divider: true };
+const NAV: NavItem[] = [
   { screen: "home", label: "Home", icon: "home" },
   { screen: "accounts", label: "Accounts", icon: "accounts" },
+  { divider: true },
   { screen: "deals", label: "Deals", icon: "deals" },
   { screen: "cases", label: "Cases", icon: "cases" },
   { screen: "offers", label: "Offers", icon: "offers" },
+  { divider: true },
   { screen: "forecast", label: "Forecast", icon: "forecast" },
   { screen: "catalog", label: "Catalog", icon: "catalog" },
+  { divider: true },
   { screen: "meetings", label: "Meetings", icon: "mic" },
   { screen: "assistant", label: "AI Assistant", icon: "spark" },
   { screen: "actions", label: "Actions", icon: "check" },
@@ -5560,14 +5564,15 @@ export function MainApp({
         <UserSwitcher userId={userId} onChange={switchUser} />
 
         <nav aria-label="Primary" className="sidebar-nav">
-          {NAV.map((item) => {
+          {NAV.map((item, i) => {
+            if ("divider" in item) return <hr key={i} className="nav-divider" />;
             const count = item.screen === "cases" ? seedCases.filter((c) => (c.status !== "resolved" && c.status !== "closed") && (user.role !== "tam" || c.ownerId === user.id)).length
               : item.screen === "offers" ? seedOffers.map((o) => offerState[o.id] ?? o).filter((o) => user.role === "sales_manager" && o.status === "pending_manager").length
               : 0;
             return (
               <button key={item.screen} className={cx("nav", activeNav === item.screen && "nav--active")} onClick={() => ctx.go(item.screen)} type="button">
                 <Icon name={item.icon} /><span>{item.label}</span>
-                {count > 0 && <span className={cx("nav-count", (item.screen === "offers") && "nav-count--alert")}>{count}</span>}
+                {count > 0 && <span className={cx("nav-count", item.screen === "offers" && "nav-count--alert")}>{count}</span>}
               </button>
             );
           })}
