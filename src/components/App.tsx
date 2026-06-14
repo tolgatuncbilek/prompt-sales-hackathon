@@ -3908,6 +3908,12 @@ function AssistantRunStatus({
   );
 }
 
+let _sharedMessages: AssistantMessage[] = [];
+let _sharedThreadId: string | null = null;
+let _sharedDraft = "";
+let _sharedThreads: AssistantThread[] = [];
+let _sharedAttachedFiles: Array<{ name: string; size: number; dataUrl: string }> = [];
+
 function CrmAssistant({
   open,
   onClose,
@@ -3919,10 +3925,10 @@ function CrmAssistant({
   fullPage?: boolean;
   onOpenFullPage?: () => void;
 }) {
-  const [draft, setDraft] = useState("");
-  const [threadId, setThreadId] = useState<string | null>(null);
-  const [threads, setThreads] = useState<AssistantThread[]>([]);
-  const [messages, setMessages] = useState<AssistantMessage[]>([]);
+  const [draft, setDraft] = useState(_sharedDraft);
+  const [threadId, setThreadId] = useState<string | null>(_sharedThreadId);
+  const [threads, setThreads] = useState<AssistantThread[]>(_sharedThreads);
+  const [messages, setMessages] = useState<AssistantMessage[]>(_sharedMessages);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [answer, setAnswer] = useState<{
     answer: string;
@@ -3932,11 +3938,17 @@ function CrmAssistant({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [streamingId, setStreamingId] = useState<string | null>(null);
-  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; size: number; dataUrl: string }>>([]);
+  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; size: number; dataUrl: string }>>(_sharedAttachedFiles);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { _sharedMessages = messages; }, [messages]);
+  useEffect(() => { _sharedThreadId = threadId; }, [threadId]);
+  useEffect(() => { _sharedDraft = draft; }, [draft]);
+  useEffect(() => { _sharedThreads = threads; }, [threads]);
+  useEffect(() => { _sharedAttachedFiles = attachedFiles; }, [attachedFiles]);
 
   const handleAttach = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -4155,7 +4167,7 @@ function CrmAssistant({
         </div>
       </header>
 
-      <div className="crm-assistant-body">
+      <div className="crm-assistant-body" ref={scrollRef}>
         {historyLoading ? (
           <div className="crm-assistant-empty crm-assistant-loading" role="status">Loading conversation...</div>
         ) : messages.length === 0 ? (
@@ -4165,7 +4177,7 @@ function CrmAssistant({
             <p>Ask about pipeline risk, account history, open cases, offers, or forecast changes. Answers include the CRM evidence used.</p>
           </div>
         ) : (
-          <div className="crm-conversation" ref={scrollRef} aria-live="polite">
+          <div className="crm-conversation" aria-live="polite">
             {messages.map((entry) => entry.role === "user" ? (
               <div className="crm-message crm-message--user" key={entry.id}>{entry.content}</div>
             ) : entry.role === "assistant" ? (
