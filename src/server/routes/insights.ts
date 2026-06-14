@@ -230,6 +230,7 @@ If there is a next_action, you MUST provide:
 - An evidence array with 2-3 specific evidence points.
 - A draftEmail template if the action recommends emailing the contact.
 
+Generate exactly 2 insights total (across all accounts combined), prioritizing the most impactful next_actions and risk_flags.
 Output ONLY a valid JSON object matching this schema:
 {
   "insights": [
@@ -272,7 +273,7 @@ app.post('/generate', async (c) => {
 
     if (!apiKey || !endpoint) {
       console.warn("OpenClaw credentials missing, falling back to stub generator.");
-      return c.json({ insights: generateStubResults(userAccounts, allDeals, allCases) });
+      return c.json({ insights: generateStubResults(userAccounts, allDeals, allCases).slice(0, 2) });
     }
 
     const promptData = {
@@ -313,7 +314,7 @@ app.post('/generate', async (c) => {
       const cleaned = content.trim().replace(/^```json\s*/i, '').replace(/```$/, '').trim();
       const parsed = JSON.parse(cleaned);
 
-      const insights = (parsed.insights || []).map((i: any) => ({
+      const raw = (parsed.insights || []).map((i: any) => ({
         id: `local-${crypto.randomUUID()}`,
         accountId: i.accountId,
         dealId: i.dealId || null,
@@ -328,10 +329,10 @@ app.post('/generate', async (c) => {
         status: 'pending_review'
       }));
 
-      return c.json({ insights });
+      return c.json({ insights: raw.slice(0, 2) });
     } catch (error) {
       console.error("Failed to generate insights via OpenClaw, falling back to stubs:", error);
-      return c.json({ insights: generateStubResults(userAccounts, allDeals, allCases) });
+      return c.json({ insights: generateStubResults(userAccounts, allDeals, allCases).slice(0, 2) });
     }
   } catch (error) {
     console.error("Failed to generate insights:", error);
