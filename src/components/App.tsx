@@ -3103,8 +3103,6 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
   const [probs, setProbs] = useState<StageProbs>(() => defaultStageProbs());
   const [explainId, setExplainId] = useState<string | null>(null);
   const [target, setTarget] = useState<number | null>(null);
-  const [narrativeOpen, setNarrativeOpen] = useState(true);
-
   const isFinance = ctx.user.role === "finance";
   const live = seedDeals.map((d) => liveStage(ctx, d));
   const buckets = periodBuckets(gran);
@@ -3157,18 +3155,11 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
     .filter((r) => r.reasons.length > 0)
     .sort((a, b) => b.score - a.score);
 
-  // Deterministic AI narrative — built from the numbers above, not a chat model.
-  const topRisk = attention[0];
+  // Success prediction metrics — forecast attainment vs target.
   const stalledCount = attention.filter((a) => a.reasons.some((r) => r.code === "overdue" || r.code === "stale")).length;
-  const narrative =
-    `Weighted 3-year net sales stands at ${fmtEur(weighted)} across ${live.filter(inForecast).length} open deals — ` +
-    `${fmtEur(wDevice)} device and ${fmtEur(wService)} service, kept separate. ` +
-    `${fmtEur(committed)} sits in Final negotiation (most committed). ` +
-    (atRisk > 0
-      ? `${fmtEur(atRisk)} is at risk across ${stalledCount} stalled or overdue ${stalledCount === 1 ? "deal" : "deals"}` +
-        (topRisk ? `, led by ${accountById(topRisk.deal.accountId)?.name ?? topRisk.deal.title}. ` : ". ")
-      : "No deals are currently flagged stale or overdue. ") +
-    `Gap to the ${fmtEur(targetVal)} target is ${gap > 0 ? fmtEur(gap) + " short" : fmtEur(-gap) + " ahead"}.`;
+  const successPct = Math.min(200, Math.round(weighted / Math.max(1, targetVal) * 100));
+  const successTone = successPct >= 90 ? "good" : successPct >= 65 ? "warn" : "danger";
+  const finalNegCount = live.filter(inForecast).filter((d) => d.stage === "final_negotiation").length;
 
   const exportCsv = () => {
     const header = ["Category", ...buckets.map((b) => b.label), "Total"];
@@ -3190,114 +3181,81 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
         <button className="btn btn--secondary" onClick={exportCsv} type="button"><Icon name="download" />Export CSV</button>
       } />
 
-      <div className="kpi-strip kpi-strip--tight">
-        <Kpi label="Weighted forecast" value={fmtEur(weighted)} hint="Tier-weighted · 3-year net sales" />
-        <SplitKpi label="Device vs service" device={wDevice} service={wService} />
-        <Kpi label="Committed" value={fmtEur(committed)} tone="good" hint="Final negotiation · very high win" />
-        <Kpi label="At risk" value={fmtEur(atRisk)} tone={atRisk > 0 ? "danger" : undefined} hint="Stalled or past close date" />
-        <Kpi label="Gap to target" value={gap > 0 ? fmtEur(gap) : `+${fmtEur(-gap)}`} tone={gap > 0 ? "warn" : "good"} hint={`Target ${fmtEur(targetVal)}`} />
-      </div>
-
-      {narrativeOpen && (
-        <div className="ai-narrative">
-          <div className="ai-narrative-head">
-            <span className="ai-badge"><Icon name="spark" />AI forecast narrative</span>
-            <button className="icon-btn" aria-label="Dismiss narrative" type="button" onClick={() => setNarrativeOpen(false)}><Icon name="close" /></button>
+      {/* 1. Forecast confidence — success prediction, reasoning, and top actions */}
+      <div className="fc-outlook">
+        <div className="fc-score-block">
+          <span className={`fc-score-pct fc-score-pct--${successTone}`}>
+            {successPct}<small>%</small>
+          </span>
+          <div
+            className="fc-score-bar"
+            role="progressbar"
+            aria-valuenow={Math.min(100, successPct)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`${successPct}% of ${fmtEur(targetVal)} target reached`}
+          >
+            <div className={`fc-score-fill fc-score-fill--${successTone}`} style={{ width: `${Math.min(100, successPct)}%` }} />
           </div>
-          <p>{narrative}</p>
-          <small className="ai-narrative-foot">Generated from the figures on this page. Review before quoting in a forecast meeting.</small>
+          <span className="fc-score-label">of {fmtEur(targetVal)} target</span>
+          <span className={`fc-score-delta fc-score-delta--${gap > 0 ? "short" : "ahead"}`}>
+            {gap > 0 ? `${fmtEur(gap)} short` : `${fmtEur(-gap)} ahead of target`}
+          </span>
         </div>
-      )}
 
-      <div className="toolbar">
-        <div className="saved-views" role="tablist" aria-label="Forecast lens">
-          {([["commitment", "Commitment"], ["streams", "Device vs service"], ["region", "By region"], ["owner", "By owner"]] as const).map(([k, label]) => (
-            <button key={k} className="saved-view" role="tab" aria-selected={lens === k} onClick={() => setLens(k)} type="button">{label}</button>
-          ))}
+        <div className="fc-factors">
+          <h2 className="fc-section-label">Why this number</h2>
+          <ul>
+            <li className="fc-factor">
+              <span className={`fc-factor-dot fc-factor-dot--${committed > 0 ? "good" : "neutral"}`} />
+              <span>
+                {committed > 0
+                  ? `${fmtEur(committed)} committed — ${finalNegCount} ${finalNegCount === 1 ? "deal" : "deals"} in Final negotiation`
+                  : "No deals in Final negotiation yet"}
+              </span>
+            </li>
+            <li className="fc-factor">
+              <span className={`fc-factor-dot fc-factor-dot--${atRisk > 0 ? (stalledCount > 2 ? "danger" : "warn") : "good"}`} />
+              <span>
+                {atRisk > 0
+                  ? `${fmtEur(atRisk)} at risk — ${stalledCount} stalled or overdue ${stalledCount === 1 ? "deal" : "deals"}`
+                  : "No deals currently stalled or overdue"}
+              </span>
+            </li>
+            {(() => {
+              const topRung = [...ladder].sort((a, b) => b.weighted - a.weighted)[0];
+              return topRung && topRung.weighted > 0 ? (
+                <li className="fc-factor">
+                  <span className="fc-factor-dot fc-factor-dot--neutral" />
+                  <span>Largest weighted stage: {STAGE_META[topRung.stage].label} at {Math.round(topRung.probability * 100)}% — {fmtEur(topRung.weighted)} from {fmtEur(topRung.gross)} gross</span>
+                </li>
+              ) : null;
+            })()}
+            <li className="fc-factor">
+              <span className="fc-factor-dot fc-factor-dot--neutral" />
+              <span>{live.filter(inForecast).length} open deals · {fmtEur(wDevice)} device + {fmtEur(wService)} service (weighted)</span>
+            </li>
+          </ul>
         </div>
-        <div className="toolbar-right">
-          <div className="seg seg--wide" role="group" aria-label="Measure">
-            {(["net_sales", "volume", "gm"] as Measure[]).map((m) => (
-              <button key={m} aria-pressed={measure === m} onClick={() => setMeasure(m)} type="button">{m === "net_sales" ? "Net sales" : m === "volume" ? "Volume" : "Gross margin"}</button>
-            ))}
-          </div>
-          <div className="seg seg--wide" role="group" aria-label="Granularity">
-            {(["quarter", "half", "year"] as Granularity[]).map((g) => (
-              <button key={g} aria-pressed={gran === g} onClick={() => setGran(g)} type="button">{g === "quarter" ? "Qtr" : g === "half" ? "Half" : "Year"}</button>
-            ))}
-          </div>
-          <button className={cx("chip-toggle", cumulative && "chip-toggle--on")} aria-pressed={cumulative} onClick={() => setCumulative((v) => !v)} type="button">Cumulative</button>
-        </div>
-      </div>
 
-      <p className="forecast-caption">
-        {lens === "commitment" ? "Net value by deal status — Lead → Offer → Customer testing → Final negotiation (Closed excluded from the forward forecast)."
-          : lens === "streams" ? "Device and service revenue kept separate, never flattened into one number."
-            : lens === "owner" ? "The same pipeline split by deal owner — switching lens never duplicates a deal."
-              : "Regional split with gross-margin percentage, the way the forecast sheet reads."}
-        {" Showing "}<strong>{MEASURE_LABEL[measure]}</strong>{cumulative ? ", cumulative" : ", per period"}.
-      </p>
-
-      <WinProbabilityLadder ladder={ladder} measure={measure} probs={probs} setProbs={isFinance ? setProbs : undefined} hasReseller={hasReseller} />
-
-      <SectionHead title="Time-phased forecast" />
-      <div className="forecast-sheet">
-        <table className="forecast-table">
-          <thead>
-            <tr><th>{lensLabel}</th>{buckets.map((b) => <th key={b.label} className="numeric">{b.label}</th>)}<th className="numeric">Total</th>{lens === "region" && <th className="numeric">GM %</th>}</tr>
-          </thead>
-          <tbody>
-            {series.map((se, i) => (
-              <tr key={se.key}>
-                <th scope="row"><span className={`swatch ${swatchClass(se.key, i)}`} />{se.label}{lens === "commitment" && <span className="mini-tag">{STAGE_META[se.key as Stage].csv}</span>}</th>
-                {buckets.map((b, bi) => <td key={b.label} className="numeric">{fmtMeasure(seriesBucket(se, bi), measure)}</td>)}
-                <td className="numeric numeric--strong">{fmtMeasure(cumulative ? seriesBucket(se, buckets.length - 1) : se.total, measure)}</td>
-                {lens === "region" && regionRows && <td className="numeric">{Math.round((regionRows[i]?.gmPct ?? 0) * 100)}%</td>}
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr><th scope="row">Total</th>{buckets.map((b, bi) => <td key={b.label} className="numeric numeric--strong">{fmtMeasure(colTotal(bi), measure)}</td>)}<td className="numeric numeric--strong">{fmtMeasure(cumulative ? colTotal(buckets.length - 1) : grand, measure)}</td>{lens === "region" && <td className="numeric">{Math.round((forecastTotal(live, "gm") / forecastTotal(live, "net_sales")) * 100)}%</td>}</tr>
-          </tfoot>
-        </table>
-      </div>
-
-      <div className="forecast-bars">
-        {buckets.map((b, bi) => (
-          <div className="fbar" key={b.label}>
-            <span className="fbar-track" aria-hidden="true">
-              {series.map((se, i) => {
-                const v = seriesBucket(se, bi);
-                return v > 0 ? <span key={se.key} className={colorClass(se.key, i)} style={{ height: `${(v / colMax) * 100}%` }} /> : null;
-              })}
-            </span>
-            <strong>{fmtMeasure(colTotal(bi), measure)}</strong>
-            <small>{b.label}</small>
-          </div>
-        ))}
-      </div>
-      <div className="phasing-legend phasing-legend--center">
-        {series.map((se, i) => <span key={se.key}><i className={`swatch ${swatchClass(se.key, i)}`} />{se.label}</span>)}
-      </div>
-
-      <div className="forecast-lower">
-        <section>
-          <SectionHead title="Needs attention" count={attention.length} />
-          <p className="forecast-caption forecast-caption--tight">Deals where acting de-risks the forecast or unlocks counted value. Ranked by risk, then weighted contribution.</p>
-          {attention.length === 0 ? <Empty>No open deals are stalled, overdue, or missing a forecast.</Empty> : (
-            <ul className="attn-list">
-              {attention.map(({ deal, reasons, next, weight }) => (
+        <div className="fc-improve">
+          <h2 className="fc-section-label">What improves it</h2>
+          {attention.length === 0 ? (
+            <p className="fc-improve-empty">Pipeline is clean — no deals need immediate action.</p>
+          ) : (
+            <ul className="fc-action-list">
+              {attention.slice(0, 3).map(({ deal, reasons, next, weight }) => (
                 <li key={deal.id}>
-                  <button className="attn-row" type="button" onClick={() => setExplainId(deal.id)}>
-                    <span className="attn-main">
-                      <span className="attn-title">{deal.title}</span>
-                      <span className="attn-sub">{accountById(deal.accountId)?.name} · {STAGE_META[deal.stage].label}</span>
-                      <span className="attn-reasons">
-                        {reasons.map((r) => <span key={r.code} className={`reason reason--${r.tone}`}>{r.label}</span>)}
+                  <button className="fc-action" type="button" onClick={() => setExplainId(deal.id)}>
+                    <span className="fc-action-main">
+                      <span className="fc-action-title">{deal.title}</span>
+                      <span className="fc-action-sub">{accountById(deal.accountId)?.name} · {STAGE_META[deal.stage].label}</span>
+                      <span className="fc-action-reasons">
+                        {reasons.slice(0, 2).map((r) => <span key={r.code} className={`reason reason--${r.tone}`}>{r.label}</span>)}
                       </span>
-                      {next && <span className="attn-next"><Icon name="spark" />{next.headline}</span>}
+                      {next && <span className="fc-action-next"><Icon name="spark" />{next.headline}</span>}
                     </span>
-                    <span className="attn-weight">
+                    <span className="fc-action-value">
                       <strong>{fmtEur(weight)}</strong>
                       <small>weighted</small>
                     </span>
@@ -3306,31 +3264,145 @@ function ForecastView({ ctx }: { ctx: AppCtx }) {
               ))}
             </ul>
           )}
-        </section>
+          {attention.length > 3 && <p className="fc-improve-more">+{attention.length - 3} more in the full list below</p>}
+        </div>
+      </div>
 
-        <section>
-          <SectionHead title="Forecast controls" />
-          {isFinance ? (
-            <div className="fc-controls">
-              <label className="fc-target">
-                <span>Revenue target (3-year)</span>
-                <input
-                  type="number" inputMode="numeric" step={100_000} value={Math.round(targetVal)}
-                  onChange={(e) => setTarget(Number(e.target.value) || 0)}
-                />
-              </label>
-              <p className="forecast-caption forecast-caption--tight">Stage win-probabilities are editable on the ladder above. Changes re-price the weighted forecast, at-risk, and gap in real time. Reseller deals use a {Math.round(RESELLER_TEST_PROB * 100)}% Customer-testing gate.</p>
-              <button className="btn btn--secondary" type="button" onClick={() => { setProbs(defaultStageProbs()); setTarget(null); ctx.notify("Forecast weighting reset to defaults."); }}>Reset to defaults</button>
+      {/* 2. Needs attention — full ranked actionable list */}
+      <section className="fc-attn-section">
+        <SectionHead title="Needs attention" count={attention.length} />
+        <p className="forecast-caption forecast-caption--tight">Deals where acting de-risks the forecast or unlocks counted value. Ranked by risk, then weighted contribution.</p>
+        {attention.length === 0 ? <Empty>No open deals are stalled, overdue, or missing a forecast.</Empty> : (
+          <ul className="attn-list">
+            {attention.map(({ deal, reasons, next, weight }) => (
+              <li key={deal.id}>
+                <button className="attn-row" type="button" onClick={() => setExplainId(deal.id)}>
+                  <span className="attn-main">
+                    <span className="attn-title">{deal.title}</span>
+                    <span className="attn-sub">{accountById(deal.accountId)?.name} · {STAGE_META[deal.stage].label}</span>
+                    <span className="attn-reasons">
+                      {reasons.map((r) => <span key={r.code} className={`reason reason--${r.tone}`}>{r.label}</span>)}
+                    </span>
+                    {next && <span className="attn-next"><Icon name="spark" />{next.headline}</span>}
+                  </span>
+                  <span className="attn-weight">
+                    <strong>{fmtEur(weight)}</strong>
+                    <small>weighted</small>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* 3. Supporting KPI strip */}
+      <div className="kpi-strip kpi-strip--tight">
+        <Kpi label="Weighted forecast" value={fmtEur(weighted)} hint="Tier-weighted · 3-year net sales" />
+        <SplitKpi label="Device vs service" device={wDevice} service={wService} />
+        <Kpi label="Committed" value={fmtEur(committed)} tone="good" hint="Final negotiation · very high win" />
+        <Kpi label="At risk" value={fmtEur(atRisk)} tone={atRisk > 0 ? "danger" : undefined} hint="Stalled or past close date" />
+        <Kpi label="Gap to target" value={gap > 0 ? fmtEur(gap) : `+${fmtEur(-gap)}`} tone={gap > 0 ? "warn" : "good"} hint={`Target ${fmtEur(targetVal)}`} />
+      </div>
+
+      {/* 4. Win-probability ladder */}
+      <WinProbabilityLadder ladder={ladder} measure={measure} probs={probs} setProbs={isFinance ? setProbs : undefined} hasReseller={hasReseller} />
+
+      {/* 5. Forecast controls */}
+      <section>
+        <SectionHead title="Forecast controls" />
+        {isFinance ? (
+          <div className="fc-controls">
+            <label className="fc-target">
+              <span>Revenue target (3-year)</span>
+              <input
+                type="number" inputMode="numeric" step={100_000} value={Math.round(targetVal)}
+                onChange={(e) => setTarget(Number(e.target.value) || 0)}
+              />
+            </label>
+            <p className="forecast-caption forecast-caption--tight">Stage win-probabilities are editable on the ladder above. Changes re-price the weighted forecast, at-risk, and gap in real time. Reseller deals use a {Math.round(RESELLER_TEST_PROB * 100)}% Customer-testing gate.</p>
+            <button className="btn btn--secondary" type="button" onClick={() => { setProbs(defaultStageProbs()); setTarget(null); ctx.notify("Forecast weighting reset to defaults."); }}>Reset to defaults</button>
+          </div>
+        ) : (
+          <div className="fc-controls">
+            <p className="forecast-caption forecast-caption--tight">Win-probability weighting and the revenue target are maintained by Finance. You are seeing the live weighted picture they configured.</p>
+            <dl className="fc-readout">
+              {OPEN_STATUSES.map((s) => <div key={s}><dt>{STAGE_META[s].label}</dt><dd>{Math.round((probs[s] ?? 0) * 100)}%</dd></div>)}
+            </dl>
+          </div>
+        )}
+      </section>
+
+      {/* 6. Time-phased data — lower priority visualization */}
+      <div className="fc-data-section">
+        <SectionHead title="Time-phased data" />
+        <div className="toolbar">
+          <div className="saved-views" role="tablist" aria-label="Forecast lens">
+            {([["commitment", "Commitment"], ["streams", "Device vs service"], ["region", "By region"], ["owner", "By owner"]] as const).map(([k, label]) => (
+              <button key={k} className="saved-view" role="tab" aria-selected={lens === k} onClick={() => setLens(k)} type="button">{label}</button>
+            ))}
+          </div>
+          <div className="toolbar-right">
+            <div className="seg seg--wide" role="group" aria-label="Measure">
+              {(["net_sales", "volume", "gm"] as Measure[]).map((m) => (
+                <button key={m} aria-pressed={measure === m} onClick={() => setMeasure(m)} type="button">{m === "net_sales" ? "Net sales" : m === "volume" ? "Volume" : "Gross margin"}</button>
+              ))}
             </div>
-          ) : (
-            <div className="fc-controls">
-              <p className="forecast-caption forecast-caption--tight">Win-probability weighting and the revenue target are maintained by Finance. You are seeing the live weighted picture they configured.</p>
-              <dl className="fc-readout">
-                {OPEN_STATUSES.map((s) => <div key={s}><dt>{STAGE_META[s].label}</dt><dd>{Math.round((probs[s] ?? 0) * 100)}%</dd></div>)}
-              </dl>
+            <div className="seg seg--wide" role="group" aria-label="Granularity">
+              {(["quarter", "half", "year"] as Granularity[]).map((g) => (
+                <button key={g} aria-pressed={gran === g} onClick={() => setGran(g)} type="button">{g === "quarter" ? "Qtr" : g === "half" ? "Half" : "Year"}</button>
+              ))}
             </div>
-          )}
-        </section>
+            <button className={cx("chip-toggle", cumulative && "chip-toggle--on")} aria-pressed={cumulative} onClick={() => setCumulative((v) => !v)} type="button">Cumulative</button>
+          </div>
+        </div>
+
+        <p className="forecast-caption">
+          {lens === "commitment" ? "Net value by deal status — Lead → Offer → Customer testing → Final negotiation (Closed excluded from the forward forecast)."
+            : lens === "streams" ? "Device and service revenue kept separate, never flattened into one number."
+              : lens === "owner" ? "The same pipeline split by deal owner — switching lens never duplicates a deal."
+                : "Regional split with gross-margin percentage, the way the forecast sheet reads."}
+          {" Showing "}<strong>{MEASURE_LABEL[measure]}</strong>{cumulative ? ", cumulative" : ", per period"}.
+        </p>
+
+        <div className="forecast-sheet">
+          <table className="forecast-table">
+            <thead>
+              <tr><th>{lensLabel}</th>{buckets.map((b) => <th key={b.label} className="numeric">{b.label}</th>)}<th className="numeric">Total</th>{lens === "region" && <th className="numeric">GM %</th>}</tr>
+            </thead>
+            <tbody>
+              {series.map((se, i) => (
+                <tr key={se.key}>
+                  <th scope="row"><span className={`swatch ${swatchClass(se.key, i)}`} />{se.label}{lens === "commitment" && <span className="mini-tag">{STAGE_META[se.key as Stage].csv}</span>}</th>
+                  {buckets.map((b, bi) => <td key={b.label} className="numeric">{fmtMeasure(seriesBucket(se, bi), measure)}</td>)}
+                  <td className="numeric numeric--strong">{fmtMeasure(cumulative ? seriesBucket(se, buckets.length - 1) : se.total, measure)}</td>
+                  {lens === "region" && regionRows && <td className="numeric">{Math.round((regionRows[i]?.gmPct ?? 0) * 100)}%</td>}
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr><th scope="row">Total</th>{buckets.map((b, bi) => <td key={b.label} className="numeric numeric--strong">{fmtMeasure(colTotal(bi), measure)}</td>)}<td className="numeric numeric--strong">{fmtMeasure(cumulative ? colTotal(buckets.length - 1) : grand, measure)}</td>{lens === "region" && <td className="numeric">{Math.round((forecastTotal(live, "gm") / forecastTotal(live, "net_sales")) * 100)}%</td>}</tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div className="forecast-bars">
+          {buckets.map((b, bi) => (
+            <div className="fbar" key={b.label}>
+              <span className="fbar-track" aria-hidden="true">
+                {series.map((se, i) => {
+                  const v = seriesBucket(se, bi);
+                  return v > 0 ? <span key={se.key} className={colorClass(se.key, i)} style={{ height: `${(v / colMax) * 100}%` }} /> : null;
+                })}
+              </span>
+              <strong>{fmtMeasure(colTotal(bi), measure)}</strong>
+              <small>{b.label}</small>
+            </div>
+          ))}
+        </div>
+        <div className="phasing-legend phasing-legend--center">
+          {series.map((se, i) => <span key={se.key}><i className={`swatch ${swatchClass(se.key, i)}`} />{se.label}</span>)}
+        </div>
       </div>
 
       {explainId && (

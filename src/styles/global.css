@@ -887,7 +887,7 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .kpi-value--split span { display: inline-flex; align-items: center; gap: 7px; font-variant-numeric: tabular-nums; }
 .kpi-value--split .swatch { width: 9px; height: 9px; }
 
-/* AI forecast narrative banner */
+/* AI forecast narrative banner — kept for potential reuse */
 .ai-narrative {
   border: 1px solid var(--rule); border-left: 2px solid var(--accent); border-radius: var(--r-surface);
   background: var(--surface); padding: 14px 18px 12px; margin-bottom: 24px;
@@ -897,6 +897,94 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .ai-badge .icon { width: 15px; }
 .ai-narrative p { color: var(--ink); font-size: 13px; line-height: 1.6; max-width: 92ch; }
 .ai-narrative-foot { display: block; margin-top: 8px; color: var(--ink-3); font-size: 11px; }
+
+/* Forecast confidence / success prediction panel */
+.fc-outlook {
+  display: grid;
+  grid-template-columns: 120px 1fr 1fr;
+  gap: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-surface);
+  background: var(--field-2);
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+.fc-score-block {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 20px 16px; border-right: 1px solid var(--rule); gap: 6px; text-align: center;
+}
+.fc-score-pct {
+  font-size: 2.25rem; font-weight: 650; line-height: 1; letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.fc-score-pct small { font-size: 1rem; font-weight: 450; vertical-align: super; line-height: 0; }
+.fc-score-pct--good { color: var(--green); }
+.fc-score-pct--warn { color: var(--amber); }
+.fc-score-pct--danger { color: var(--red); }
+.fc-score-bar {
+  width: 80px; height: 5px; background: var(--field); border-radius: 3px; overflow: hidden;
+}
+.fc-score-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
+.fc-score-fill--good { background: var(--green); }
+.fc-score-fill--warn { background: var(--amber); }
+.fc-score-fill--danger { background: var(--red); }
+.fc-score-label { font-size: 10.5px; color: var(--ink-3); line-height: 1.3; }
+.fc-score-delta { font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.fc-score-delta--short { color: var(--red); }
+.fc-score-delta--ahead { color: var(--green); }
+
+.fc-factors { padding: 18px 20px; border-right: 1px solid var(--rule); }
+.fc-improve { padding: 18px 20px; }
+
+.fc-section-label {
+  font-size: 10.5px; font-weight: 650; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--ink-3); margin: 0 0 10px;
+}
+.fc-factors ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.fc-factor { display: flex; align-items: flex-start; gap: 9px; font-size: 12.5px; color: var(--ink); line-height: 1.4; }
+.fc-factor-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; margin-top: 4px;
+}
+.fc-factor-dot--good { background: var(--green); }
+.fc-factor-dot--warn { background: var(--amber); }
+.fc-factor-dot--danger { background: var(--red); }
+.fc-factor-dot--neutral { background: var(--ink-3); }
+
+.fc-action-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.fc-action {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%;
+  padding: 9px 11px; border: 1px solid var(--rule); border-radius: var(--r-control);
+  background: var(--field); color: var(--ink); text-align: left; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.fc-action:hover { background: var(--field-3); border-color: var(--accent); }
+.fc-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fc-action-main { flex: 1; min-width: 0; }
+.fc-action-title { display: block; font-size: 12.5px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fc-action-sub { display: block; font-size: 11px; color: var(--ink-3); margin-top: 1px; }
+.fc-action-reasons { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.fc-action-next { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--accent); margin-top: 4px; }
+.fc-action-next .icon { width: 12px; flex-shrink: 0; }
+.fc-action-value { text-align: right; flex-shrink: 0; }
+.fc-action-value strong { display: block; font-size: 12.5px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.fc-action-value small { color: var(--ink-3); font-size: 10.5px; }
+.fc-improve-empty { font-size: 12.5px; color: var(--ink-3); margin: 0; }
+.fc-improve-more { font-size: 11px; color: var(--ink-3); margin: 6px 0 0; }
+
+/* Needs attention standalone section */
+.fc-attn-section { margin-bottom: 28px; }
+
+/* Time-phased data section */
+.fc-data-section { margin-top: 4px; }
+
+@media (max-width: 860px) {
+  .fc-outlook { grid-template-columns: 1fr; }
+  .fc-score-block { flex-direction: row; justify-content: flex-start; gap: 14px; border-right: none; border-bottom: 1px solid var(--rule); padding: 14px 16px; }
+  .fc-factors { border-right: none; border-bottom: 1px solid var(--rule); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc-score-fill { transition: none; }
+}
 
 /* Win-probability ladder */
 .ladder { border: 1px solid var(--rule); border-radius: var(--r-surface); background: var(--field-2); padding: 18px 20px; margin-bottom: 28px; }
