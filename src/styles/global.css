@@ -346,6 +346,7 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
 
 .kpi-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--rule); border-radius: var(--r-surface); overflow: hidden; margin-bottom: 26px; background: var(--field-2); box-shadow: var(--elev-1); }
 .kpi-strip--tight { grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 22px 0; }
+.kpi-strip--deal { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .kpi { position: relative; min-width: 0; padding: 17px 19px 18px; background: transparent; transition: background var(--t-fast); }
 .kpi::after { content: ""; position: absolute; left: 0; top: 0; width: 100%; height: 2px; background: transparent; transition: background var(--t-fast); }
 .kpi:hover { background: var(--surface); }
