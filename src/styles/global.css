@@ -1433,8 +1433,8 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 
 /* Dropdown listbox overlay styling */
 .custom-select-dropdown {
-  position: absolute;
-  z-index: 9999;
+  position: fixed;
+  z-index: 90;
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--r-control);
@@ -1445,8 +1445,8 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 }
 
 @keyframes select-fade-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .custom-select-listbox {

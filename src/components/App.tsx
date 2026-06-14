@@ -569,24 +569,22 @@ function CustomSelect({
   const updateCoords = () => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
-    const dropdownHeight = 220;
+    const dropdownHeight = Math.min(250, Math.max(44, options.length * 38 + 8));
     const viewportHeight = window.innerHeight;
     const spaceBelow = viewportHeight - rect.bottom;
     const spaceAbove = rect.top;
     
     let placement = "bottom";
-    let top = rect.bottom + window.scrollY;
+    let top = rect.bottom + 4;
     
     if (spaceBelow < dropdownHeight && spaceAbove > spaceBelow) {
       placement = "top";
-      top = rect.top - 8 + window.scrollY;
-    } else {
-      top = rect.bottom + 4 + window.scrollY;
+      top = Math.max(8, rect.top - dropdownHeight - 4);
     }
     
     setCoords({
       top,
-      left: rect.left + window.scrollX,
+      left: Math.min(rect.left, window.innerWidth - rect.width - 8),
       width: rect.width,
       placement,
     });
@@ -724,11 +722,10 @@ function CustomSelect({
   const triggerId = useId();
 
   const dropdownStyle: CSSProperties = {
-    position: "absolute",
+    position: "fixed",
     top: coords.top,
     left: coords.left,
     width: coords.width,
-    transform: coords.placement === "top" ? "translateY(-100%)" : "none",
   };
 
   return (

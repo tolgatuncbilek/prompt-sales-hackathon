@@ -718,15 +718,12 @@ export function caseAgeDays(c: CaseRecord): number {
   return daysBetween(TODAY, new Date(c.createdAt));
 }
 
-/** Services selectable when building an offer. */
-export const OFFER_BUILDER_SERVICE_IDS = ["s_fota", "s_emm"] as const;
-
 export function offerBuilderProducts(): ProductCatalogItem[] {
   return products.filter((p) => !p.retired);
 }
 
 export function offerBuilderServices(): ServiceCatalogItem[] {
-  return services.filter((s) => OFFER_BUILDER_SERVICE_IDS.includes(s.id as (typeof OFFER_BUILDER_SERVICE_IDS)[number]));
+  return services.filter((s) => !s.retired);
 }
 
 export function offerLineKind(line: OfferLine): "product" | "service" {
@@ -880,9 +877,22 @@ export const SERVICE_LIST_PRICES: Record<string, number> = {
   s_tech_compat: 0,
 };
 
+const SERVICE_LIST_PRICES_BY_NAME: Record<string, number> = {
+  "hmd secure mdm": 14,
+  "hmd secure shield": 18,
+  "cloudguard protect": 24,
+  "hmd field support": 1_200,
+  "telconet connectivity": 9,
+};
+
 export function catalogUnitPrice(productId: string | null, serviceId: string | null): number {
   if (productId) return products.find((p) => p.id === productId)?.listPrice ?? 0;
-  if (serviceId) return SERVICE_LIST_PRICES[serviceId] ?? 0;
+  if (serviceId) {
+    const service = services.find((item) => item.id === serviceId);
+    return SERVICE_LIST_PRICES[serviceId]
+      ?? (service ? SERVICE_LIST_PRICES_BY_NAME[service.name.toLowerCase()] : undefined)
+      ?? 0;
+  }
   return 0;
 }
 
