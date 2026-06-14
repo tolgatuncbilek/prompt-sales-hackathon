@@ -185,6 +185,8 @@ const ICONS: Record<string, ReactNode> = {
   calendar: (<><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>),
   attach: <path d="M16 5v11a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v11a1.5 1.5 0 0 1-3 0V7" />,
   remove: <path d="M7 7l10 10M17 7l-10 10" />,
+  info: (<><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7h.01" /></>),
+  copy: (<><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></>),
 };
 
 function Icon({ name, className }: { name: string; className?: string }) {
@@ -3207,6 +3209,78 @@ function PageHead({ title, actions }: { title: string; actions?: ReactNode }) {
   );
 }
 
+function McpSetupModal({ onClose }: { onClose: () => void }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const binaryPath = "/absolute/path/to/hmd-secure-crm-mcp-linux-x64";
+  const claudeConfig = `{
+  "mcpServers": {
+    "hmd-secure-crm": {
+      "command": "${binaryPath}",
+      "env": {
+        "DATABASE_URL": "provided-by-your-CRM-admin"
+      }
+    }
+  }
+}`;
+  const codexConfig = `[mcp_servers.hmd_secure_crm]
+command = "${binaryPath}"
+env = { DATABASE_URL = "provided-by-your-CRM-admin" }`;
+
+  const copy = async (label: string, value: string) => {
+    await navigator.clipboard.writeText(value);
+    setCopied(label);
+    window.setTimeout(() => setCopied((current) => current === label ? null : current), 1800);
+  };
+
+  return (
+    <div className="modal-scrim" role="dialog" aria-modal="true" aria-labelledby="mcp-setup-title" onClick={onClose}>
+      <section className="modal mcp-setup-modal" onClick={(event) => event.stopPropagation()}>
+        <header className="modal-head">
+          <div>
+            <h2 id="mcp-setup-title">Connect your AI client to the CRM</h2>
+            <p className="modal-context">Linux x64 MCP server · stdio transport</p>
+          </div>
+          <button className="icon-btn" type="button" aria-label="Close MCP setup" onClick={onClose}><Icon name="close" /></button>
+        </header>
+        <div className="modal-body mcp-setup-body">
+          <p className="modal-intro">The MCP server lets compatible AI clients search and update CRM records with the tools exposed by this prototype.</p>
+
+          <ol className="mcp-steps">
+            <li><strong>Download the executable</strong><span>Save it somewhere permanent on the computer running your AI client.</span></li>
+            <li><strong>Make it executable</strong><code>chmod +x hmd-secure-crm-mcp-linux-x64</code></li>
+            <li><strong>Request database access</strong><span>Ask the CRM administrator for a PostgreSQL <code>DATABASE_URL</code>. It is not embedded in the download.</span></li>
+            <li><strong>Add one client configuration</strong><span>Replace the example path and database URL below, then restart the client.</span></li>
+          </ol>
+
+          <a className="btn btn--primary mcp-download" href="/api/downloads/mcp" download>
+            <Icon name="download" />Download MCP server
+          </a>
+
+          <div className="mcp-config">
+            <div className="mcp-config-head">
+              <strong>Claude Desktop</strong>
+              <button className="ghost-link" type="button" onClick={() => { void copy("Claude", claudeConfig); }}><Icon name="copy" />{copied === "Claude" ? "Copied" : "Copy"}</button>
+            </div>
+            <p>Add to <code>claude_desktop_config.json</code>.</p>
+            <pre><code>{claudeConfig}</code></pre>
+          </div>
+
+          <div className="mcp-config">
+            <div className="mcp-config-head">
+              <strong>Codex</strong>
+              <button className="ghost-link" type="button" onClick={() => { void copy("Codex", codexConfig); }}><Icon name="copy" />{copied === "Codex" ? "Copied" : "Copy"}</button>
+            </div>
+            <p>Add to <code>~/.codex/config.toml</code>.</p>
+            <pre><code>{codexConfig}</code></pre>
+          </div>
+
+          <p className="modal-note">This executable has direct database access. Use a restricted database account and do not share its connection string.</p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 // ===========================================================================
 // App shell
 // ===========================================================================
@@ -3665,6 +3739,7 @@ function MainApp({
   const user = userById(userId)!;
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [mcpSetupOpen, setMcpSetupOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
   const toastSeq = useRef(0);
@@ -4057,6 +4132,9 @@ function MainApp({
         </nav>
 
         <div className="sidebar-foot">
+          <button className="notif-row mcp-tip-row" onClick={() => { setMcpSetupOpen(true); setMenuOpen(false); }} type="button">
+            <Icon name="info" /><span>Connect AI client</span><span className="mcp-tip">MCP</span>
+          </button>
           <button className="notif-row" onClick={() => setNotifOpen((v) => !v)} aria-expanded={notifOpen} type="button">
             <Icon name="bell" /><span>Notifications</span>{unread > 0 && <span className="nav-count nav-count--alert">{unread}</span>}
           </button>
@@ -4090,6 +4168,8 @@ function MainApp({
           </ul>
         </div>
       )}
+
+      {mcpSetupOpen && <McpSetupModal onClose={() => setMcpSetupOpen(false)} />}
 
       <main className={cx("workspace", screen === "assistant" && "workspace--assistant")}>{content}</main>
 

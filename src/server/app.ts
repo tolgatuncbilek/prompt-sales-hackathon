@@ -37,6 +37,20 @@ app.route('/webhooks', webhooksRoutes);
 // Protected routes — auth middleware applied
 app.use('/*', authMiddleware);
 
+app.get('/downloads/mcp', async (c) => {
+  const executable = Bun.file('./dist/mcp-server');
+  if (!await executable.exists()) {
+    return c.json({ error: 'MCP executable is not available in this build' }, 404);
+  }
+  return new Response(executable, {
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': 'attachment; filename="hmd-secure-crm-mcp-linux-x64"',
+      'Cache-Control': 'private, max-age=3600',
+    },
+  });
+});
+
 app.route('/accounts', accountRoutes);
 app.route('/contacts', contactRoutes);
 app.route('/deals', dealRoutes);

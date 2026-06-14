@@ -239,6 +239,12 @@ h3 { font-size: 0.9375rem; font-weight: 650; line-height: 1.35; }
 .notif-row:hover { background: var(--surface); color: var(--ink); }
 .notif-row .icon { width: 16px; height: 16px; color: var(--ink-3); }
 .notif-row .nav-count { margin-left: auto; }
+.mcp-tip-row { margin-bottom: 4px; }
+.mcp-tip-row .icon { color: var(--accent); }
+.mcp-tip {
+  margin-left: auto; padding: 2px 5px; border: 1px solid var(--rule); border-radius: var(--r-control);
+  color: var(--ink-3); font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
+}
 
 /* --------------------------------------------------------------------------
    Workspace
@@ -1157,6 +1163,33 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .modal-grid-span { grid-column: 1 / -1; }
 .modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
+.mcp-setup-modal { width: min(960px, 100%); }
+.mcp-setup-body { gap: 20px; }
+.mcp-steps { display: grid; gap: 12px; margin: 0; padding-left: 22px; }
+.mcp-steps li { padding-left: 4px; color: var(--ink-2); font-size: 12.5px; line-height: 1.5; }
+.mcp-steps strong { display: block; color: var(--ink); }
+.mcp-steps span { display: block; margin-top: 2px; }
+.mcp-steps code, .mcp-config code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.mcp-download { align-self: flex-start; }
+.mcp-download:hover { text-decoration: none; }
+.mcp-config { border-top: 1px solid var(--rule); padding-top: 16px; }
+.mcp-config-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mcp-config-head .ghost-link { display: inline-flex; align-items: center; gap: 6px; }
+.mcp-config-head .icon { width: 14px; }
+.mcp-config > p { margin: 4px 0 10px; color: var(--ink-3); font-size: 11px; }
+.mcp-config pre {
+  max-height: 220px; margin: 0; padding: 14px; overflow: auto; border: 1px solid var(--rule);
+  border-radius: var(--r-control); background: var(--field); color: var(--ink-2); font-size: 11px; line-height: 1.55;
+}
+
+@media (min-width: 760px) {
+  .mcp-setup-body { display: grid; grid-template-columns: 1fr 1fr; }
+  .mcp-setup-body > .modal-intro,
+  .mcp-setup-body > .mcp-steps,
+  .mcp-setup-body > .mcp-download,
+  .mcp-setup-body > .modal-note { grid-column: 1 / -1; }
+}
+
 .field { display: flex; flex-direction: column; gap: 7px; }
 .field-label { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 12px; font-weight: 650; }
 .field-opt { padding: 1px 7px; border-radius: var(--r-pill); background: var(--raised); color: var(--ink-3); font-size: 9px; font-weight: 600; letter-spacing: 0.03em; }
@@ -1313,6 +1346,25 @@ tbody tr:hover .row-open { color: var(--ink-2); }
 .modal.modal--wide {
   width: min(calc(100vw - 40px), 50rem);
   max-width: min(calc(100vw - 40px), 50rem);
+}
+.modal.mcp-setup-modal {
+  width: min(1040px, calc(100vw - 48px));
+  max-width: min(1040px, calc(100vw - 48px));
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+}
+.modal.mcp-setup-modal .modal-head { margin-bottom: 0; }
+.modal.mcp-setup-modal .mcp-setup-body { gap: 16px 20px; }
+.modal.mcp-setup-modal .mcp-config pre { max-height: 170px; }
+@media (min-width: 760px) {
+  .modal.mcp-setup-modal .mcp-setup-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .modal.mcp-setup-modal .mcp-setup-body > .modal-intro,
+  .modal.mcp-setup-modal .mcp-setup-body > .mcp-steps,
+  .modal.mcp-setup-modal .mcp-setup-body > .mcp-download,
+  .modal.mcp-setup-modal .mcp-setup-body > .modal-note { grid-column: 1 / -1; }
 }
 .modal-head {
   display: flex;
