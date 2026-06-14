@@ -397,7 +397,7 @@ export const APPROVAL_ROLE_LABEL: Record<ApprovalRole, string> = {
 /** Map DB offer status values to frontend OfferStatus. */
 export function mapOfferStatusFromDb(status: string): OfferStatus {
   if (status === "draft") return "sales_rep";
-  if (status === "approved") return "made";
+  if (status === "approved" || status === "locked") return "made";
   return status as OfferStatus;
 }
 

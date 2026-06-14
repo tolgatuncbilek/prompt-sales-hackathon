@@ -5432,7 +5432,7 @@ export function MainApp({
       .then(() => {
         const refreshed = seedOffers.find((o) => o.id === offerId);
         const decisionDeal = refreshed ? dealById(refreshed.dealId) : undefined;
-        if (decisionDeal && refreshed?.status === "locked") {
+        if (decisionDeal && refreshed?.status === "made") {
           syncDealFromMadeOffer(decisionDeal, refreshed);
           bumpAccounts();
         }

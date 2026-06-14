@@ -15,7 +15,7 @@ function formatDateOnly(value: Date | string | null | undefined): string {
 
 function mapOfferStatus(status: string): string {
   if (status === 'draft') return 'sales_rep';
-  if (status === 'approved') return 'made';
+  if (status === 'approved' || status === 'locked') return 'made';
   return status;
 }
 

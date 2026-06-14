@@ -422,7 +422,7 @@ app.post('/approval-steps/:stepId/decide', async (c) => {
       const now = new Date();
       await db
         .update(offers)
-        .set({ status: 'locked', lockedAt: now })
+        .set({ status: 'approved', lockedAt: now })
         .where(eq(offers.id, step.offerId));
 
       if (accountId) {
