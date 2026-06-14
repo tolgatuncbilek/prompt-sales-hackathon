@@ -3919,7 +3919,7 @@ function ActionsView({ ctx }: { ctx: AppCtx }) {
         method: "POST",
         credentials: "include",
       });
-      const payload = await res.json().catch(async () => ({ error: await res.text() }));
+      const payload = await res.clone().json().catch(async () => ({ error: await res.text() }));
       if (!res.ok) {
         const detail = typeof payload?.error === "string" ? payload.error : JSON.stringify(payload);
         throw new Error(`Failed to generate AI actions (${res.status}): ${detail}`);
