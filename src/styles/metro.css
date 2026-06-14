@@ -315,8 +315,7 @@ input {
 }
 
 .panel {
-  border: 0;
-  border-top: 4px solid var(--accent);
+  border: 1px solid var(--rule);
   background: #111;
 }
 
@@ -451,14 +450,21 @@ table td {
 
 .record-head {
   border-radius: 0;
-  background: #0078d7;
-  color: #fff;
+  padding: 24px;
+  border: 1px solid var(--rule);
+  border-top: 3px solid var(--accent);
+  background: #111;
+  color: var(--ink);
 }
 
 .record-head .muted,
 .record-head .record-sub,
 .record-head .record-meta {
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--ink-2);
+}
+
+.record-head .record-meta strong {
+  color: var(--ink);
 }
 
 .record-title-row h1 {
@@ -515,6 +521,22 @@ table td {
 }
 
 .crm-assistant-head {
+  background: var(--accent);
+  color: #000;
+}
+
+.assistant-footer {
+  height: 38px;
+  border-top-color: #383838;
+  background: #050505;
+}
+
+.theme-option {
+  border-radius: 0;
+  text-transform: lowercase;
+}
+
+.theme-option--active {
   background: var(--accent);
   color: #000;
 }

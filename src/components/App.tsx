@@ -3378,10 +3378,18 @@ export default function App() {
     );
   }
 
-  return <MainApp initialUserId={initialUserId} />;
+  return <MainApp initialUserId={initialUserId} theme={theme} onThemeChange={setTheme} />;
 }
 
-function MainApp({ initialUserId }: { initialUserId: string }) {
+function MainApp({
+  initialUserId,
+  theme,
+  onThemeChange,
+}: {
+  initialUserId: string;
+  theme: "original" | "metro" | "light";
+  onThemeChange: (theme: "original" | "metro" | "light") => void;
+}) {
   const [userId, setUserId] = useState<string>(initialUserId);
   const [screen, setScreen] = useState<Screen>("home");
   const [accountId, setAccountId] = useState<string>(accounts[0]?.id || "");
@@ -3851,6 +3859,23 @@ function MainApp({ initialUserId }: { initialUserId: string }) {
 
       <CrmAssistant open={assistantOpen} onClose={() => setAssistantOpen(false)} />
       <footer className="assistant-footer">
+        <div className="theme-switcher" role="group" aria-label="Color scheme">
+          {([
+            ["original", "Secure"],
+            ["metro", "Metro"],
+            ["light", "Light"],
+          ] as const).map(([value, label]) => (
+            <button
+              className={cx("theme-option", theme === value && "theme-option--active")}
+              type="button"
+              aria-pressed={theme === value}
+              onClick={() => onThemeChange(value)}
+              key={value}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <button
           className={cx("ask-crm-trigger", assistantOpen && "ask-crm-trigger--active")}
           type="button"
