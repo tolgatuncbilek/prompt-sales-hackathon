@@ -175,6 +175,51 @@ app.patch('/:id', async (c) => {
 
 const astroEnv = import.meta.env as Record<string, string | undefined>;
 
+function generateStubResults(
+  accounts: { id: string; name: string; domain: string | null; industry: string | null }[],
+  allDeals: { id: string; accountId: string; title: string; stage: string; updatedAt: Date | null }[],
+  allCases: { id: string; accountId: string; status: string; priority: string; slaDeadline: Date | null }[],
+) {
+  const results: any[] = [];
+  for (const acct of accounts) {
+    const acctDeals = allDeals.filter(d => d.accountId === acct.id);
+    const acctCases = allCases.filter(cs => cs.accountId === acct.id);
+    const mappedDeals = acctDeals.map(d => ({
+      id: d.id,
+      title: d.title,
+      stage: d.stage,
+      updated_at: (d as any).updatedAt || null,
+      expected_close: (d as any).expectedClose || null
+    }));
+    const mappedCases = acctCases.map(cc => ({
+      id: cc.id,
+      status: cc.status,
+      priority: cc.priority,
+      sla_deadline: (cc as any).slaDeadline || null
+    }));
+    const stubs = generateStubInsights(acct, mappedDeals, mappedCases);
+    for (const s of stubs) {
+      const sentences = s.body.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
+      const headline = sentences[0] || s.body;
+      const evidence = sentences.slice(1);
+      results.push({
+        id: `local-${crypto.randomUUID()}`,
+        accountId: acct.id,
+        dealId: s.deal_id,
+        caseId: s.case_id,
+        type: s.insight_type,
+        headline,
+        body: s.body,
+        confidence: s.confidence,
+        evidence,
+        sources: s.sources,
+        status: 'pending_review'
+      });
+    }
+  }
+  return results;
+}
+
 const SYSTEM_PROMPT = `You are the AI commercial analyst for HMD Secure's CRM.
 Analyze the provided Accounts, their active Deals, and open Cases.
 Generate next best actions, enrichment summaries, or risk flags.
@@ -205,162 +250,92 @@ Output ONLY a valid JSON object matching this schema:
 `;
 
 app.post('/generate', async (c) => {
-  const user = c.get('user');
-
-  // Find all accounts owned by the user
-  const userAccounts = await db
-    .select()
-    .from(accounts)
-    .where(eq(accounts.ownerUserId, user.id));
-
-  if (userAccounts.length === 0) {
-    return c.json({ insights: [] });
-  }
-
-  const accountIds = userAccounts.map(a => a.id);
-  const allDeals = await db.select().from(deals).where(inArray(deals.accountId, accountIds));
-  const allCases = await db.select().from(cases).where(inArray(cases.accountId, accountIds));
-
-  const apiKey = process.env.OPENCLAW_KEY || astroEnv.OPENCLAW_KEY;
-  const endpoint = process.env.OPENCLAW_URL || astroEnv.OPENCLAW_URL;
-  const model = process.env.ASSISTANT_MODEL || astroEnv.ASSISTANT_MODEL || 'hermes-crm';
-
-  if (!apiKey || !endpoint) {
-    console.warn("OpenClaw credentials missing, falling back to stub generator.");
-    const results = [];
-    for (const acct of userAccounts) {
-      const acctDeals = allDeals.filter(d => d.accountId === acct.id);
-      const acctCases = allCases.filter(cs => cs.accountId === acct.id);
-      const mappedDeals = acctDeals.map(d => ({
-        id: d.id,
-        title: d.title,
-        stage: d.stage,
-        updated_at: (d as any).updatedAt || null,
-        expected_close: (d as any).expectedClose || null
-      }));
-      const mappedCases = acctCases.map(c => ({
-        id: c.id,
-        status: c.status,
-        priority: c.priority,
-        sla_deadline: (c as any).slaDeadline || null
-      }));
-      const stubs = generateStubInsights(acct, mappedDeals, mappedCases);
-      for (const s of stubs) {
-        const sentences = s.body.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
-        const headline = sentences[0] || s.body;
-        const evidence = sentences.slice(1);
-        results.push({
-          id: `local-${crypto.randomUUID()}`,
-          accountId: acct.id,
-          dealId: s.deal_id,
-          caseId: s.case_id,
-          type: s.insight_type,
-          headline,
-          body: s.body,
-          confidence: s.confidence,
-          evidence,
-          sources: s.sources,
-          status: 'pending_review'
-        });
-      }
-    }
-    return c.json({ insights: results });
-  }
-
-  const promptData = {
-    accounts: userAccounts.map(a => ({ id: a.id, name: a.name, industry: a.industry, domain: a.domain })),
-    deals: allDeals.map(d => ({ id: d.id, accountId: d.accountId, title: d.title, stage: d.stage })),
-    cases: allCases.map(cs => ({ id: cs.id, accountId: cs.accountId, title: cs.title, status: cs.status, priority: cs.priority }))
-  };
-
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: `Analyze this CRM data and generate insights:\n${JSON.stringify(promptData)}` }
-        ]
-      }),
-      signal: AbortSignal.timeout(90000),
-    });
+    const user = c.get('user');
 
-    if (!response.ok) {
-      throw new Error(`OpenClaw responded with status ${response.status}`);
+    const userAccounts = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.ownerUserId, user.id));
+
+    if (userAccounts.length === 0) {
+      return c.json({ insights: [] });
     }
 
-    const payload = await response.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
+    const accountIds = userAccounts.map(a => a.id);
+    const allDeals = await db.select().from(deals).where(inArray(deals.accountId, accountIds));
+    const allCases = await db.select().from(cases).where(inArray(cases.accountId, accountIds));
+
+    const apiKey = process.env.OPENCLAW_KEY || astroEnv.OPENCLAW_KEY;
+    const endpoint = process.env.OPENCLAW_URL || astroEnv.OPENCLAW_URL;
+    const model = process.env.ASSISTANT_MODEL || astroEnv.ASSISTANT_MODEL || 'hermes-crm';
+
+    if (!apiKey || !endpoint) {
+      console.warn("OpenClaw credentials missing, falling back to stub generator.");
+      return c.json({ insights: generateStubResults(userAccounts, allDeals, allCases) });
+    }
+
+    const promptData = {
+      accounts: userAccounts.map(a => ({ id: a.id, name: a.name, industry: a.industry, domain: a.domain })),
+      deals: allDeals.map(d => ({ id: d.id, accountId: d.accountId, title: d.title, stage: d.stage })),
+      cases: allCases.map(cs => ({ id: cs.id, accountId: cs.accountId, title: cs.title, status: cs.status, priority: cs.priority }))
     };
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content) throw new Error("No content returned from OpenClaw");
 
-    const cleaned = content.trim().replace(/^```json\s*/i, '').replace(/```$/, '').trim();
-    const parsed = JSON.parse(cleaned);
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: `Analyze this CRM data and generate insights:\n${JSON.stringify(promptData)}` }
+          ]
+        }),
+        signal: AbortSignal.timeout(90000),
+      });
 
-    const insights = (parsed.insights || []).map((i: any) => ({
-      id: `local-${crypto.randomUUID()}`,
-      accountId: i.accountId,
-      dealId: i.dealId || null,
-      caseId: i.caseId || null,
-      type: i.type,
-      headline: i.headline,
-      body: i.body,
-      confidence: Number(i.confidence || 0.8),
-      evidence: i.evidence || [],
-      sources: i.sources || [],
-      draftEmail: i.draftEmail || undefined,
-      status: 'pending_review'
-    }));
-
-    return c.json({ insights });
-  } catch (error) {
-    console.error("Failed to generate insights via OpenClaw, falling back to stubs:", error);
-    const results = [];
-    for (const acct of userAccounts) {
-      const acctDeals = allDeals.filter(d => d.accountId === acct.id);
-      const acctCases = allCases.filter(cs => cs.accountId === acct.id);
-      const mappedDeals = acctDeals.map(d => ({
-        id: d.id,
-        title: d.title,
-        stage: d.stage,
-        updated_at: (d as any).updatedAt || null,
-        expected_close: (d as any).expectedClose || null
-      }));
-      const mappedCases = acctCases.map(c => ({
-        id: c.id,
-        status: c.status,
-        priority: c.priority,
-        sla_deadline: (c as any).slaDeadline || null
-      }));
-      const stubs = generateStubInsights(acct, mappedDeals, mappedCases);
-      for (const s of stubs) {
-        const sentences = s.body.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
-        const headline = sentences[0] || s.body;
-        const evidence = sentences.slice(1);
-        results.push({
-          id: `local-${crypto.randomUUID()}`,
-          accountId: acct.id,
-          dealId: s.deal_id,
-          caseId: s.case_id,
-          type: s.insight_type,
-          headline,
-          body: s.body,
-          confidence: s.confidence,
-          evidence,
-          sources: s.sources,
-          status: 'pending_review'
-        });
+      if (!response.ok) {
+        throw new Error(`OpenClaw responded with status ${response.status}`);
       }
+
+      const payload = await response.json() as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const content = payload.choices?.[0]?.message?.content;
+      if (!content) throw new Error("No content returned from OpenClaw");
+
+      const cleaned = content.trim().replace(/^```json\s*/i, '').replace(/```$/, '').trim();
+      const parsed = JSON.parse(cleaned);
+
+      const insights = (parsed.insights || []).map((i: any) => ({
+        id: `local-${crypto.randomUUID()}`,
+        accountId: i.accountId,
+        dealId: i.dealId || null,
+        caseId: i.caseId || null,
+        type: i.type,
+        headline: i.headline,
+        body: i.body,
+        confidence: Number(i.confidence || 0.8),
+        evidence: i.evidence || [],
+        sources: i.sources || [],
+        draftEmail: i.draftEmail || undefined,
+        status: 'pending_review'
+      }));
+
+      return c.json({ insights });
+    } catch (error) {
+      console.error("Failed to generate insights via OpenClaw, falling back to stubs:", error);
+      return c.json({ insights: generateStubResults(userAccounts, allDeals, allCases) });
     }
-    return c.json({ insights: results });
+  } catch (error) {
+    console.error("Failed to generate insights:", error);
+    return c.json({ insights: [] });
   }
 });
 
