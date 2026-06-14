@@ -220,6 +220,20 @@ function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
 }
 
+async function readResponseBody(response: Response): Promise<unknown> {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return response.json();
+  }
+
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: text.trim() || `Request failed with status ${response.status}` };
+  }
+}
+
 const THEMES = ["original", "metro", "light"] as const;
 type Theme = (typeof THEMES)[number];
 const THEME_STORAGE_KEY = "hmd-crm-theme";
@@ -3952,16 +3966,19 @@ function CrmAssistant({
     setError(null);
     try {
       const response = await fetch(`/api/assistant/threads/${id}`);
-      const payload = await response.json();
+      const payload = await readResponseBody(response) as {
+        error?: string;
+        messages?: Array<{
+          id: string;
+          role: "user" | "assistant";
+          content: string;
+          evidence?: AssistantEvidence[];
+          uncertainty?: string;
+        }>;
+      };
       if (!response.ok) throw new Error(payload.error || "Could not load chat.");
       setThreadId(id);
-      setMessages((payload.messages ?? []).map((entry: {
-        id: string;
-        role: "user" | "assistant";
-        content: string;
-        evidence?: AssistantEvidence[];
-        uncertainty?: string;
-      }) => entry.role === "assistant"
+      setMessages((payload.messages ?? []).map((entry) => entry.role === "assistant"
         ? { ...entry, evidence: entry.evidence ?? [] }
         : entry));
     } catch (loadError) {
@@ -3976,7 +3993,7 @@ function CrmAssistant({
     let cancelled = false;
     void fetch("/api/assistant/threads")
       .then(async (response) => {
-        const payload = await response.json();
+        const payload = await readResponseBody(response);
         if (!response.ok) throw new Error(payload.error || "Could not load chat history.");
         if (cancelled) return;
         setThreads(payload);
@@ -4051,7 +4068,13 @@ function CrmAssistant({
           files: files.length > 0 ? files : undefined,
         }),
       });
-      const payload = await response.json();
+      const payload = await readResponseBody(response) as {
+        error?: string;
+        threadId?: string;
+        answer?: string;
+        evidence?: AssistantEvidence[];
+        uncertainty?: string;
+      };
       if (!response.ok) throw new Error(payload.error || "The assistant could not answer.");
       setThreadId(payload.threadId);
       setThreads((current) => {
