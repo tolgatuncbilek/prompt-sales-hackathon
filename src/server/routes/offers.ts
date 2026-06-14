@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import {
   offers,
@@ -12,6 +12,10 @@ import type { AuthVariables } from '../middleware/auth.js';
 import { writeActivity, createNotification } from '../lib/helpers.js';
 
 const app = new Hono<{ Variables: AuthVariables }>();
+
+function lineRequiresManagerApproval(lines: { discountPct: string | number }[]): boolean {
+  return lines.some((l) => Number(l.discountPct) >= 10);
+}
 
 /** GET /deals/:dealId/offers — list offers for a deal */
 app.get('/deals/:dealId/offers', async (c) => {
@@ -178,7 +182,7 @@ app.put('/:id/lines', async (c) => {
   return c.json(rows);
 });
 
-/** POST /:id/submit — submit for approval */
+/** POST /:id/submit — submit for approval (3-stage workflow) */
 app.post('/:id/submit', async (c) => {
   const id = c.req.param('id');
   const user = c.get('user');
@@ -197,27 +201,46 @@ app.post('/:id/submit', async (c) => {
     return c.json({ error: 'Only draft offers can be submitted', status: 400 }, 400);
   }
 
-  // Update offer status
+  const lines = await db
+    .select()
+    .from(offerLines)
+    .where(eq(offerLines.offerId, id));
+
+  const requiresManager = lineRequiresManagerApproval(lines);
+  const now = new Date();
+  const nextStatus = requiresManager ? 'pending_manager' : 'pending_finance';
+
   await db
     .update(offers)
-    .set({ status: 'pending_manager' })
+    .set({ status: nextStatus })
     .where(eq(offers.id, id));
 
-  // Create approval steps
   await db.insert(approvalSteps).values([
     {
       offerId: id,
       stepOrder: 1,
-      roleRequired: 'sales_manager',
+      roleRequired: 'sales_rep',
+      decidedBy: user.id,
+      decision: 'approved',
+      note: null,
+      decidedAt: now,
     },
     {
       offerId: id,
       stepOrder: 2,
+      roleRequired: 'sales_manager',
+      decidedBy: requiresManager ? null : user.id,
+      decision: requiresManager ? null : 'approved',
+      note: requiresManager ? null : 'Auto-approved — all line discounts below 10%.',
+      decidedAt: requiresManager ? null : now,
+    },
+    {
+      offerId: id,
+      stepOrder: 3,
       roleRequired: 'finance',
     },
   ]);
 
-  // Get deal for account context
   const [deal] = await db
     .select()
     .from(deals)
@@ -231,26 +254,45 @@ app.post('/:id/submit', async (c) => {
       entityType: 'offer',
       entityId: id,
       eventType: 'offer_submitted',
-      payload: { deal_title: deal.title, version: offer.version },
+      payload: {
+        deal_title: deal.title,
+        version: offer.version,
+        skip_manager: !requiresManager,
+      },
     });
 
-    // Notify sales managers
-    const managers = await db
-      .select()
-      .from(users)
-      .where(eq(users.role, 'sales_manager'));
+    if (requiresManager) {
+      const managers = await db
+        .select()
+        .from(users)
+        .where(eq(users.role, 'sales_manager'));
 
-    for (const mgr of managers) {
-      await createNotification({
-        userId: mgr.id,
-        entityType: 'offer',
-        entityId: id,
-        body: `Offer v${offer.version} for "${deal.title}" needs your approval`,
-      });
+      for (const mgr of managers) {
+        await createNotification({
+          userId: mgr.id,
+          entityType: 'offer',
+          entityId: id,
+          body: `Offer v${offer.version} for "${deal.title}" needs your approval`,
+        });
+      }
+    } else {
+      const financeUsers = await db
+        .select()
+        .from(users)
+        .where(eq(users.role, 'finance'));
+
+      for (const fin of financeUsers) {
+        await createNotification({
+          userId: fin.id,
+          entityType: 'offer',
+          entityId: id,
+          body: `Offer v${offer.version} for "${deal.title}" needs finance approval`,
+        });
+      }
     }
   }
 
-  return c.json({ status: 'pending_manager' });
+  return c.json({ status: nextStatus, skip_manager: !requiresManager });
 });
 
 /** POST /approval-steps/:stepId/decide — approve or reject */
@@ -269,7 +311,6 @@ app.post('/approval-steps/:stepId/decide', async (c) => {
     );
   }
 
-  // Load step
   const [step] = await db
     .select()
     .from(approvalSteps)
@@ -284,7 +325,6 @@ app.post('/approval-steps/:stepId/decide', async (c) => {
     return c.json({ error: 'Step already decided', status: 409 }, 409);
   }
 
-  // Verify user has the required role
   if (user.role !== step.roleRequired) {
     return c.json(
       { error: `Requires ${step.roleRequired} role`, status: 403 },
@@ -292,7 +332,6 @@ app.post('/approval-steps/:stepId/decide', async (c) => {
     );
   }
 
-  // Update step
   await db
     .update(approvalSteps)
     .set({
@@ -303,7 +342,6 @@ app.post('/approval-steps/:stepId/decide', async (c) => {
     })
     .where(eq(approvalSteps.id, stepId));
 
-  // Load offer and deal
   const [offer] = await db
     .select()
     .from(offers)
@@ -317,11 +355,12 @@ app.post('/approval-steps/:stepId/decide', async (c) => {
   const accountId = deal?.accountId;
 
   if (body.decision === 'rejected') {
-    // Reject entire offer
     await db
       .update(offers)
-      .set({ status: 'rejected' })
+      .set({ status: 'draft' })
       .where(eq(offers.id, step.offerId));
+
+    await db.delete(approvalSteps).where(eq(approvalSteps.offerId, step.offerId));
 
     if (accountId) {
       await writeActivity({
@@ -333,25 +372,22 @@ app.post('/approval-steps/:stepId/decide', async (c) => {
         payload: { step_order: step.stepOrder, note: body.note },
       });
 
-      // Notify offer creator
       if (offer) {
         await createNotification({
           userId: offer.createdBy,
           entityType: 'offer',
           entityId: step.offerId,
-          body: `Your offer was rejected by ${user.name}: ${body.note ?? 'No reason provided'}`,
+          body: `Your offer was rejected by ${user.name}: ${body.note ?? 'No reason provided'}. Revise and resubmit.`,
         });
       }
     }
   } else if (body.decision === 'approved') {
-    if (step.stepOrder === 1) {
-      // Step 1 approved → move to pending_finance
+    if (step.roleRequired === 'sales_manager') {
       await db
         .update(offers)
         .set({ status: 'pending_finance' })
         .where(eq(offers.id, step.offerId));
 
-      // Notify finance users
       const financeUsers = await db
         .select()
         .from(users)
@@ -373,11 +409,10 @@ app.post('/approval-steps/:stepId/decide', async (c) => {
           entityType: 'offer',
           entityId: step.offerId,
           eventType: 'offer_manager_approved',
-          payload: { step_order: 1 },
+          payload: { step_order: step.stepOrder },
         });
       }
-    } else if (step.stepOrder === 2) {
-      // Step 2 approved → approved then locked
+    } else if (step.roleRequired === 'finance') {
       const now = new Date();
       await db
         .update(offers)
@@ -391,11 +426,10 @@ app.post('/approval-steps/:stepId/decide', async (c) => {
           entityType: 'offer',
           entityId: step.offerId,
           eventType: 'offer_approved',
-          payload: { step_order: 2, locked_at: now.toISOString() },
+          payload: { step_order: step.stepOrder, locked_at: now.toISOString() },
         });
       }
 
-      // Notify offer creator
       if (offer) {
         await createNotification({
           userId: offer.createdBy,

@@ -53,6 +53,7 @@ export const offerStatus = pgEnum('offer_status', [
 ]);
 
 export const approvalRole = pgEnum('approval_role', [
+  'sales_rep',
   'sales_manager',
   'finance',
 ]);

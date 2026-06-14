@@ -5,6 +5,7 @@ import {
   deals,
   cases,
   dealTotal,
+  dealForecastNet,
   accountById,
 } from "./crm.ts";
 
@@ -195,7 +196,7 @@ export function dynamicForecast(
     };
   }
 
-  const ourNet = dealTotal(deal) || null;
+  const ourNet = dealForecastNet(deal, _resolveOffer) || null;
   const { score: compScore, avgCompetitorNetTotal, priceDeltaPct } = competitorScore(
     competitors.length,
     ourNet,
@@ -231,7 +232,7 @@ export function dynamicForecast(
   return {
     probability,
     fixedProbability,
-    weightedValue: dealTotal(deal) * probability,
+    weightedValue: dealForecastNet(deal, _resolveOffer) * probability,
     industryWinRate,
     serviceCaseWinRate,
     industry,

@@ -37,6 +37,18 @@ const app = new Hono();
 const humanize = (s: string): string =>
   s.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
 
+function formatDateOnly(value: Date | string | null | undefined): string {
+  if (!value) return '';
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
+function mapOfferStatus(status: string): string {
+  if (status === 'draft') return 'sales_rep';
+  if (status === 'approved') return 'made';
+  return status;
+}
+
 function deriveActivity(
   eventType: string,
   payload: Record<string, any> | null,
@@ -331,7 +343,8 @@ app.get('/', async (c) => {
   const services = dbServices.map((s) => ({
     id: s.id,
     name: s.name,
-    type: s.serviceType,
+    serviceType: s.serviceType,
+    listPrice: Number(s.listPrice ?? 0),
     isThirdParty: s.isThirdParty,
     retired: s.retired,
   }));
@@ -360,7 +373,7 @@ app.get('/', async (c) => {
       leadValidated: d.stage !== 'interest_shown',
       channel: d.channel,
       isPilot: d.isPilot,
-      expectedClose: d.expectedClose,
+      expectedClose: formatDateOnly(d.expectedClose),
       updatedAt: d.updatedAt.toISOString(),
       createdAt: d.createdAt.toISOString(),
       deviceUnitPrice: unitPrice,
@@ -448,7 +461,7 @@ app.get('/', async (c) => {
       dealId: o.dealId,
       createdById: o.createdBy,
       version: o.version,
-      status: o.status,
+      status: mapOfferStatus(o.status),
       discountPct: Number(o.discountPct),
       justification: o.justification,
       lockedAt: o.lockedAt ? o.lockedAt.toISOString() : null,

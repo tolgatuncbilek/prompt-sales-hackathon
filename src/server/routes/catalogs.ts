@@ -97,9 +97,13 @@ app.post('/services', requireRole('finance'), async (c) => {
   const body = await c.req.json();
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   const serviceType = typeof body.service_type === 'string' ? body.service_type.trim() : '';
+  const listPrice = body.list_price !== undefined ? Number(body.list_price) : 0;
 
   if (!name || !serviceType || (body.is_third_party !== undefined && typeof body.is_third_party !== 'boolean')) {
     return c.json({ error: 'Name, service type, and a valid source are required', status: 400 }, 400);
+  }
+  if (!Number.isFinite(listPrice) || listPrice < 0) {
+    return c.json({ error: 'List price must be a non-negative number', status: 400 }, 400);
   }
 
   const [service] = await db
@@ -107,6 +111,7 @@ app.post('/services', requireRole('finance'), async (c) => {
     .values({
       name,
       serviceType,
+      listPrice: String(listPrice),
       isThirdParty: body.is_third_party ?? false,
       retired: false,
     })
@@ -127,6 +132,7 @@ app.patch('/services/:id', requireRole('finance'), async (c) => {
   const updates: Record<string, unknown> = {};
   if (body.name !== undefined) updates.name = body.name;
   if (body.service_type !== undefined) updates.serviceType = body.service_type;
+  if (body.list_price !== undefined) updates.listPrice = String(body.list_price);
   if (body.is_third_party !== undefined) updates.isThirdParty = body.is_third_party;
   if (body.retired !== undefined) updates.retired = body.retired;
 

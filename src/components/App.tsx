@@ -94,6 +94,7 @@ import {
   offerWorkflowSteps,
   approvalStepActionLabel,
   approvalTimestamp,
+  offerRequiresManagerApproval,
   APPROVAL_ROLE_LABEL,
   demoPersonaIds,
   loginAsUser,
@@ -1394,6 +1395,7 @@ function ApprovalCard({ offer, ctx }: { offer: Offer; ctx: AppCtx }) {
   const account = accountById(deal.accountId)!;
   const [note, setNote] = useState("");
   const repStep = offerWorkflowSteps(offer).find((a) => a.roleRequired === "sales_rep");
+  const smStep = offerWorkflowSteps(offer).find((a) => a.roleRequired === "sales_manager");
 
   return (
     <article className="insight insight--approval">
@@ -1410,8 +1412,8 @@ function ApprovalCard({ offer, ctx }: { offer: Offer; ctx: AppCtx }) {
       {offer.justification && (
         <div className="approval-just"><strong>Justification</strong><p>{offer.justification}</p></div>
       )}
-      {offer.smStep?.decision === "approved" && (
-        <p className="approval-prior"><Icon name="check" />Approved by Sales Manager {userName(offer.smStep.decidedById)} — {offer.smStep.decidedAt}</p>
+      {smStep?.decision === "approved" && (
+        <p className="approval-prior"><Icon name="check" />{smStep.note?.includes("Auto-approved") ? "Sales Manager auto-approved" : `Approved by Sales Manager ${userName(smStep.decidedById)}`} — {smStep.decidedAt}</p>
       )}
       {((ctx.user.role === "sales_manager" && offer.status === "pending_manager") ||
         (ctx.user.role === "finance" && offer.status === "pending_finance")) && (
@@ -1917,7 +1919,9 @@ function BuildOfferModal({
                       value={item.catalogId}
                       options={catalogItems.map((entry) => ({
                         value: entry.id,
-                        label: entry.name + (item.kind === "product" ? ` — ${fmtEurExact((entry as typeof products[0]).listPrice)}` : ""),
+                        label: entry.name + (item.kind === "product"
+                          ? ` — ${fmtEurExact((entry as typeof products[0]).listPrice)}`
+                          : ` — ${fmtEurExact((entry as typeof services[0]).listPrice)}`),
                       }))}
                       onChange={(val) => updateItem(item.key, { catalogId: val })}
                     />
@@ -2012,9 +2016,9 @@ function OfferEditText({ value, onCommit, placeholder }: { value: string; onComm
 }
 
 function OfferEditNumber({
-  value, onCommit, prefix, min, max, integer, ariaLabel,
+  value, onCommit, prefix, suffix, min, max, integer, ariaLabel,
 }: {
-  value: number; onCommit: (v: number) => void; prefix?: string; min?: number; max?: number; integer?: boolean; ariaLabel?: string;
+  value: number; onCommit: (v: number) => void; prefix?: string; suffix?: string; min?: number; max?: number; integer?: boolean; ariaLabel?: string;
 }) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => { setDraft(String(value)); }, [value]);
@@ -2048,6 +2052,7 @@ function OfferEditNumber({
           if (e.key === "Escape") { setDraft(String(value)); e.currentTarget.blur(); }
         }}
       />
+      {suffix && <span className="cell-num-prefix">{suffix}</span>}
     </span>
   );
 }
@@ -2124,7 +2129,7 @@ function OfferDetailPanel({
                 </td>
                 <td className="numeric">
                   {canEdit ? (
-                    <OfferEditNumber value={l.discountPct} min={0} max={100} ariaLabel="Discount percent" onCommit={(v) => patchLine(i, { discountPct: v })} />
+                    <OfferEditNumber value={l.discountPct} suffix="%" min={0} max={100} ariaLabel="Discount percent" onCommit={(v) => patchLine(i, { discountPct: v })} />
                   ) : l.discountPct > 0 ? `${l.discountPct}%` : "—"}
                 </td>
                 <td className="numeric numeric--strong">
@@ -2147,7 +2152,7 @@ function OfferDetailPanel({
               <td colSpan={5}>Headline discount</td>
               <td className="numeric">
                 {canEdit ? (
-                  <OfferEditNumber value={offer.discountPct} min={0} max={100} ariaLabel="Headline discount percent" onCommit={(v) => patchOffer((o) => ({ ...o, discountPct: v }))} />
+                  <OfferEditNumber value={offer.discountPct} suffix="%" min={0} max={100} ariaLabel="Headline discount percent" onCommit={(v) => patchOffer((o) => ({ ...o, discountPct: v }))} />
                 ) : `${offer.discountPct}%`}
               </td>
             </tr>
@@ -2185,13 +2190,18 @@ function OfferDetailPanel({
       <p className="offer-stage-label">Current stage: <strong>{OFFER_STATUS_LABEL[offer.status]}</strong></p>
       <ol className="approval-steps">
         {workflow.map((step) => {
+          const repDone = step.roleRequired === "sales_rep" && step.decision === "approved";
           const isActive =
-            (offer.status === "pending_manager" && step.roleRequired === "sales_manager" && !step.decision)
+            (offer.status === "sales_rep" && step.roleRequired === "sales_rep" && !step.decision)
+            || (offer.status === "pending_manager" && step.roleRequired === "sales_manager" && !step.decision)
             || (offer.status === "pending_finance" && step.roleRequired === "finance" && !step.decision);
-          const showSubmit = canSubmit && step.stepOrder === 1 && !step.decision;
+          const showSubmit = canSubmit && step.roleRequired === "sales_rep" && !step.decision;
           const showApprove =
             (offer.status === "pending_manager" && ctx.user.role === "sales_manager" && step.roleRequired === "sales_manager" && !step.decision)
             || (offer.status === "pending_finance" && ctx.user.role === "finance" && step.roleRequired === "finance" && !step.decision);
+          const submitLabel = offerRequiresManagerApproval(offer)
+            ? "Send for Sales Manager approval"
+            : "Send for Finance approval";
           return (
             <li
               key={step.stepOrder}
@@ -2200,6 +2210,7 @@ function OfferDetailPanel({
                 step.decision === "approved" && "is-approved",
                 step.decision === "rejected" && "is-rejected",
                 isActive && "is-active",
+                repDone && "is-approved",
               )}
             >
               <span className="approval-mark" aria-hidden="true">
@@ -2210,7 +2221,7 @@ function OfferDetailPanel({
                   <strong>{step.stepOrder}. {APPROVAL_ROLE_LABEL[step.roleRequired]}</strong>
                   {showSubmit && (
                     <button className="btn btn--secondary btn--sm" type="button" onClick={() => ctx.submitOfferForApproval(offer.id)}>
-                      Send for Sales Manager approval
+                      {submitLabel}
                     </button>
                   )}
                   {showApprove && (
@@ -2230,12 +2241,13 @@ function OfferDetailPanel({
                 {!step.decision && isActive && (
                   <small className="approval-step-status">In progress — action required</small>
                 )}
-                {!step.decision && !isActive && offer.status !== "rejected" && offer.status !== "locked" && (
+                {!step.decision && !isActive && offer.status !== "rejected" && offer.status !== "locked" && offer.status !== "made" && (
                   <small className="approval-step-status">Waiting on prior step</small>
                 )}
                 {step.decision === "approved" && (
                   <p className="approval-step-meta">
                     {approvalStepActionLabel(step)} {userName(step.decidedById)} — {step.decidedAt}
+                    {step.note ? ` — ${step.note}` : ""}
                   </p>
                 )}
                 {step.decision === "rejected" && (
@@ -2553,7 +2565,19 @@ function DealDetail({ deal: dealInput, ctx, embedded }: { deal: Deal; ctx: AppCt
         ) : (
           <>
             <Kpi label="Total value" value={fmtEur(totalVal)} />
-            <Kpi label="Expected close" value={fmtExpectedClose(deal.expectedClose)} tone={isOverdue(deal) ? "warn" : undefined} />
+            {isOpen(deal) ? (
+              <div className="kpi kpi--editable">
+                <span className="kpi-label">Expected close</span>
+                <input
+                  type="date"
+                  className="kpi-date-input"
+                  value={deal.expectedClose?.slice(0, 10) ?? ""}
+                  onChange={(e) => void ctx.updateDeal(deal, { expectedClose: e.target.value })}
+                />
+              </div>
+            ) : (
+              <Kpi label="Expected close" value={fmtExpectedClose(deal.expectedClose)} tone={isOverdue(deal) ? "warn" : undefined} />
+            )}
             <Kpi label="Open cases" value={`${openDealCases}`} tone={openDealCases ? "warn" : undefined} />
           </>
         )}
@@ -3573,11 +3597,15 @@ function NewCatalogEntryModal({
       setError("List price must be a non-negative number.");
       return;
     }
+    if (kind === "service" && (!Number.isFinite(listPrice) || listPrice < 0)) {
+      setError("Unit price must be a non-negative number.");
+      return;
+    }
 
     const path = kind === "product" ? "products" : "services";
     const payload = kind === "product"
       ? { name: trimmedName, category: trimmedCategory, list_price: listPrice }
-      : { name: trimmedName, service_type: trimmedCategory, is_third_party: source === "third" };
+      : { name: trimmedName, service_type: trimmedCategory, list_price: listPrice, is_third_party: source === "third" };
 
     setSubmitting(true);
     setError("");
@@ -3609,6 +3637,7 @@ function NewCatalogEntryModal({
           id: saved.id,
           name: saved.name,
           serviceType: saved.serviceType,
+          listPrice: Number(saved.listPrice ?? 0),
           isThirdParty: saved.isThirdParty,
           retired: saved.retired,
         });
@@ -3648,15 +3677,21 @@ function NewCatalogEntryModal({
               <input type="number" min="0" step="0.01" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} required />
             </label>
           ) : (
-            <div className="field">
-              <span className="field-label">Source</span>
-              <CustomSelect value={source} options={SOURCE_OPTIONS} onChange={(value) => setSource(value as "internal" | "third")} />
-            </div>
+            <>
+              <label className="field">
+                <span className="field-label">Unit price</span>
+                <input type="number" min="0" step="0.01" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} required />
+              </label>
+              <div className="field">
+                <span className="field-label">Source</span>
+                <CustomSelect value={source} options={SOURCE_OPTIONS} onChange={(value) => setSource(value as "internal" | "third")} />
+              </div>
+            </>
           )}
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className="modal-foot">
             <button className="btn btn--ghost" type="button" onClick={onClose} disabled={submitting}>Cancel</button>
-            <button className="btn btn--primary" type="submit" disabled={submitting || !name.trim() || !category.trim() || (kind === "product" && price === "")}>
+            <button className="btn btn--primary" type="submit" disabled={submitting || !name.trim() || !category.trim() || price === ""}>
               {submitting ? "Adding…" : `Add ${kind}`}
             </button>
           </div>
@@ -3709,7 +3744,7 @@ function CatalogView({ ctx }: { ctx: AppCtx }) {
       ) : (
         <div className="table-wrap card-edge">
           <table>
-            <thead><tr><th>Service</th><th>Type</th><th>Source</th><th>Status</th></tr></thead>
+            <thead><tr><th>Service</th><th>Type</th><th className="numeric">Unit price</th><th>Source</th><th>Status</th></tr></thead>
             <tbody>
               {services.map((base) => {
                 const s = ctx.eff("service", base);
@@ -3717,6 +3752,7 @@ function CatalogView({ ctx }: { ctx: AppCtx }) {
                   <tr key={s.id} className={s.retired ? "is-retired" : ""}>
                     <th scope="row">{canEdit ? <CellText value={s.name} onCommit={(v) => ctx.patch("service", s.id, "name", v)} /> : s.name}</th>
                     <td>{canEdit ? <CellText value={s.serviceType} onCommit={(v) => ctx.patch("service", s.id, "serviceType", v)} /> : s.serviceType}</td>
+                    <td className="numeric numeric--strong">{canEdit ? <CellNumber value={s.listPrice} prefix="€" onCommit={(v) => ctx.patch("service", s.id, "listPrice", v)} /> : fmtEurExact(s.listPrice)}</td>
                     <td>{canEdit
                       ? <CellSelect value={s.isThirdParty ? "third" : "internal"} options={SOURCE_OPTIONS} onCommit={(v) => ctx.patch("service", s.id, "isThirdParty", v === "third")} />
                       : s.isThirdParty ? <span className="mini-tag">Third party</span> : <span className="mini-tag mini-tag--accent">Internal</span>}</td>
@@ -4400,6 +4436,11 @@ export function MainApp({
   const [, bumpAccounts] = useReducer((c) => c + 1, 0);
   const [, bumpCompetitors] = useReducer((c) => c + 1, 0);
 
+  const reloadCrm = async () => {
+    await initCrmFromApi();
+    bumpAccounts();
+  };
+
   const patch = (kind: EditKind, id: string, field: string, value: unknown) => {
     setEdits((m) => ({ ...m, [`${kind}:${id}`]: { ...m[`${kind}:${id}`], [field]: value } }));
 
@@ -4636,6 +4677,7 @@ export function MainApp({
           title: updates.title,
           stage: updates.stage ? STAGE_TO_API[updates.stage] : undefined,
           channel: updates.channel,
+          expected_close: updates.expectedClose,
           device,
           service,
           total,
@@ -4645,7 +4687,7 @@ export function MainApp({
       if (!response.ok) throw new Error(result.error || "Failed to save deal");
       notify(`${deal.title} updated.`);
     } catch (error) {
-      Object.assign(deal, { title: previous.title, stage: previous.stage, apiStage: previous.apiStage, channel: previous.channel, leadValidated: previous.leadValidated });
+      Object.assign(deal, { title: previous.title, stage: previous.stage, apiStage: previous.apiStage, channel: previous.channel, leadValidated: previous.leadValidated, expectedClose: previous.expectedClose });
       replaceDealRevenue(deal, previous.device, previous.service);
       bumpAccounts();
       notify(error instanceof Error ? error.message : "Failed to save deal.");
@@ -4735,7 +4777,8 @@ export function MainApp({
     if (user.role !== "sales_rep") return;
     const base = offerState[offerId] ?? seedOffers.find((o) => o.id === offerId);
     if (!base || base.status !== "sales_rep") return;
-    
+    const skipManager = !offerRequiresManagerApproval(base);
+
     fetch(`/api/offers/${offerId}/submit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -4745,16 +4788,16 @@ export function MainApp({
         return r.json();
       })
       .then(() => {
-        void loadCrm();
-        notify(`${base.ref} sent for Sales Manager approval.`);
+        void reloadCrm();
+        notify(skipManager ? `${base.ref} sent for Finance approval.` : `${base.ref} sent for Sales Manager approval.`);
       })
       .catch((err) => {
         console.error(err);
         notify("Failed to submit offer.");
       });
 
-    // Optimistic local state change
-    const updated: Offer = { ...base, status: "pending_manager" };
+    const nextStatus = skipManager ? ("pending_finance" as const) : ("pending_manager" as const);
+    const updated: Offer = { ...base, status: nextStatus };
     setOfferState((m) => ({ ...m, [offerId]: updated }));
     const idx = seedOffers.findIndex((o) => o.id === offerId);
     if (idx >= 0) seedOffers[idx] = updated;
@@ -4766,7 +4809,9 @@ export function MainApp({
         dealId: decisionDeal.id,
         actorId: user.id,
         kind: "offer",
-        summary: `${base.ref} submitted for Sales Manager approval.`,
+        summary: skipManager
+          ? `${base.ref} submitted for Finance approval (Sales Manager auto-approved).`
+          : `${base.ref} submitted for Sales Manager approval.`,
       });
     }
   };
@@ -4797,7 +4842,7 @@ export function MainApp({
         return r.json();
       })
       .then(() => {
-        void loadCrm();
+        void reloadCrm();
         notify(`${base.ref} approved.`);
       })
       .catch((err) => {
@@ -4829,15 +4874,14 @@ export function MainApp({
       approveOfferMade(offerId);
       return;
     }
-    
-    // Rejection
+
     const activeStep = offerWorkflowSteps(base).find(
       (a) =>
         (base.status === "pending_manager" && a.roleRequired === "sales_manager" && !a.decision) ||
-        (base.status === "pending_finance" && a.roleRequired === "finance" && !a.decision)
+        (base.status === "pending_finance" && a.roleRequired === "finance" && !a.decision),
     );
 
-    if (!activeStep || !activeStep.id) {
+    if (!activeStep?.id) {
       notify("No active approval step found to reject.");
       return;
     }
@@ -4852,21 +4896,15 @@ export function MainApp({
         return r.json();
       })
       .then(() => {
-        void loadCrm();
-        notify(`${base.ref} rejected.`);
+        void reloadCrm();
+        notify(`${base.ref} returned to Sales Representative for revision.`);
       })
       .catch((err) => {
         console.error(err);
         notify("Failed to record decision.");
       });
 
-    const stamp = approvalTimestamp();
-    const approvals = offerWorkflowSteps(base).map((a) =>
-      a.id === activeStep.id
-        ? { ...a, decision: "rejected" as const, decidedById: user.id, note: note?.trim() || "Rejected.", decidedAt: stamp }
-        : a
-    );
-    const updated: Offer = { ...base, status: "rejected" as const, approvals };
+    const updated: Offer = { ...base, status: "sales_rep" as const, approvals: [] };
     setOfferState((m) => ({ ...m, [offerId]: updated }));
     const idx = seedOffers.findIndex((o) => o.id === offerId);
     if (idx >= 0) seedOffers[idx] = updated;
@@ -4906,7 +4944,7 @@ export function MainApp({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: s }),
       })
-        .then(() => void loadCrm())
+        .then(() => void reloadCrm())
         .catch(console.error);
     },
     caseNotes, addNote: (cid, n) => setCaseNotes((m) => ({ ...m, [cid]: [n, ...(m[cid] ?? [])] })),

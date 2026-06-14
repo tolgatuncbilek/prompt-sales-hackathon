@@ -45,7 +45,7 @@ export type OfferStatus =
   | "rejected"
   | "locked";
 
-export type ApprovalRole = "sales_manager" | "finance";
+export type ApprovalRole = "sales_rep" | "sales_manager" | "finance";
 
 export type InsightType =
   | "enrichment"
@@ -128,6 +128,7 @@ export type ServiceCatalogItem = {
   id: string;
   name: string;
   serviceType: string;
+  listPrice: number;
   isThirdParty: boolean;
   retired: boolean;
 };
@@ -388,9 +389,21 @@ export const OFFER_STATUS_LABEL: Record<OfferStatus, string> = {
 };
 
 export const APPROVAL_ROLE_LABEL: Record<ApprovalRole, string> = {
+  sales_rep: "Sales Representative",
   sales_manager: "Sales Manager",
   finance: "Finance",
 };
+
+/** Map DB offer status values to frontend OfferStatus. */
+export function mapOfferStatusFromDb(status: string): OfferStatus {
+  if (status === "draft") return "sales_rep";
+  if (status === "approved") return "made";
+  return status as OfferStatus;
+}
+
+export function offerRequiresManagerApproval(offer: Offer): boolean {
+  return offer.lines.some((l) => l.discountPct >= 10);
+}
 
 export const ROLE_LABEL: Record<Role, string> = {
   sales_rep: "Sales Representative",
@@ -469,8 +482,9 @@ export let cases: CaseRecord[] = [];
 
 export function defaultOfferWorkflow(): ApprovalStep[] {
   return [
-    { stepOrder: 1, roleRequired: "sales_manager", decidedById: null, decision: null, note: null, decidedAt: null },
-    { stepOrder: 2, roleRequired: "finance", decidedById: null, decision: null, note: null, decidedAt: null },
+    { stepOrder: 1, roleRequired: "sales_rep", decidedById: null, decision: null, note: null, decidedAt: null },
+    { stepOrder: 2, roleRequired: "sales_manager", decidedById: null, decision: null, note: null, decidedAt: null },
+    { stepOrder: 3, roleRequired: "finance", decidedById: null, decision: null, note: null, decidedAt: null },
   ];
 }
 
@@ -479,13 +493,19 @@ export function approvalTimestamp(): string {
 }
 
 export function offerWorkflowSteps(offer: Offer): ApprovalStep[] {
-  const steps = offer.approvals.filter((a) => a.roleRequired === "sales_manager" || a.roleRequired === "finance");
-  return steps.length >= 2 ? steps.sort((a, b) => a.stepOrder - b.stepOrder).slice(0, 2) : defaultOfferWorkflow();
+  const steps = offer.approvals.filter(
+    (a) => a.roleRequired === "sales_rep" || a.roleRequired === "sales_manager" || a.roleRequired === "finance",
+  );
+  return steps.length >= 3 ? steps.sort((a, b) => a.stepOrder - b.stepOrder).slice(0, 3) : defaultOfferWorkflow();
 }
 
 export function approvalStepActionLabel(step: ApprovalStep): string {
   if (step.decision !== "approved") return "";
-  return step.roleRequired === "sales_manager" ? "Approved by SM" : "Approved by Finance";
+  if (step.roleRequired === "sales_rep") return "Submitted by";
+  if (step.roleRequired === "sales_manager") {
+    return step.note?.includes("Auto-approved") ? "Auto-approved" : "Approved by SM";
+  }
+  return "Approved by Finance";
 }
 
 export let offers: Offer[] = [];
@@ -844,6 +864,20 @@ export function madeOfferForDeal(dealId: string, offerLookup?: (id: string) => O
     .sort((a, b) => b.version - a.version)[0];
 }
 
+/** Latest non-rejected offer for a deal — used for forecast and in-progress pricing. */
+export function activeOfferForDeal(dealId: string, offerLookup?: (id: string) => Offer | undefined): Offer | undefined {
+  return offers
+    .map((o) => offerLookup?.(o.id) ?? o)
+    .filter((o) => o.dealId === dealId && o.status !== "rejected")
+    .sort((a, b) => b.version - a.version)[0];
+}
+
+export function dealForecastNet(deal: Deal, offerLookup?: (id: string) => Offer | undefined): number {
+  const offer = activeOfferForDeal(deal.id, offerLookup);
+  if (offer && offer.lines.length > 0) return offerGrandNet(offer);
+  return dealTotal(deal);
+}
+
 export function fmtExpectedClose(iso: string): string {
   if (!iso?.trim()) return "—";
   const d = new Date(iso);
@@ -911,6 +945,7 @@ export function catalogUnitPrice(productId: string | null, serviceId: string | n
   if (productId) return products.find((p) => p.id === productId)?.listPrice ?? 0;
   if (serviceId) {
     const service = services.find((item) => item.id === serviceId);
+    if (service && service.listPrice > 0) return service.listPrice;
     return SERVICE_LIST_PRICES[serviceId]
       ?? (service ? SERVICE_LIST_PRICES_BY_NAME[service.name.toLowerCase()] : undefined)
       ?? 0;
