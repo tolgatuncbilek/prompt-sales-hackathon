@@ -1129,6 +1129,7 @@ export function persistOfferToApi(dealId: string, offer: Offer): void {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      id: offer.id,
       version: offer.version,
       discount_pct: offer.discountPct,
       justification: offer.justification,
@@ -1149,10 +1150,6 @@ export function persistOfferToApi(dealId: string, offer: Offer): void {
             discount_pct: l.discountPct,
           })),
         ),
-      }).then(() => {
-        if (offer.discountPct > 0) {
-          return fetch(`/api/offers/${offerId}/submit`, { method: "POST" });
-        }
       });
     })
     .catch(console.error);

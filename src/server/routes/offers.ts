@@ -17,6 +17,11 @@ function lineRequiresManagerApproval(lines: { discountPct: string | number }[]):
   return lines.some((l) => Number(l.discountPct) >= 10);
 }
 
+function isUuid(value: unknown): value is string {
+  return typeof value === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 /** GET /deals/:dealId/offers — list offers for a deal */
 app.get('/deals/:dealId/offers', async (c) => {
   const dealId = c.req.param('dealId');
@@ -48,6 +53,7 @@ app.post('/deals/:dealId/offers', async (c) => {
   const [offer] = await db
     .insert(offers)
     .values({
+      ...(isUuid(body.id) ? { id: body.id } : {}),
       dealId,
       createdBy: user.id,
       version: body.version ?? 1,
