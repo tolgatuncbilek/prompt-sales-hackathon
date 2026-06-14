@@ -2860,11 +2860,10 @@ function CaseTable({ cases, ctx, compact }: { cases: CaseRecord[]; ctx: AppCtx; 
   return (
     <div className="table-wrap card-edge">
       <table className={compact ? "compact" : ""}>
-        <thead><tr><th>Case</th><th>Priority</th><th>Status</th>{!compact && <th>Service</th>}<th>Owner</th><th>Age</th><th>SLA</th><th aria-label="Open" /></tr></thead>
+        <thead><tr><th>Case</th><th>Priority</th><th>Status</th>{!compact && <th>Service</th>}<th>Owner</th><th>Age</th><th aria-label="Open" /></tr></thead>
         <tbody>
           {cases.map((base) => {
             const c = ctx.eff("case", base);
-            const sla = slaState(c);
             return (
               <tr key={c.id} className="row-click" onClick={() => ctx.openCase(c.id)}>
                 <th scope="row"><CellText value={c.title} onCommit={(v) => ctx.patch("case", c.id, "title", v)} /><small className="muted">{c.ref} · {accountById(c.accountId)!.name}{c.escalated ? " · escalated" : ""}</small></th>
@@ -2873,7 +2872,6 @@ function CaseTable({ cases, ctx, compact }: { cases: CaseRecord[]; ctx: AppCtx; 
                 {!compact && <td><CellSelect value={c.serviceId ?? ""} options={serviceOptions()} onCommit={(v) => ctx.patch("case", c.id, "serviceId", v)} /></td>}
                 <td><CellSelect value={c.ownerId} options={tamOptions()} onCommit={(v) => ctx.patch("case", c.id, "ownerId", v)} /></td>
                 <td>{caseAgeDays(c)}d</td>
-                <td><span className={cx("sla", `sla--${sla.state}`)}>{sla.state === "breached" && <Icon name="alert" />}{sla.label}</span></td>
                 <td><OpenButton label={`Open ${c.ref}`} onClick={() => ctx.openCase(c.id)} /></td>
               </tr>
             );
@@ -2919,7 +2917,6 @@ function CaseDetail({ caseRec: caseInput, ctx, embedded }: { caseRec: CaseRecord
   const account = accountById(caseRec.accountId)!;
   const svc = serviceById(caseRec.serviceId);
   const contact = contactById(caseRec.contactId);
-  const sla = slaState(caseRec);
   const extraNotes = ctx.caseNotes[caseRec.id] ?? [];
   const notes = [...extraNotes, ...caseRec.notes];
   const [draft, setDraft] = useState("");
@@ -2948,12 +2945,6 @@ function CaseDetail({ caseRec: caseInput, ctx, embedded }: { caseRec: CaseRecord
             <span>Opened <strong>{caseRec.createdAt}</strong> · <strong>{caseAgeDays(caseRec)}d old</strong></span>
             {caseRec.thirdPartyRef && <span>Third-party ref <strong>{caseRec.thirdPartyRef}</strong></span>}
           </div>
-        </div>
-        <div className="record-actions">
-          <span className={cx("sla sla--big", `sla--${sla.state}`)}>{sla.state === "breached" && <Icon name="alert" />}{sla.label}</span>
-          {caseRec.status !== "resolved" && caseRec.status !== "closed"
-            ? <button className="btn btn--primary" onClick={() => ctx.notify(`${caseRec.ref} marked resolved.`)} type="button"><Icon name="check" />Resolve</button>
-            : <button className="btn btn--secondary" onClick={() => ctx.notify(`${caseRec.ref} reopened.`)} type="button">Reopen</button>}
         </div>
       </header>
 
@@ -4262,8 +4253,29 @@ function MainApp({
   const [, bumpAccounts] = useReducer((c) => c + 1, 0);
   const [, bumpCompetitors] = useReducer((c) => c + 1, 0);
 
-  const patch = (kind: EditKind, id: string, field: string, value: unknown) =>
+  const patch = (kind: EditKind, id: string, field: string, value: unknown) => {
     setEdits((m) => ({ ...m, [`${kind}:${id}`]: { ...(m[`${kind}:${id}`] ?? {}), [field]: value } }));
+    if (kind === "case") {
+      const idx = seedCases.findIndex((c) => c.id === id);
+      if (idx >= 0) {
+        seedCases[idx] = { ...seedCases[idx]!, [field]: value } as CaseRecord;
+        bumpAccounts();
+        const apiField =
+          field === "ownerId" ? "owner_user_id"
+            : field === "serviceId" ? "service_id"
+              : field === "thirdPartyRef" ? "third_party_ref"
+                : field;
+        if (["status", "priority", "owner_user_id", "service_id", "third_party_ref"].includes(apiField)) {
+          fetch(`/api/cases/${id}`, {
+            method: "PATCH",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ [apiField]: value }),
+          }).catch(console.error);
+        }
+      }
+    }
+  };
   function eff<T extends { id: string }>(kind: EditKind, base: T): T {
     const e = edits[`${kind}:${base.id}`];
     return e ? ({ ...base, ...e } as T) : base;

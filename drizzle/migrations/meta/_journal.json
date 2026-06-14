@@ -29,6 +29,13 @@
       "when": 1781500000000,
       "tag": "0003_deal_competitors",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781600000000,
+      "tag": "0004_technical_compatibility_service",
+      "breakpoints": true
     }
   ]
 }

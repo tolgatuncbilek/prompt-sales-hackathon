@@ -96,6 +96,7 @@ const serviceId = {
   cloudguard: crypto.randomUUID(),
   fieldSupport: crypto.randomUUID(),
   telconet: crypto.randomUUID(),
+  techCompat: crypto.randomUUID(),
 };
 
 // Accounts
@@ -235,6 +236,7 @@ async function main() {
     { id: serviceId.cloudguard,   name: "CloudGuard Protect",   serviceType: "Cloud Security",     isThirdParty: true,  retired: false, createdAt: daysAgo(90) },
     { id: serviceId.fieldSupport, name: "HMD Field Support",    serviceType: "On-site Support",    isThirdParty: false, retired: false, createdAt: daysAgo(90) },
     { id: serviceId.telconet,     name: "TelcoNet Connectivity", serviceType: "Connectivity",       isThirdParty: true,  retired: false, createdAt: daysAgo(90) },
+    { id: serviceId.techCompat,   name: "Technical compatibility", serviceType: "Validation",       isThirdParty: false, retired: false, createdAt: daysAgo(90) },
   ]);
   console.log("  ✓ Service catalog");
 
@@ -538,11 +540,11 @@ async function main() {
   await db.insert(cases).values([
     // 3 open
     {
-      id: caseId.cs1, accountId: accountId.securitas, serviceId: serviceId.mdm,
+      id: caseId.cs1, accountId: accountId.securitas, serviceId: serviceId.techCompat,
       ownerUserId: userId.tomas, contactId: contactId.c1,
-      title: "Device connectivity issue",
-      status: "open", priority: "medium", escalated: false, thirdPartyRef: null,
-      slaDeadline: daysFromNow(2), createdAt: daysAgo(1), updatedAt: daysAgo(1),
+      title: "Technical compatibility validation — depot rollout",
+      status: "resolved", priority: "medium", escalated: false, thirdPartyRef: null,
+      slaDeadline: null, createdAt: daysAgo(12), updatedAt: daysAgo(2),
     },
     {
       id: caseId.cs2, accountId: accountId.deutscheBahn, serviceId: serviceId.shield,
